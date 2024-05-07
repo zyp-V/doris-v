@@ -20,6 +20,8 @@
 # check DORIS_HOME
 export LC_ALL=C
 
+export PATH="/opt/tiger/tools/jdk/bin:/opt/tiger/tools/tool-chain/bin:/opt/tiger/tools/binutils/bin:/opt/tiger/tools/node/bin:/opt/tiger/tools/maven/bin:${PATH}"
+
 if [[ -z "${DORIS_HOME}" ]]; then
     echo "Error: DORIS_HOME is not set"
     exit 1
