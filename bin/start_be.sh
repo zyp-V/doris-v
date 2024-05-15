@@ -31,6 +31,7 @@ OPTS="$(getopt \
     -o '' \
     -l 'daemon' \
     -l 'console' \
+    -l 'cluster:' \
     -- "$@")"
 
 eval set -- "${OPTS}"
@@ -47,6 +48,10 @@ while true; do
         RUN_CONSOLE=1
         shift
         ;;
+    --cluster) 
+	CLUSTER=$2
+	shift 2 
+	;;
     --)
         shift
         break
@@ -63,6 +68,7 @@ DORIS_HOME="$(
     pwd
 )"
 export DORIS_HOME
+export DORIS_CLUSTER=$CLUSTER
 
 if [[ "${SKIP_CHECK_ULIMIT:- "false"}" != "true" ]]; then
     if [[ "$(uname -s)" != 'Darwin' ]]; then
@@ -196,7 +202,7 @@ while read -r line; do
     if [[ "${envline}" == *"="* ]]; then
         eval 'export "${envline}"'
     fi
-done <"${DORIS_HOME}/conf/be.conf"
+done <"${DORIS_HOME}/conf/$CLUSTER/be.conf"
 
 STDOUT_LOGGER="${LOG_DIR}/be.out"
 log() {

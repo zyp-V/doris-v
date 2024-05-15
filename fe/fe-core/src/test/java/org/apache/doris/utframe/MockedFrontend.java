@@ -181,7 +181,7 @@ public class MockedFrontend {
             // And it also cost time to start up.
             options.enableHttpServer = false;
             options.enableQeService = false;
-            DorisFE.start(frontend.getRunningDir(), frontend.getRunningDir(), args, options);
+            DorisFE.start(frontend.getRunningDir(), frontend.getRunningDir(), "", args, options);
         }
     }
 

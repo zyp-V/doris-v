@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <memory>
 #include <ostream>
+#include <filesystem>
 
 #include "common/config.h"
 #include "common/logging.h"
@@ -77,6 +78,25 @@ Status parse_root_path(const string& root_path, StorePath* path) {
     tmp_vec[0].erase(tmp_vec[0].find_last_not_of('/') + 1);
     if (tmp_vec[0].empty() || tmp_vec[0][0] != '/') {
         return Status::Error<INVALID_ARGUMENT>("invalid store path. path={}", tmp_vec[0]);
+    }
+
+    try {
+        if (!std::filesystem::exists(tmp_vec[0])) {
+            std::error_code ec;
+            std::filesystem::create_directories(tmp_vec[0], ec);
+            if (ec) {
+                LOG(WARNING) << "Create data directory failed, path=" << tmp_vec[0];
+                return Status::Error<INVALID_ARGUMENT>("Create data directory failed, path={}", tmp_vec[0]);
+            }
+        }
+
+        if (!std::filesystem::is_directory(tmp_vec[0])) {
+            LOG(WARNING) << "path is not a directory, path=" << tmp_vec[0];
+            return Status::Error<INVALID_ARGUMENT>("path is not a directory, path={}", tmp_vec[0]);
+        }
+    } catch (const std::filesystem::filesystem_error &e) {
+        LOG(WARNING) << "check or create directories failed, " << e.what();
+        return Status::Error<INVALID_ARGUMENT>("check or create directories failed, {}", e.what());
     }
 
     string canonicalized_path;

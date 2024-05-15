@@ -34,6 +34,7 @@ OPTS="$(getopt \
     -l 'version' \
     -l 'metadata_failure_recovery' \
     -l 'console' \
+    -l 'cluster:' \
     -- "$@")"
 
 eval set -- "${OPTS}"
@@ -72,6 +73,10 @@ while true; do
         IMAGE_PATH="$2"
         shift 2
         ;;
+    --cluster) 
+	CLUSTER=$2
+	shift 2 
+	;;
     --)
         shift
         break
@@ -88,6 +93,7 @@ DORIS_HOME="$(
     pwd
 )"
 export DORIS_HOME
+export DORIS_CLUSTER=$CLUSTER
 
 # export env variables from fe.conf
 #
@@ -112,7 +118,7 @@ while read -r line; do
     if [[ "${envline}" == *"="* ]]; then
         eval 'export "${envline}"'
     fi
-done <"${DORIS_HOME}/conf/fe.conf"
+done <"${DORIS_HOME}/conf/$CLUSTER/fe.conf"
 
 if [[ -e "${DORIS_HOME}/bin/palo_env.sh" ]]; then
     # shellcheck disable=1091

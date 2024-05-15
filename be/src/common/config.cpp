@@ -48,7 +48,7 @@
 namespace doris::config {
 
 // Dir of custom config file
-DEFINE_String(custom_config_dir, "${DORIS_HOME}/conf");
+DEFINE_String(custom_config_dir, "${DORIS_HOME}/conf/${DORIS_CLUSTER}");
 
 // Dir of jdbc drivers
 DEFINE_String(jdbc_drivers_dir, "${DORIS_HOME}/jdbc_drivers");
