@@ -29,6 +29,7 @@ OPTS="$(getopt \
     -n "$0" \
     -o '' \
     -l 'daemon' \
+    -l 'cluster:' \
     -- "$@")"
 
 eval set -- "${OPTS}"
@@ -39,6 +40,10 @@ while true; do
     --daemon)
         RUN_DAEMON=1
         shift
+        ;;
+    --cluster)
+        CLUSTER=$2
+        shift 2
         ;;
     --)
         shift
@@ -56,6 +61,7 @@ BROKER_HOME="$(
     pwd
 )"
 export BROKER_HOME
+export CONF_DIR=$BROKER_HOME/conf/$CLUSTER
 
 PID_DIR="$(
     cd "${curdir}"
@@ -67,7 +73,11 @@ export JAVA_OPTS="-Xmx1024m -Dfile.encoding=UTF-8"
 export BROKER_LOG_DIR="${BROKER_HOME}/log"
 # java
 if [[ -z "${JAVA_HOME}" ]]; then
-    JAVA="$(command -v java)"
+    if [[ -d "/opt/tiger/jdk/jdk11/" ]]; then
+        JAVA="/opt/tiger/jdk/jdk11/bin/java"
+    else
+        JAVA="$(which java)"
+    fi
 else
     JAVA="${JAVA_HOME}/bin/java"
 fi
@@ -83,7 +93,11 @@ fi
 for f in "${BROKER_HOME}/lib"/*.jar; do
     CLASSPATH="${f}:${CLASSPATH}"
 done
-export CLASSPATH="${CLASSPATH}:${BROKER_HOME}/lib:${BROKER_HOME}/conf"
+export CLASSPATH="${CLASSPATH}:${BROKER_HOME}/lib:${CONF_DIR}"
+
+# add hdfs config dir to CLASSPATH
+export HDFS_CONF_DIR="/opt/tiger/yarn_deploy/hadoop/conf"
+export CLASSPATH="${CLASSPATH}:${HDFS_CONF_DIR}"
 
 while read -r line; do
     envline="$(echo "${line}" |

@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -eo pipefail
+# set -eo pipefail
 
 curdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
@@ -33,10 +33,12 @@ OPTS="$(getopt \
     -l 'console' \
     -l 'cluster:' \
     -l 'version' \
+    -l 'be_psm_prefix:' \
     -- "$@")"
 
 eval set -- "${OPTS}"
 
+BE_PSM_PREFIX=
 RUN_DAEMON=0
 RUN_CONSOLE=0
 RUN_VERSION=0
@@ -69,12 +71,25 @@ while true; do
     esac
 done
 
+if [[ $BE_PSM_PREFIX == "" ]];then
+    BE_PSM_PREFIX="olap.doris"
+fi
+
+if [[ ( ${BE_PSM_PREFIX} != "olap.doris" ) && ( ${BE_PSM_PREFIX} != "inf.compute" ) ]];then
+    echo "psm prefix illegal: '${BE_PSM_PREFIX}'"
+    exit 1
+fi
+
 DORIS_HOME="$(
     cd "${curdir}/.."
     pwd
 )"
 export DORIS_HOME
 export DORIS_CLUSTER=$CLUSTER
+# 双栈只会获得v4的地址
+export FE_IP_PORT=`/opt/tiger/consul_deploy/bin/sd lookup olap.doris.${CLUSTER}_http | tail -1 | cut -d'{' -f1 | xargs | sed 's/\s/:/g'`
+BE_PSM_PREFIX="${BE_PSM_PREFIX}.${CLUSTER}_be"
+echo "be psm: ${BE_PSM_PREFIX}"
 
 setup_java_env() {
     local java_version
@@ -422,6 +437,11 @@ else
     export JEMALLOC_CONF="${JEMALLOC_CONF},prof_prefix:${JEMALLOC_PROF_PRFIX}"
 fi
 
+function register_consul_service() {
+    echo "register service psm: $BE_PSM_PREFIX"
+    /opt/tiger/consul_deploy/bin/sd up $BE_PSM_PREFIX"_http" 8040 --dual-stack --check-port
+}
+
 if [[ "${RUN_DAEMON}" -eq 1 ]]; then
     nohup ${LIMIT:+${LIMIT}} "${DORIS_HOME}/lib/doris_be" "$@" >>"${LOG_DIR}/be.out" 2>&1 </dev/null &
 elif [[ "${RUN_CONSOLE}" -eq 1 ]]; then
@@ -430,3 +450,5 @@ elif [[ "${RUN_CONSOLE}" -eq 1 ]]; then
 else
     ${LIMIT:+${LIMIT}} "${DORIS_HOME}/lib/doris_be" "$@" >>"${LOG_DIR}/be.out" 2>&1 </dev/null
 fi
+
+register_consul_service

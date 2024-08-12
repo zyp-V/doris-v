@@ -154,7 +154,7 @@ public class DorisFE {
             }
             LdapConfig ldapConfig = new LdapConfig();
             if (new File(dorisHomeDir + "/conf/" + dorisClusterName + "/ldap.conf").exists()) {
-                ldapConfig.init(dorisHomeDir + "/conf/ldap.conf");
+                ldapConfig.init(dorisHomeDir + "/conf/" + dorisClusterName + "/ldap.conf");
             }
 
             // check it after Config is initialized, otherwise the config 'check_java_version' won't work.

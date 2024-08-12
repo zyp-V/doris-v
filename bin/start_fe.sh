@@ -16,7 +16,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -eo pipefail
+# Avoid setup failure due to trivial ERROR in EMR. Optimize in the future
+# set -eo pipefail
 
 curdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
@@ -34,7 +35,11 @@ OPTS="$(getopt \
     -l 'version' \
     -l 'metadata_failure_recovery' \
     -l 'console' \
+    -l 'fe_dc:' \
     -l 'cluster:' \
+    -l 'meta_vol:' \
+    -l 'fe_psm_prefix:' \
+    -l 'fe_origin_psm:' \
     -- "$@")"
 
 eval set -- "${OPTS}"
@@ -46,6 +51,12 @@ IMAGE_PATH=''
 IMAGE_TOOL=''
 OPT_VERSION=''
 METADATA_FAILURE_RECOVERY=''
+FE_PSM_PREFIX=
+FE_ORIGIN_PSM=
+FE_DC=
+META_VOL=data00
+EDIT_LOG_PORT=9010
+
 while true; do
     case "$1" in
     --daemon)
@@ -77,6 +88,25 @@ while true; do
 	CLUSTER=$2
 	shift 2 
 	;;
+    --enable_ipv6)
+	shift 2
+	;;
+    --fe_dc) 
+        FE_DC=$2
+        shift 2 
+        ;;
+    --meta_vol)
+        META_VOL=$2
+        shift 2
+        ;;
+    --fe_psm_prefix) 
+        FE_PSM_PREFIX=$2
+        shift 2
+        ;;
+    --fe_origin_psm)
+        FE_ORIGIN_PSM=$2
+        shift 2
+        ;;
     --)
         shift
         break
@@ -88,12 +118,74 @@ while true; do
     esac
 done
 
+if [[ ${FE_PSM_PREFIX} == "" ]]; then
+    FE_PSM_PREFIX="olap.doris"
+fi
+
+if [ ${FE_PSM_PREFIX} != "inf.compute" ] && [ ${FE_PSM_PREFIX} != "olap.doris" ];then
+    echo "Internal error, fe_psm_prefix illegal: '${FE_PSM_PREFIX}'"
+    exit 1
+fi
+
+FE_PSM_PREFIX="${FE_PSM_PREFIX}.${CLUSTER}"
+echo "fe psm: ${FE_PSM_PREFIX}"
+echo "fe origin psm: ${FE_ORIGIN_PSM}"
+export TCE_PSM="${FE_PSM_PREFIX}_fe"
+FE_METADATA_DIR=/${META_VOL}/doris_data/${CLUSTER}/fe
+
 DORIS_HOME="$(
     cd "${curdir}/.."
     pwd
 )"
 export DORIS_HOME
 export DORIS_CLUSTER=$CLUSTER
+
+# process --helper param
+function append_helper(){
+    fe_service_name=$FE_PSM_PREFIX"_mysql.service."$FE_DC
+    # 双栈只会获得v4的地址
+    fe_list=`/opt/tiger/consul_deploy/bin/go/sd --addr-family=dual-stack lookup $fe_service_name`
+    list_length=0
+    for fe_item in $fe_list
+    do
+        host_v4=`echo $fe_item | grep '^\([1-9]\|[1-9][0-9]\|1[0-9][0-9]\|22[0-4][0-9]\|25[0-5]\)\.\([0-9]\|[1-9][0-9]\|1[0-9][0-9]\|2[0-4][0-9]\|25[[0-5]\)\.\([0-9]\|[1-9][0-9]\|1[0-9][0-9]\|2[0-4][0-9]\|25[0-5]\)\.\([0-9]]\|[1-9][0-9]\|1[0-9][0-9]\|2[0-4][0-9]\|25[0-5]\)$'`
+        host_v6=`echo $fe_item | egrep '^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]).){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]).){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))'`
+        if [ ! -z $host_v4 ];
+        then
+            node=$host_v4":"$EDIT_LOG_PORT
+            HELPER=$HELPER","$node
+            let list_length+=1
+        fi
+
+        if [ ! -z $host_v6 ];
+        then
+            node="["$host_v6"]:"$EDIT_LOG_PORT
+            HELPER=$HELPER","$node
+            let list_length+=1
+        fi
+    done
+    # Follower or Observer
+    HELPER=`echo $HELPER | awk '{print substr($1,2)}'`
+    if [ $list_length -le 0 ];
+    then
+        # first fe --- Leader
+        echo "helper is empty and this fe will be Leader."
+        HELPER=
+    fi
+}
+
+# if first deploy in this mechine
+role_file_path=${FE_METADATA_DIR}/image/ROLE
+if [ ! -d $FE_METADATA_DIR ] || [ ! -f $role_file_path ];
+then
+    echo "Doris FE first deploy in this mechine"
+    mkdir -p $FE_METADATA_DIR
+    append_helper
+else
+    echo "Doris FE has been deploy before"
+    HELPER=
+fi
+# process --helper param end
 
 # export env variables from fe.conf
 #
@@ -126,6 +218,9 @@ if [[ -e "${DORIS_HOME}/bin/palo_env.sh" ]]; then
 fi
 
 #Due to the machine not being configured with Java home, in this case, when FE cannot start, it is necessary to prompt an error message indicating that it has not yet been configured with Java home.
+
+# TODO remove this after JAVA_HOME can be configured in EMR
+export JAVA_HOME="/opt/tiger/jdk/jdk17"
 
 if [[ -z "${JAVA_HOME}" ]]; then
     if ! command -v java &>/dev/null; then
@@ -263,6 +358,18 @@ fi
 CUR_DATE=$(date)
 log "start time: ${CUR_DATE}"
 
+function register_consul_service(){
+    if [[ ${FE_ORIGIN_PSM} != "" ]]; then
+        log "register service origin psm: ${FE_ORIGIN_PSM}"
+        /opt/tiger/consul_deploy/bin/sd up $FE_ORIGIN_PSM"_mysql" 9030 --dual-stack --tags "{\"env\":\"dev\",\"weight\":\"10\",\"cluster\":\""${CLUSTER}"\"}" --check-port
+        /opt/tiger/consul_deploy/bin/sd up $FE_ORIGIN_PSM"_http" 8030 --dual-stack --tags "{\"env\":\"dev\",\"weight\":\"10\",\"cluster\":\""${CLUSTER}"\"}" --check-port
+    else
+        log "register service psm: ${FE_PSM_PREFIX}"
+        /opt/tiger/consul_deploy/bin/sd up $FE_PSM_PREFIX"_mysql" 9030 --dual-stack --tags "{\"env\":\"dev\",\"weight\":\"10\",\"cluster\":\""${CLUSTER}"\"}" --check-port
+        /opt/tiger/consul_deploy/bin/sd up $FE_PSM_PREFIX"_http" 8030 --dual-stack --tags "{\"env\":\"dev\",\"weight\":\"10\",\"cluster\":\""${CLUSTER}"\"}" --check-port
+    fi
+}
+
 if [[ "${HELPER}" != "" ]]; then
     # change it to '-helper' to be compatible with code in Frontend
     HELPER="-helper ${HELPER}"
@@ -276,14 +383,18 @@ if [[ "${IMAGE_TOOL}" -eq 1 ]]; then
     fi
 elif [[ "${RUN_DAEMON}" -eq 1 ]]; then
     nohup ${LIMIT:+${LIMIT}} "${JAVA}" ${final_java_opt:+${final_java_opt}} -XX:-OmitStackTraceInFastThrow -XX:OnOutOfMemoryError="kill -9 %p" ${coverage_opt:+${coverage_opt}} org.apache.doris.DorisFE ${HELPER:+${HELPER}} "${METADATA_FAILURE_RECOVERY}" "$@" >>"${STDOUT_LOGGER}" 2>&1 </dev/null &
+    register_consul_service
 elif [[ "${RUN_CONSOLE}" -eq 1 ]]; then
+    register_consul_service
     export DORIS_LOG_TO_STDERR=1
     ${LIMIT:+${LIMIT}} "${JAVA}" ${final_java_opt:+${final_java_opt}} -XX:-OmitStackTraceInFastThrow -XX:OnOutOfMemoryError="kill -9 %p" ${coverage_opt:+${coverage_opt}} org.apache.doris.DorisFE ${HELPER:+${HELPER}} ${OPT_VERSION:+${OPT_VERSION}} "${METADATA_FAILURE_RECOVERY}" "$@" </dev/null
 else
+    register_consul_service
     ${LIMIT:+${LIMIT}} "${JAVA}" ${final_java_opt:+${final_java_opt}} -XX:-OmitStackTraceInFastThrow -XX:OnOutOfMemoryError="kill -9 %p" ${coverage_opt:+${coverage_opt}} org.apache.doris.DorisFE ${HELPER:+${HELPER}} ${OPT_VERSION:+${OPT_VERSION}} "${METADATA_FAILURE_RECOVERY}" "$@" >>"${STDOUT_LOGGER}" 2>&1 </dev/null
 fi
 
 if [[ "${OPT_VERSION}" != "" ]]; then
     exit 0
 fi
+
 echo $! >"${pidfile}"
