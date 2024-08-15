@@ -220,6 +220,7 @@ under the License.
         <module>fe-core</module>
         <module>hive-udf</module>
         <module>be-java-extensions</module>
+        <module>byted-rds-mysql</module>
     </modules>
     <properties>
         <doris.hive.catalog.shade.version>2.1.4</doris.hive.catalog.shade.version>
@@ -375,6 +376,9 @@ under the License.
         <aliyun-sdk-oss.version>3.15.0</aliyun-sdk-oss.version>
         <awssdk.version>2.29.26</awssdk.version>
         <mockito.version>4.11.0</mockito.version>
+        <!-- Bytedance RDS -->
+        <byted.rds.mysql.version>1.2.15</byted.rds.mysql.version>
+        <mysql.jdbc.version>8.0.31</mysql.jdbc.version>
     </properties>
     <profiles>
         <profile>
@@ -1605,6 +1609,17 @@ under the License.
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-inline</artifactId>
                 <version>${mockito.version}</version>
+            </dependency>
+            <!-- Bytedance RDS -->
+            <dependency>
+                <groupId>com.bytedance</groupId>
+                <artifactId>mysql</artifactId>
+                <version>${byted.rds.mysql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>${mysql.jdbc.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

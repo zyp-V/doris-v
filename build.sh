@@ -465,6 +465,7 @@ modules=("")
 if [[ "${BUILD_FE}" -eq 1 ]]; then
     modules+=("fe-common")
     modules+=("fe-core")
+    modules+=("byted-rds-mysql")
     BUILD_DOCS='ON'
 fi
 if [[ "${BUILD_SPARK_DPP}" -eq 1 ]]; then
@@ -636,7 +637,7 @@ mkdir -p "${DORIS_OUTPUT}"
 # Copy Frontend and Backend
 if [[ "${BUILD_FE}" -eq 1 ]]; then
     install -d "${DORIS_OUTPUT}/fe/bin" "${DORIS_OUTPUT}/fe/conf" \
-        "${DORIS_OUTPUT}/fe/webroot" "${DORIS_OUTPUT}/fe/lib"
+        "${DORIS_OUTPUT}/fe/webroot" "${DORIS_OUTPUT}/fe/lib" "${DORIS_OUTPUT}/fe/jdbc_drivers"
 
     cp -r -p "${DORIS_HOME}/bin"/*_fe.sh "${DORIS_OUTPUT}/fe/bin"/
     cp -r -p "${DORIS_HOME}/conf/fe.conf" "${DORIS_OUTPUT}/fe/conf"/
@@ -648,6 +649,7 @@ if [[ "${BUILD_FE}" -eq 1 ]]; then
     cp -r -p "${DORIS_HOME}/docs/build/help-resource.zip" "${DORIS_OUTPUT}/fe/lib"/
     cp -r -p "${DORIS_HOME}/minidump" "${DORIS_OUTPUT}/fe"/
     cp -r -p "${DORIS_HOME}/webroot/static" "${DORIS_OUTPUT}/fe/webroot"/
+    cp -p "${DORIS_HOME}/fe/byted-rds-mysql/target/byted-rds-mysql-jdbc.jar" "${DORIS_OUTPUT}/fe/jdbc_drivers/"
 
     cp -r -p "${DORIS_THIRDPARTY}/installed/webroot"/* "${DORIS_OUTPUT}/fe/webroot/static"/
     copy_common_files "${DORIS_OUTPUT}/fe/"
@@ -669,11 +671,13 @@ if [[ "${OUTPUT_BE_BINARY}" -eq 1 ]]; then
         "${DORIS_OUTPUT}/be/conf" \
         "${DORIS_OUTPUT}/be/lib" \
         "${DORIS_OUTPUT}/be/www" \
-        "${DORIS_OUTPUT}/be/tools/FlameGraph"
+        "${DORIS_OUTPUT}/be/tools/FlameGraph" \
+        "${DORIS_OUTPUT}/be/jdbc_drivers"
 
     cp -r -p "${DORIS_HOME}/be/output/bin"/* "${DORIS_OUTPUT}/be/bin"/
     cp -r -p "${DORIS_HOME}/be/output/conf"/* "${DORIS_OUTPUT}/be/conf"/
     cp -r -p "${DORIS_HOME}/be/output/dict" "${DORIS_OUTPUT}/be/"
+    cp -p "${DORIS_HOME}/fe/byted-rds-mysql/target/byted-rds-mysql-jdbc.jar" "${DORIS_OUTPUT}/be/jdbc_drivers/"
 
     if [[ -d "${DORIS_THIRDPARTY}/installed/lib/hadoop_hdfs/" ]]; then
         cp -r -p "${DORIS_THIRDPARTY}/installed/lib/hadoop_hdfs/" "${DORIS_OUTPUT}/be/lib/"
