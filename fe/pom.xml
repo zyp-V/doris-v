@@ -378,7 +378,7 @@ under the License.
         <mockito.version>4.11.0</mockito.version>
         <!-- Bytedance RDS -->
         <byted.rds.mysql.version>1.2.15</byted.rds.mysql.version>
-        <mysql.jdbc.version>8.0.31</mysql.jdbc.version>
+        <mysql.jdbc.version>8.3.0</mysql.jdbc.version>
     </properties>
     <profiles>
         <profile>

@@ -22,7 +22,10 @@
 package com.byted.doris.rds;
 
 import com.bytedance.mysql.MysqlDriverManager;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
+import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -55,6 +58,7 @@ import java.util.regex.Pattern;
  */
 public class Driver extends com.mysql.cj.jdbc.NonRegisteringDriver {
 
+    private static final Logger LOG = LogManager.getLogger(Driver.class);
     private static final Pattern RDS_REQUIRED_PARAMS_PATTERN = Pattern.compile("(?=.*db_consul=)(?=.*psm=).*");
 
     public Driver() throws SQLException {
@@ -62,16 +66,26 @@ public class Driver extends com.mysql.cj.jdbc.NonRegisteringDriver {
 
     static {
         try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
             DriverManager.registerDriver(new Driver());
-        } catch (SQLException var1) {
-            throw new RuntimeException("Can't register driver!");
+            // Enable JDBC logging to help troubleshoot ZTI issues (Logs are output to the log4j console appender).
+            DriverManager.setLogWriter(new PrintWriter(System.out));
+        } catch (SQLException | ClassNotFoundException e) {
+            throw new RuntimeException("Unable to register the RDS driver! Error: " + e.getMessage(), e);
         }
     }
 
     @Override
     public Connection connect(String url, Properties info) throws SQLException {
-        if (acceptsURL(url)) {
-            return MysqlDriverManager.getConnection(url);
+        try {
+            LOG.info("Connecting to RDS, url: {}", url);
+
+            if (acceptsURL(url)) {
+                return MysqlDriverManager.getConnection(url);
+            }
+        } catch (Throwable e) {
+            LOG.warn("Connection to RDS failed, url: {}", url, e);
+            throw new SQLException(e);
         }
         return null;
     }

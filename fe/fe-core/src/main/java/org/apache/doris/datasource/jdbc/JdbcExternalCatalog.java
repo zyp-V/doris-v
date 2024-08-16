@@ -406,6 +406,9 @@ public class JdbcExternalCatalog extends ExternalCatalog {
             throw new DdlException("Test BE Connection to JDBC Failed: No Alive backends");
         }
         TNetworkAddress address = new TNetworkAddress(aliveBe.getHost(), aliveBe.getBrpcPort());
+
+        LOG.info("Test BE({}:{}) connection to JDBC.", aliveBe.getHost(), aliveBe.getBrpcPort());
+
         try {
             JdbcTable testTable = getTestConnectionJdbcTable(testClient);
             PJdbcTestConnectionRequest request = InternalService.PJdbcTestConnectionRequest.newBuilder()
