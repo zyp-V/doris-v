@@ -20,6 +20,7 @@
 
 package org.apache.doris.analysis;
 
+import org.apache.doris.catalog.ArrayType;
 import org.apache.doris.catalog.MysqlColType;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.catalog.ScalarType;
@@ -27,10 +28,12 @@ import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.FormatOptions;
 import org.apache.doris.common.NotImplementedException;
+import org.apache.doris.common.util.JsonUtil;
 import org.apache.doris.mysql.MysqlProto;
 import org.apache.doris.thrift.TExprNode;
 import org.apache.doris.thrift.TExprNodeType;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.google.common.base.Preconditions;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -59,6 +62,17 @@ public abstract class LiteralExpr extends Expr implements Comparable<LiteralExpr
         Preconditions.checkArgument(!type.equals(Type.INVALID));
         LiteralExpr literalExpr = null;
         switch (type.getPrimitiveType()) {
+            case ARRAY:
+                ArrayType arrayType = (ArrayType) type;
+                Type itemType = arrayType.getItemType();
+                LiteralExpr[] literalArray;
+                ArrayNode jsonNodes = JsonUtil.parseArray(value);
+                literalArray = new LiteralExpr[jsonNodes.size()];
+                for (int i = 0; i < jsonNodes.size(); i++) {
+                    literalArray[i] = create(jsonNodes.get(i).asText(), itemType);
+                }
+                literalExpr = new ArrayLiteral(literalArray);
+                break;
             case NULL_TYPE:
                 literalExpr = new NullLiteral();
                 break;

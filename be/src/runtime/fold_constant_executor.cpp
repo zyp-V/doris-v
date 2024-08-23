@@ -137,6 +137,8 @@ Status FoldConstantExecutor::fold_constant_vexpr(const TFoldConstantParams& para
                                                 ctx->root()->type(), column_ptr, column_type,
                                                 result));
                 }
+                auto* p_type_desc = expr_result.mutable_type_desc();
+                res_type.to_protobuf(p_type_desc);
                 expr_result.set_content(std::move(result));
                 expr_result.mutable_type()->set_type(t_type);
                 expr_result.mutable_type()->set_scale(res_type.scale);

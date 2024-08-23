@@ -21,6 +21,7 @@ import org.apache.doris.nereids.trees.expressions.Like;
 import org.apache.doris.nereids.trees.expressions.Regexp;
 import org.apache.doris.nereids.trees.expressions.StringRegexPredicate;
 import org.apache.doris.nereids.trees.expressions.functions.combinator.StateCombinator;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.AIQuery;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Abs;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Acos;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.AesDecrypt;
@@ -410,6 +411,7 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.Substring;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.SubstringIndex;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Tan;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Tanh;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.TextEmbedding;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.TimeDiff;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Timestamp;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.ToBase64;
@@ -2262,5 +2264,13 @@ public interface ScalarFunctionVisitor<R, C> {
 
     default R visitLastQueryId(LastQueryId queryId, C context) {
         return visitScalarFunction(queryId, context);
+    }
+
+    default R visitAIQuery(AIQuery aiQuery, C context) {
+        return visitScalarFunction(aiQuery, context);
+    }
+
+    default R visitTextEmbedding(TextEmbedding textEmbedding, C context) {
+        return visitScalarFunction(textEmbedding, context);
     }
 }

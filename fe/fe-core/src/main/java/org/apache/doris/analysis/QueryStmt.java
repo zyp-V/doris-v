@@ -527,6 +527,7 @@ public abstract class QueryStmt extends StatementBase implements Queriable {
     @Override
     public void foldConstant(ExprRewriter rewriter, TQueryOptions tQueryOptions) throws AnalysisException {
         Preconditions.checkState(isAnalyzed());
+        analyzer.setOnlyFoldAIFunctions(rewriter.isOnlyFoldAIFunctions());
         Map<String, Expr> exprMap = new HashMap<>();
         collectExprs(exprMap);
         rewriter.rewriteConstant(exprMap, analyzer, tQueryOptions);

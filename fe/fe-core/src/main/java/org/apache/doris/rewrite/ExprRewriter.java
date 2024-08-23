@@ -58,6 +58,7 @@ public class ExprRewriter {
     private boolean useUpBottom = false;
     private int numChanges = 0;
     private final List<ExprRewriteRule> rules;
+    private boolean onlyFoldAIFunctions = false;
 
     // The type of clause that executes the rule.
     // This type is only used in InferFiltersRule, RewriteDateLiteralRule, other
@@ -289,5 +290,13 @@ public class ExprRewriter {
 
     public int getNumChanges() {
         return numChanges;
+    }
+
+    public boolean isOnlyFoldAIFunctions() {
+        return onlyFoldAIFunctions;
+    }
+
+    public void setOnlyFoldAIFunctions(boolean onlyFoldAIFunctions) {
+        this.onlyFoldAIFunctions = onlyFoldAIFunctions;
     }
 }

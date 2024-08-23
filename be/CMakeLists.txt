@@ -779,6 +779,7 @@ install(FILES
     ${BASE_DIR}/../conf/odbcinst.ini
     ${BASE_DIR}/../conf/asan_suppr.conf
     ${BASE_DIR}/../conf/lsan_suppr.conf
+    ${BASE_DIR}/../conf/datamind-tcc.key
     DESTINATION ${OUTPUT_DIR}/conf)
 
 get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)

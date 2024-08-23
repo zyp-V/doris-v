@@ -76,10 +76,17 @@ public:
 
     void set_speed_limit();
 
-    // TODO(zc): support set header
-    // void set_header(const std::string& key, const std::string& value) {
-    // _cntl.http_request().SetHeader(key, value);
-    // }
+    void set_header(const std::string& key, const char* value) {
+        std::string scratch_str = key + ": " + value;
+        _header_list = curl_slist_append(_header_list, scratch_str.c_str());
+        curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, _header_list);
+    }
+
+    void clear_header() {
+        curl_slist_free_all(_header_list);
+        curl_easy_setopt(_curl, CURLOPT_HTTPHEADER, _header_list);
+        _header_list = nullptr;
+    }
 
     std::string get_response_content_type() {
         char* ct = nullptr;
@@ -140,6 +147,8 @@ public:
                                 const std::unordered_set<std::string>& expected_files);
 
     Status execute_post_request(const std::string& payload, std::string* response);
+
+    Status execute_post_request_with_retry(const std::string& payload, std::string* response, int retry_times);
 
     Status execute_delete_request(const std::string& payload, std::string* response);
 

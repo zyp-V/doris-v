@@ -670,6 +670,9 @@ public abstract class ConnectProcessor {
         if (request.isFoldConstantByBe()) {
             ctx.getSessionVariable().setEnableFoldConstantByBe(request.foldConstantByBe);
         }
+        if (!request.isAIFunctionsFoldByBe()) {
+            ctx.getSessionVariable().setEnableAIFunctionsFoldConstant(request.AIFunctionsFoldByBe);
+        }
 
         if (request.isSetSessionVariables()) {
             ctx.getSessionVariable().setForwardedSessionVariables(request.getSessionVariables());

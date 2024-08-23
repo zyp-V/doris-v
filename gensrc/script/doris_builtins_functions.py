@@ -1660,6 +1660,10 @@ visible_functions = {
         [['substring_index'], 'VARCHAR', ['VARCHAR', 'VARCHAR', 'INT'], 'DEPEND_ON_ARGUMENT'],
         [['extract_url_parameter'], 'VARCHAR', ['VARCHAR', 'VARCHAR'], ''],
         [['url_decode'], 'VARCHAR', ['VARCHAR'], ''],
+        [['ai_query'], 'VARCHAR', ['VARCHAR','VARCHAR'], 'ALWAYS_NULLABLE'],
+        [['ai_query'], 'VARCHAR', ['VARCHAR','VARCHAR','VARCHAR'], 'ALWAYS_NULLABLE'],
+        [['text_embedding'], 'ARRAY_FLOAT', ['VARCHAR','VARCHAR'], 'ALWAYS_NULLABLE'],
+        [['text_embedding'], 'ARRAY_FLOAT', ['VARCHAR','VARCHAR', 'VARCHAR'], 'ALWAYS_NULLABLE'],
         [['random_bytes'], 'VARCHAR', ['INT'], ''],
 
         [['sub_replace'], 'VARCHAR', ['VARCHAR', 'VARCHAR', 'INT'], 'ALWAYS_NULLABLE'],

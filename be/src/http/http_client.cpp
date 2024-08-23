@@ -406,6 +406,19 @@ Status HttpClient::execute_post_request(const std::string& payload, std::string*
     return execute(response);
 }
 
+Status HttpClient::execute_post_request_with_retry(const std::string& payload,
+                                                   std::string* response, const int retry_times) {
+    Status status;
+    for (int i = 0; i < retry_times; ++i) {
+        status = execute_post_request(payload, response);
+        if (status.ok()) {
+            return status;
+        }
+        response->clear();
+    }
+    return status;
+}
+
 Status HttpClient::execute_delete_request(const std::string& payload, std::string* response) {
     set_method(DELETE);
     set_payload(payload);

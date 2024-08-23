@@ -19,6 +19,7 @@ package org.apache.doris.catalog;
 
 import org.apache.doris.nereids.trees.expressions.Like;
 import org.apache.doris.nereids.trees.expressions.Regexp;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.AIQuery;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Abs;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Acos;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.AesDecrypt;
@@ -412,6 +413,7 @@ import org.apache.doris.nereids.trees.expressions.functions.scalar.Substring;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.SubstringIndex;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Tan;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Tanh;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.TextEmbedding;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.TimeDiff;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.TimeToSec;
 import org.apache.doris.nereids.trees.expressions.functions.scalar.Timestamp;
@@ -948,7 +950,9 @@ public class BuiltinScalarFunctions implements FunctionHelper {
             scalar(YearsDiff.class, "years_diff"),
             scalar(YearsSub.class, "years_sub"),
             scalar(MultiMatch.class, "multi_match"),
-            scalar(LastQueryId.class, "last_query_id"));
+            scalar(LastQueryId.class, "last_query_id"),
+            scalar(TextEmbedding.class, "text_embedding"),
+            scalar(AIQuery.class, "ai_query"));
 
     public static final BuiltinScalarFunctions INSTANCE = new BuiltinScalarFunctions();
 

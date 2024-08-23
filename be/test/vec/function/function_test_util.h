@@ -19,6 +19,7 @@
 #include <gtest/gtest-test-part.h>
 #include <stdint.h>
 #include <time.h>
+#include <vec/data_types/data_type_array.h>
 
 #include <memory>
 #include <string>
@@ -197,9 +198,6 @@ void check_vec_table_function(TableFunction* fn, const InputTypeSet& input_types
                               const InputDataSet& input_set, const InputTypeSet& output_types,
                               const InputDataSet& output_set, bool test_get_value_func = false);
 
-// Null values are represented by Null()
-// The type of the constant column is represented as follows: Consted {TypeIndex::String}
-// A DataSet with a constant column can only have one row of data
 template <typename ReturnType, bool nullable = false>
 Status check_function(const std::string& func_name, const InputTypeSet& input_types,
                       const DataSet& data_set, bool expect_fail = false) {
@@ -359,6 +357,87 @@ Status check_function(const std::string& func_name, const InputTypeSet& input_ty
         } else {
             check_column_data();
         }
+    }
+
+    return Status::OK();
+}
+
+inline Status check_array_function(const std::string& func_name, const InputTypeSet& input_types,
+                                   const DataSet& data_set, const DataTypePtr& return_type) {
+    // 1.0 create data type
+    ut_type::UTDataTypeDescs descs;
+    EXPECT_TRUE(parse_ut_data_type(input_types, descs));
+
+    // 1.1 insert data and create block
+    auto row_size = data_set.size();
+    Block block;
+    for (size_t i = 0; i < descs.size(); ++i) {
+        auto& desc = descs[i];
+        auto column = desc.data_type->create_column();
+        column->reserve(row_size);
+
+        auto type_ptr = desc.data_type->is_nullable()
+                                ? ((DataTypeNullable*)(desc.data_type.get()))->get_nested_type()
+                                : desc.data_type;
+        for (int j = 0; j < row_size; j++) {
+            EXPECT_TRUE(insert_cell(column, type_ptr, data_set[j].first[i]));
+        }
+
+        if (desc.is_const) {
+            column = ColumnConst::create(std::move(column), row_size);
+        }
+        block.insert({std::move(column), desc.data_type, desc.col_name});
+    }
+
+    // 1.2 prepare args for function call
+    ColumnNumbers arguments;
+    std::vector<doris::TypeDescriptor> arg_types;
+    std::vector<std::shared_ptr<ColumnPtrWrapper>> constant_col_ptrs;
+    std::vector<std::shared_ptr<ColumnPtrWrapper>> constant_cols;
+    for (size_t i = 0; i < descs.size(); ++i) {
+        auto& desc = descs[i];
+        arguments.push_back(i);
+        arg_types.push_back(desc.type_desc);
+        if (desc.is_const) {
+            constant_col_ptrs.push_back(
+                    std::make_shared<ColumnPtrWrapper>(block.get_by_position(i).column));
+            constant_cols.push_back(constant_col_ptrs.back());
+        } else {
+            constant_cols.push_back(nullptr);
+        }
+    }
+
+    // 2. execute function
+    auto func = SimpleFunctionFactory::instance().get_function(
+            func_name, block.get_columns_with_type_and_name(), make_nullable(return_type));
+    EXPECT_TRUE(func != nullptr);
+
+    TypeDescriptor fn_ctx_return;
+    FunctionUtils fn_utils(fn_ctx_return, arg_types, 0);
+    auto* fn_ctx = fn_utils.get_fn_ctx();
+    fn_ctx->set_constant_cols(constant_cols);
+    static_cast<void>(func->open(fn_ctx, FunctionContext::FRAGMENT_LOCAL));
+    static_cast<void>(func->open(fn_ctx, FunctionContext::THREAD_LOCAL));
+
+    block.insert({nullptr, return_type, "result"});
+
+    auto result = block.columns() - 1;
+    auto st = func->execute(fn_ctx, block, arguments, result, row_size);
+    EXPECT_EQ(Status::OK(), st);
+
+    static_cast<void>(func->close(fn_ctx, FunctionContext::THREAD_LOCAL));
+    static_cast<void>(func->close(fn_ctx, FunctionContext::FRAGMENT_LOCAL));
+
+    // 3. check the result of function
+    ColumnPtr column = block.get_columns()[result];
+    EXPECT_TRUE(column != nullptr);
+
+    for (int i = 0; i < row_size; ++i) {
+        Field field;
+        column->get(i, field);
+        const auto& expect_array_data = any_cast<Array>(data_set[i].second);
+        const auto& column_data = field.get<Array>();
+        EXPECT_EQ(expect_array_data, column_data) << " at row " << i;
     }
 
     return Status::OK();

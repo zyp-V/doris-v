@@ -34,6 +34,7 @@ import org.apache.doris.analysis.NullLiteral;
 import org.apache.doris.analysis.SlotRef;
 import org.apache.doris.analysis.TimestampArithmeticExpr;
 import org.apache.doris.analysis.VariableExpr;
+import org.apache.doris.catalog.ArrayType;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.catalog.ScalarType;
@@ -44,6 +45,7 @@ import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.proto.InternalService;
 import org.apache.doris.proto.Types.PScalarType;
+import org.apache.doris.proto.Types.PTypeNode;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.VariableMgr;
 import org.apache.doris.rpc.BackendServiceProxy;
@@ -61,6 +63,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -71,13 +74,13 @@ import java.util.concurrent.TimeUnit;
 /**
  * This rule replaces a constant Expr with its equivalent LiteralExpr by evaluating the
  * Expr in the BE. Exprs that are already LiteralExprs are not changed.
- *
+ * <p>
  * TODO: Expressions fed into this rule are currently not required to be analyzed
  * in order to support constant folding in expressions that contain unresolved
  * references to select-list aliases (such expressions cannot be analyzed).
  * The cross-dependencies between rule transformations and analysis are vague at the
  * moment and make rule application overly complicated.
- *
+ * <p>
  * Examples:
  * 1 + 1 + 1 --> 3
  * toupper('abc') --> 'ABC'
@@ -161,7 +164,19 @@ public class FoldConstantsRule implements ExprRewriteRule {
             Map<String, Expr> sysVarMap = new HashMap<>();
             Map<String, Expr> infoFnMap = new HashMap<>();
             getConstExpr(entry.getValue(), constMap, oriConstMap, analyzer, sysVarMap, infoFnMap);
-
+            // Skip except AI functions when isOnlyFoldAIFunctions is true
+            if (analyzer.isOnlyFoldAIFunctions()) {
+                List<String> keysToRemove = new ArrayList<>();
+                for (Map.Entry<String, TExpr> exprEntry : constMap.entrySet()) {
+                    String exprName = exprEntry.getValue().toString();
+                    if (!exprName.contains("text_embedding") && !exprName.contains("ai_query")) {
+                        keysToRemove.add(exprEntry.getKey());
+                    }
+                }
+                for (String key : keysToRemove) {
+                    constMap.remove(key);
+                }
+            }
             if (!constMap.isEmpty()) {
                 paramMap.put(entry.getKey(), constMap);
                 allConstMap.putAll(oriConstMap);
@@ -418,6 +433,14 @@ public class FoldConstantsRule implements ExprRewriteRule {
                                     || ttype == TPrimitiveType.DECIMAL256) {
                                 type = ScalarType.createDecimalV3Type(scalarType.getPrecision(),
                                         scalarType.getScale());
+                            } else if (ttype == TPrimitiveType.ARRAY) {
+                                List<PTypeNode> typeList = entry1.getValue().getTypeDesc().getTypesList();
+                                // 1. Get the item type
+                                TPrimitiveType itemType = TPrimitiveType
+                                        .findByValue(typeList.get(1).getScalarType().getType());
+                                // 2. Create the array type
+                                type = ArrayType.create(ScalarType
+                                        .fromPrimitiveType(PrimitiveType.fromThrift(itemType)), false);
                             } else {
                                 type = ScalarType.createType(
                                         PrimitiveType.fromThrift(ttype));

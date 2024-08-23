@@ -195,6 +195,8 @@ public class Analyzer {
 
     private boolean isReplay = false;
 
+    private boolean onlyFoldAIFunctions = false;
+
     public void setIsSubquery() {
         isSubquery = true;
         isFirstScopeInSubquery = true;
@@ -2776,5 +2778,13 @@ public class Analyzer {
         for (SlotDescriptor slot : slots) {
             slot.setIsNullable(false);
         }
+    }
+
+    public boolean isOnlyFoldAIFunctions() {
+        return onlyFoldAIFunctions;
+    }
+
+    public void setOnlyFoldAIFunctions(boolean onlyFoldAIFunctions) {
+        this.onlyFoldAIFunctions = onlyFoldAIFunctions;
     }
 }

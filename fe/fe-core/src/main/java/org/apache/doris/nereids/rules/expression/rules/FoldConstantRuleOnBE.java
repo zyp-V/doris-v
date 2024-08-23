@@ -130,7 +130,13 @@ public class FoldConstantRuleOnBE implements ExpressionPatternRuleFactory {
         );
     }
 
+    /**
+     * Determine whether to enable fold by be.
+     */
     public static boolean isEnableFoldByBe(ExpressionMatchingContext<Expression> ctx) {
+        if (isEnableAIFunctionsFoldByBE(ctx)) {
+            return true;
+        }
         return ctx.cascadesContext != null
                 && ctx.cascadesContext.getConnectContext() != null
                 && ctx.cascadesContext.getConnectContext().getSessionVariable().isEnableFoldConstantByBe();
@@ -663,5 +669,16 @@ public class FoldConstantRuleOnBE implements ExpressionPatternRuleFactory {
             bytes[length - 1 - i] = temp;
         }
         return bytes;
+    }
+
+    private static boolean isEnableAIFunctionsFoldByBE(ExpressionMatchingContext<Expression> ctx) {
+        if (ctx.cascadesContext == null || ctx.cascadesContext.getConnectContext() == null) {
+            return false;
+        }
+        Expression expr = ctx.expr;
+        String exprSql = expr.toSql();
+        boolean isEnableEmbeddingFoldConstant = ctx.cascadesContext.getConnectContext().getSessionVariable()
+                .isEnableAIFunctionsFoldConstant();
+        return isEnableEmbeddingFoldConstant && (exprSql.contains("text_embedding") || exprSql.contains("ai_query"));
     }
 }
