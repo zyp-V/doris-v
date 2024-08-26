@@ -414,7 +414,10 @@ Status HttpClient::execute_post_request_with_retry(const std::string& payload,
         if (status.ok()) {
             return status;
         }
-        response->clear();
+        if(i != (retry_times - 1)){
+            response->clear();
+            usleep(500);
+        }
     }
     return status;
 }

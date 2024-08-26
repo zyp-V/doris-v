@@ -44,15 +44,15 @@ Status parse_tcc_response_2_builtin_model_info(
     const rapidjson::Value& languageModelConfig = model_config["languange_model"];
     for (rapidjson::Document::ConstMemberIterator itr = languageModelConfig.MemberBegin();
          itr != languageModelConfig.MemberEnd(); ++itr) {
-        language_model_infos[string(itr->name.GetString())] =
-                make_pair(itr->value[0].GetString(), itr->value[1].GetString());
+        language_model_infos[std::string(itr->name.GetString())] =
+                std::make_pair(itr->value[0].GetString(), itr->value[1].GetString());
     }
     // 2. Embedding model config.
     const rapidjson::Value& embeddingModelConfig = model_config["embedding_model"];
     for (rapidjson::Document::ConstMemberIterator itr = embeddingModelConfig.MemberBegin();
          itr != embeddingModelConfig.MemberEnd(); ++itr) {
-        embedding_model_infos[string(itr->name.GetString())] =
-                make_pair(itr->value[0].GetString(), itr->value[1].GetString());
+        embedding_model_infos[std::string(itr->name.GetString())] =
+                std::make_pair(itr->value[0].GetString(), itr->value[1].GetString());
     }
     // 3. Language model url.
     language_model_url = model_config["language_model_url"].GetString();
@@ -149,9 +149,9 @@ Status parse_parameter_2_model_config(const std::string& parameter, std::string&
     }
     for (rapidjson::Document::ConstMemberIterator itr = document.MemberBegin();
          itr != document.MemberEnd(); ++itr) {
-        string key = itr->name.GetString();
+        std::string key = itr->name.GetString();
         if (key == "api_key") {
-            api_key = string(itr->value.GetString());
+            api_key = std::string(itr->value.GetString());
         }
         if (key == "null_on_failure") {
             null_on_failure = itr->value.GetBool();

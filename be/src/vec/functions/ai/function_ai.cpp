@@ -35,16 +35,6 @@ public:
 
     static FunctionPtr create() { return std::make_shared<FunctionAIQuery>(); }
 
-    Status open(FunctionContext* context, FunctionContext::FunctionStateScope scope) override {
-        Status status;
-        if (scope == FunctionContext::FunctionStateScope::THREAD_LOCAL) {
-            auto client = std::make_unique<ai::LanguageModelClient>();
-            status = client->setup();
-            context->set_function_state(scope, std::shared_ptr(std::move(client)));
-        }
-        return status;
-    }
-
     String get_name() const override { return name; }
 
     size_t get_number_of_arguments() const override { return 0; }
@@ -86,9 +76,9 @@ public:
         }
         // 3. Execute the function.
         // the null map is used to record which row is null.
+        ai::LanguageModelClient language_model_client;
+        RETURN_IF_ERROR(language_model_client.setup());
         auto null_map = ColumnUInt8::create(input_rows_count, 0);
-        auto* language_model_client = reinterpret_cast<ai::LanguageModelClient*>(
-                context->get_function_state(FunctionContext::FunctionStateScope::THREAD_LOCAL));
         for (size_t i = 0; i < input_rows_count; ++i) {
             auto prompt = prompt_column->get_data_at(i);
             auto model_name = model_name_column->get_data_at(i);
@@ -97,10 +87,10 @@ public:
                 auto parameter_string = config_column->get_data_at(i);
                 RETURN_IF_ERROR(config.parse_from_parameter(parameter_string.to_string()));
             }
-            string answer;
+            std::string answer;
             bool null_on_failure = false;
             RETURN_IF_ERROR(config.is_null_on_failure(null_on_failure));
-            if (const auto status = language_model_client->get_answer(
+            if (const auto status = language_model_client.get_answer(
                         prompt.to_string(), model_name.to_string(), config, answer);
                 !status.ok()) {
                 // Skip the error when null_on_failure is true.
@@ -121,19 +111,8 @@ public:
 
 class FunctionTextEmbedding final : public IFunction {
 public:
-    string endpoint;
     static constexpr auto name = "text_embedding";
     static FunctionPtr create() { return std::make_shared<FunctionTextEmbedding>(); }
-
-    Status open(FunctionContext* context, FunctionContext::FunctionStateScope scope) override {
-        Status status;
-        if (scope == FunctionContext::FunctionStateScope::THREAD_LOCAL) {
-            auto client = std::make_unique<ai::EmbeddingModelClient>();
-            status = client->setup();
-            context->set_function_state(scope, std::shared_ptr(std::move(client)));
-        }
-        return status;
-    }
 
     String get_name() const override { return name; }
 
@@ -175,9 +154,9 @@ public:
         std::vector<float> embeddings;
         // 3. Execute the function.
         // the null map is used to record which row is null.
+        ai::EmbeddingModelClient embedding_model_client;
+        RETURN_IF_ERROR(embedding_model_client.setup());
         auto null_map = ColumnUInt8::create(input_rows_count, 0);
-        auto* embedding_model_client = reinterpret_cast<ai::EmbeddingModelClient*>(
-                context->get_function_state(FunctionContext::FunctionStateScope::THREAD_LOCAL));
         for (size_t i = 0; i < input_rows_count; ++i) {
             const auto& text = text_column->get_data_at(i).to_string();
             const auto& model_name = model_name_column->get_data_at(i).to_string();
@@ -189,7 +168,7 @@ public:
             bool null_on_failure = false;
             RETURN_IF_ERROR(config.is_null_on_failure(null_on_failure));
             auto status =
-                    embedding_model_client->get_embedding(text, model_name, config, embeddings);
+                    embedding_model_client.get_embedding(text, model_name, config, embeddings);
             offsets.push_back(static_cast<ColumnArray::Offset64>(embeddings.size()));
             if (!status.ok()) {
                 // Skip the error when null_on_failure is true.

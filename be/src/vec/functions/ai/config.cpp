@@ -57,7 +57,7 @@ void BuiltInModelInfo::init_from_tcc() {
         return;
     }
     client.set_method(GET);
-    const string ak = "Bearer " + tcc_api_key;
+    const std::string ak = "Bearer " + tcc_api_key;
     client.set_header("Authorization", ak.c_str());
     std::string raw_response;
     if (const auto status = client.execute(&raw_response); !status.ok()) {

@@ -61,20 +61,23 @@ Status LanguageModelClient::get_answer(const std::string& prompt, const std::str
     client.clear_header();
     client.set_header("Content-Type", "application/json");
 
-    const string authorization_header = "Bearer " + api_key;
+    const std::string authorization_header = "Bearer " + api_key;
     client.set_header("Authorization", authorization_header.c_str());
     // 3. Build the request.
-    string request;
+    std::string request;
     int timeout_ms = 10000;
     RETURN_IF_ERROR(model_config.get_timeout_ms(timeout_ms));
     client.set_timeout_ms(timeout_ms);
     RETURN_IF_ERROR(generate_language_model_request(model_id, prompt, request));
     int retry_times = 3;
     RETURN_IF_ERROR(model_config.get_retry_times(retry_times));
-    string raw_response;
+    std::string raw_response;
     auto status = client.execute_post_request_with_retry(request, &raw_response, retry_times);
     if (!status.ok()) {
-        return Status::HttpError("Failed to query language model: {}", status.msg());
+        return Status::HttpError("Failed to query language model, status is {}, response is {}, "
+                "please refer to the volcark platform for more details.",
+                                 status.to_string(),
+                                 raw_response);
     }
     status = parse_language_model_response(raw_response, answer);
     if (!status.ok() || answer.empty()) {
@@ -138,20 +141,23 @@ Status EmbeddingModelClient::get_embedding(const std::string& text, const std::s
     client.clear_header();
     client.set_header("Content-Type", "application/json");
 
-    const string authorization_header = "Bearer " + api_key;
+    const std::string authorization_header = "Bearer " + api_key;
     client.set_header("Authorization", authorization_header.c_str());
     // 3. Build the request.
-    string request;
+    std::string request;
     int timeout_ms = 10000;
     RETURN_IF_ERROR(model_config.get_timeout_ms(timeout_ms));
     client.set_timeout_ms(timeout_ms);
     RETURN_IF_ERROR(generate_embedding_model_request(model_id, text, request));
     int retry_times = 3;
     RETURN_IF_ERROR(model_config.get_retry_times(retry_times));
-    string raw_response;
+    std::string raw_response;
     auto status = client.execute_post_request_with_retry(request, &raw_response, retry_times);
     if (!status.ok()) {
-        return Status::HttpError("Failed to query embedding model: {}", status.msg());
+        return Status::HttpError("Failed to query embedding model, status is {}, response is {}, "
+                "please refer to the volcark platform for more details.",
+                status.to_string(),
+                raw_response);
     }
     status = parse_embedding_model_response(raw_response, embedding);
     if (!status.ok() || embedding.empty()) {
