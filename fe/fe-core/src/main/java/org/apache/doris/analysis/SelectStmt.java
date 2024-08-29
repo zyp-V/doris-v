@@ -310,6 +310,10 @@ public class SelectStmt extends QueryStmt {
     /**
      * @return the HAVING clause post-analysis and with aliases resolved
      */
+    public Expr getHavingClause() {
+        return havingClause;
+    }
+
     public Expr getHavingPred() {
         return havingPred;
     }

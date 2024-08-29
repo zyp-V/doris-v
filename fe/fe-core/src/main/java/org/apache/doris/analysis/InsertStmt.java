@@ -146,6 +146,10 @@ public abstract class InsertStmt extends DdlStmt {
         throw new UnsupportedOperationException("only invoked in NativeInsertStmt");
     }
 
+    public String getTableName() {
+        throw new UnsupportedOperationException("only invoked in NativeInsertStmt");
+    }
+
     public String getTbl() {
         throw new UnsupportedOperationException("only invoked in NativeInsertStmt");
     }

@@ -38,6 +38,11 @@ public class ResponseEntityBuilder {
         return ResponseEntity.status(HttpStatus.OK).body(body);
     }
 
+    public static ResponseEntity okWithSpecifiedError(RestApiStatusCode errorCode, String msg) {
+        ResponseBody body = new ResponseBody().code(errorCode).msg(msg);
+        return ResponseEntity.status(HttpStatus.OK).body(body);
+    }
+
     public static ResponseEntity ok(Object data) {
         ResponseBody body = new ResponseBody().code(RestApiStatusCode.OK).msg("success").data(data);
         return ResponseEntity.status(HttpStatus.OK).body(body);
