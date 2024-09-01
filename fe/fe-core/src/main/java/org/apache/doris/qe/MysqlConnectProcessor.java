@@ -167,7 +167,8 @@ public class MysqlConnectProcessor extends ConnectProcessor {
                     e.getClass().getSimpleName() + ", msg: " + e.getMessage());
         }
         if (ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
-            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true);
+            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                    executor.getLogId());
         }
     }
 
@@ -258,7 +259,8 @@ public class MysqlConnectProcessor extends ConnectProcessor {
                     e.getClass().getSimpleName() + ", msg: " + e.getMessage());
         }
         if (ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
-            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true);
+            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                    executor.getLogId());
         }
     }
 

@@ -279,6 +279,8 @@ public class StmtExecutor {
     // The profile of this execution
     private final Profile profile;
     private Boolean isForwardedToMaster = null;
+    // add logId for fe.audit.log
+    private String logId;
 
     private ExecuteStmt execStmt;
     PrepareStmtContext preparedStmtCtx = null;
@@ -1096,20 +1098,31 @@ public class StmtExecutor {
 
     private void analyzeVariablesInStmt(StatementBase statement) throws DdlException {
         SessionVariable sessionVariable = context.getSessionVariable();
+        Map<String, String> optHints = new HashMap<>();
         if (statement instanceof SelectStmt) {
             SelectStmt selectStmt = (SelectStmt) statement;
-            Map<String, String> optHints = selectStmt.getSelectList().getOptHints();
-            if (optHints == null) {
-                optHints = new HashMap<>();
+            optHints = selectStmt.getSelectList().getOptHints();
+            if (selectStmt.isFromInsert()) {
+                optHints.put("enable_page_cache", "false");
             }
-            if (optHints != null) {
-                sessionVariable.setIsSingleSetVar(true);
-                if (selectStmt.isFromInsert()) {
-                    optHints.put("enable_page_cache", "false");
+        } else if (statement instanceof InsertStmt) {
+            QueryStmt queryStmt = ((InsertStmt) statement).getQueryStmt();
+            if (queryStmt instanceof SelectStmt) {
+                optHints = ((SelectStmt) queryStmt).getSelectList().getOptHints();
+            }
+        } else if (statement instanceof SetOperationStmt) {
+            SetOperationStmt setOperationStmt = (SetOperationStmt) statement;
+            optHints = setOperationStmt.collectHints();
+        }
+
+        if (!optHints.isEmpty()) {
+            sessionVariable.setIsSingleSetVar(true);
+            for (String key : optHints.keySet()) {
+                if (key.equals("log_id")) {
+                    this.logId = optHints.get(key);
+                    continue;
                 }
-                for (String key : optHints.keySet()) {
-                    VariableMgr.setVar(sessionVariable, new SetVar(key, new StringLiteral(optHints.get(key))));
-                }
+                VariableMgr.setVar(sessionVariable, new SetVar(key, new StringLiteral(optHints.get(key))));
             }
         }
     }
@@ -3275,7 +3288,7 @@ public class StmtExecutor {
                 coord.close();
             }
             AuditLogHelper.logAuditLog(context, originStmt.originStmt, parsedStmt, getQueryStatisticsForAuditLog(),
-                    true);
+                    true, null);
             if (Config.enable_collect_internal_query_profile) {
                 updateProfile(true);
             }
@@ -3503,5 +3516,10 @@ public class StmtExecutor {
 
     public String getPrepareStmtName() {
         return this.prepareStmtName;
+    }
+
+    // get log_id for fe.audit.log
+    public String getLogId() {
+        return this.logId;
     }
 }

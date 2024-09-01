@@ -701,6 +701,19 @@ public class SetOperationStmt extends QueryStmt {
         return result;
     }
 
+    public Map<String, String> collectHints() {
+        for (SetOperand op : operands) {
+            QueryStmt queryStmt = op.getQueryStmt();
+            if (queryStmt != null && queryStmt instanceof  SelectStmt) {
+                Map<String, String> result = ((SelectStmt) queryStmt).getSelectList().getOptHints();
+                if (result != null && !result.isEmpty()) {
+                    return result;
+                }
+            }
+        }
+        return null;
+    }
+
     @Override
     public String toSql() {
         if (toSqlString != null) {

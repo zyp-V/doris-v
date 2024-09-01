@@ -67,10 +67,10 @@ public class AuditLogHelper {
      * query process. Ignore this error and just write warning log.
      */
     public static void logAuditLog(ConnectContext ctx, String origStmt, StatementBase parsedStmt,
-            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables) {
+            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables, String logId) {
         try {
             origStmt = handleStmt(origStmt, parsedStmt);
-            logAuditLogImpl(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables);
+            logAuditLogImpl(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables, logId);
         } catch (Throwable t) {
             LOG.warn("Failed to write audit log.", t);
         }
@@ -180,7 +180,7 @@ public class AuditLogHelper {
     }
 
     private static void logAuditLogImpl(ConnectContext ctx, String origStmt, StatementBase parsedStmt,
-            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables) {
+            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables, String logId) {
         // slow query
         long endTime = System.currentTimeMillis();
         long elapseMs = endTime - ctx.getStartTime();
@@ -211,7 +211,8 @@ public class AuditLogHelper {
                 .setQueryId(ctx.queryId() == null ? "NaN" : DebugUtil.printId(ctx.queryId()))
                 .setWorkloadGroup(ctx.getWorkloadGroupName())
                 .setFuzzyVariables(!printFuzzyVariables ? "" : ctx.getSessionVariable().printFuzzyVariables())
-                .setCommandType(ctx.getCommand().toString());
+                .setCommandType(ctx.getCommand().toString())
+                .setLogId(logId);
 
         if (ctx.getState().isQuery()) {
             if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {

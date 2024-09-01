@@ -39,6 +39,7 @@ import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.analysis.Subquery;
 import org.apache.doris.analysis.TableName;
 import org.apache.doris.analysis.TableRef;
+import org.apache.doris.analysis.UseStmt;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.View;
@@ -183,6 +184,9 @@ public class GetQueryTableAction extends RestBaseController {
             if (parsedStmt == null) {
                 return (new SpecifiedException(RestApiStatusCode.ANALYZE_ERROR,
                     "parsed statement is null")).getHttpResponse();
+            } else if (parsedStmt instanceof UseStmt) {
+                tableAnalyzer.setDefaultDb(getFullDb(((UseStmt) parsedStmt).getDatabase()));
+                continue;
             } else if (parsedStmt instanceof ShowStmt) {
                 operator = Operator.SHOW;
             } else if (parsedStmt instanceof SelectStmt || parsedStmt instanceof SetOperationStmt) {
@@ -299,6 +303,10 @@ public class GetQueryTableAction extends RestBaseController {
 
         void setParsedStmt(StatementBase parsedStmt) {
             this.parsedStmt = parsedStmt;
+        }
+
+        void setDefaultDb(String defaultDb) {
+            this.defaultDb = defaultDb;
         }
 
         void dispatch(Operator operator) throws SpecifiedException {

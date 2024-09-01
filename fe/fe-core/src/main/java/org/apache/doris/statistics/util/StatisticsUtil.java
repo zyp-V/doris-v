@@ -160,7 +160,8 @@ public class StatisticsUtil {
             r.close();
             if (stmtExecutor != null) {
                 AuditLogHelper.logAuditLog(r.connectContext, stmtExecutor.getOriginStmt().originStmt,
-                        stmtExecutor.getParsedStmt(), stmtExecutor.getQueryStatisticsForAuditLog(), true);
+                        stmtExecutor.getParsedStmt(), stmtExecutor.getQueryStatisticsForAuditLog(), true,
+                        stmtExecutor.getLogId());
             }
         }
     }

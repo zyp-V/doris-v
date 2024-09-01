@@ -109,6 +109,8 @@ public class AuditEvent {
     public long scanBytesFromLocalStorage = -1;
     @AuditField(value = "scanBytesFromRemoteStorage")
     public long scanBytesFromRemoteStorage = -1;
+    @AuditField(value = "LogId")
+    public String logId = "";
 
     public long pushToAuditLogQueueTime;
 
@@ -260,6 +262,11 @@ public class AuditEvent {
 
         public AuditEventBuilder setScanBytesFromRemoteStorage(long scanBytesFromRemoteStorage) {
             auditEvent.scanBytesFromRemoteStorage = scanBytesFromRemoteStorage;
+            return this;
+        }
+
+        public AuditEventBuilder setLogId(String logId) {
+            auditEvent.logId = logId;
             return this;
         }
 
