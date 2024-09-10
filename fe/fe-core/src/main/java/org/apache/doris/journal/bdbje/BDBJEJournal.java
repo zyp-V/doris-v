@@ -499,14 +499,26 @@ public class BDBJEJournal implements Journal { // CHECKSTYLE IGNORE THIS LINE: B
             String helperHostPort = NetUtils.getHostPortInAccessibleFormat(helperNode.getHost(), helperNode.getPort());
             try {
                 bdbEnvironment.setup(dbEnv, selfNodeName, selfNodeHostPort, helperHostPort);
-            } catch (Exception e) {
-                if (e instanceof DatabaseNotFoundException) {
-                    LOG.error("It is not allowed to set metadata_failure_recovery"
+            } catch (Exception exception) {
+                if (exception instanceof DatabaseNotFoundException) {
+                    LOG.warn("It is not allowed to set metadata_failure_recovery"
                             + "when meta dir or bdbje dir is empty， which may mean it is "
                             + "the first time to start this node");
                 }
-                LOG.error("catch an exception when setup bdb environment. will exit.", e);
-                System.exit(-1);
+                LOG.warn("catch an exception when setup bdb environment. will retry it.", exception);
+                selfNodeHostPort = NetUtils.convertHostPortToOldVersion(selfNodeHostPort);
+                helperHostPort = NetUtils.convertHostPortToOldVersion(helperHostPort);
+                try {
+                    bdbEnvironment.setup(dbEnv, selfNodeName, selfNodeHostPort, helperHostPort);
+                } catch (Exception retryException) {
+                    if (retryException instanceof DatabaseNotFoundException) {
+                        LOG.error("It is not allowed to set metadata_failure_recovery"
+                                + "when meta dir or bdbje dir is empty， which may mean it is "
+                                + "the first time to start this node");
+                    }
+                    LOG.error("catch an exception when retry to setup bdb environment. will exit.", retryException);
+                    System.exit(-1);
+                }
             }
         }
 
@@ -578,8 +590,16 @@ public class BDBJEJournal implements Journal { // CHECKSTYLE IGNORE THIS LINE: B
         }
 
         bdbEnvironment.close();
-        bdbEnvironment.setup(new File(environmentPath), selfNodeName, selfNodeHostPort,
-                NetUtils.getHostPortInAccessibleFormat(helperNode.getHost(), helperNode.getPort()));
+        String helperHostPort = NetUtils.getHostPortInAccessibleFormat(helperNode.getHost(), helperNode.getPort());
+        try {
+            bdbEnvironment.setup(new File(environmentPath), selfNodeName, selfNodeHostPort, helperHostPort);
+        } catch (Exception exception) {
+            LOG.warn("catch an exception when setup bdb environment. will retry it.", exception);
+            selfNodeHostPort = NetUtils.convertHostPortToOldVersion(selfNodeHostPort);
+            helperHostPort = NetUtils.convertHostPortToOldVersion(helperHostPort);
+            bdbEnvironment.setup(new File(environmentPath), selfNodeName, selfNodeHostPort, helperHostPort);
+            // if still exist exception, just throw it
+        }
     }
 
     @Override

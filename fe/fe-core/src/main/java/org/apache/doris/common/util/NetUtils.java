@@ -149,6 +149,14 @@ public class NetUtils {
         return addr + ":" + port;
     }
 
+    public static String convertHostPortToOldVersion(String hostAndPost) {
+        if (hostAndPost.contains("[") && hostAndPost.contains("]:")) {
+            int splitIndex = hostAndPost.indexOf(":");
+            return hostAndPost.substring(1, splitIndex - 1) + ":" + hostAndPost.substring(splitIndex + 1);
+        }
+        return hostAndPost;
+    }
+
     public static SystemInfoService.HostInfo resolveHostInfoFromHostPort(String hostPort) throws AnalysisException {
         String[] pair;
         if (hostPort.charAt(0) == '[') {
