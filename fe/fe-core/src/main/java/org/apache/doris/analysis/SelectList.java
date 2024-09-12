@@ -27,6 +27,7 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -103,6 +104,9 @@ public class SelectList {
     }
 
     public Map<String, String> getOptHints() {
+        if (optHints == null) {
+            return new HashMap<>();
+        }
         return optHints;
     }
 
