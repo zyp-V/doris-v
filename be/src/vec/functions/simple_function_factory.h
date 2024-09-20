@@ -33,6 +33,7 @@ constexpr auto DECIMAL256_FUNCTION_SUFFIX {"_decimal256"};
 class SimpleFunctionFactory;
 
 void register_function_size(SimpleFunctionFactory& factory);
+void register_function_ai(SimpleFunctionFactory& factory);
 void register_function_comparison(SimpleFunctionFactory& factory);
 void register_function_comparison_eq_for_null(SimpleFunctionFactory& factory);
 void register_function_hll(SimpleFunctionFactory& factory);
@@ -231,6 +232,7 @@ public:
         static SimpleFunctionFactory instance;
         std::call_once(oc, []() {
             register_function_size(instance);
+            register_function_ai(instance);
             register_function_bitmap(instance);
             register_function_quantile_state(instance);
             register_function_bitmap_variadic(instance);

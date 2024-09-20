@@ -191,7 +191,7 @@ public:
     }
 };
 
-void register_function_size(SimpleFunctionFactory& factory) {
+void register_function_ai(SimpleFunctionFactory& factory) {
     factory.register_function<FunctionAIQuery>();
     factory.register_function<FunctionTextEmbedding>();
 }
