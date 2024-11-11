@@ -131,7 +131,7 @@ FE_PSM_PREFIX="${FE_PSM_PREFIX}.${CLUSTER}"
 echo "fe psm: ${FE_PSM_PREFIX}"
 echo "fe origin psm: ${FE_ORIGIN_PSM}"
 export TCE_PSM="${FE_PSM_PREFIX}_fe"
-FE_METADATA_DIR=/${META_VOL}/doris_data/${CLUSTER}/fe
+FE_METADATA_DIR=/data01/doris/fe/meta
 
 DORIS_HOME="$(
     cd "${curdir}/.."
