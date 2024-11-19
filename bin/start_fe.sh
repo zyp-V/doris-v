@@ -180,7 +180,11 @@ if [ ! -d $FE_METADATA_DIR ] || [ ! -f $role_file_path ];
 then
     echo "Doris FE first deploy in this mechine"
     mkdir -p $FE_METADATA_DIR
-    append_helper
+    if [ -z $HELPER ];
+    then
+        echo "append helper"
+        append_helper
+    fi
 else
     echo "Doris FE has been deploy before"
     HELPER=
