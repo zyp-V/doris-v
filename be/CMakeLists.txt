@@ -294,6 +294,8 @@ if (COMPILER_CLANG)
                         -Wno-implicit-int-conversion
                         -Wno-sign-conversion
                         -Wno-shorten-64-to-32)
+    add_compile_options(-Wno-error=missing-field-initializers
+                        -Wno-missing-field-initializers)
     if (USE_LIBCPP)
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-stdlib=libc++>)
         if (NOT OS_MACOSX)
