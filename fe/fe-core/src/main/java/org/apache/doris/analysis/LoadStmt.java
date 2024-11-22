@@ -31,12 +31,16 @@ import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.loadv2.LoadTask;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.service.GdprService;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -135,6 +139,7 @@ public class LoadStmt extends DdlStmt {
     private final ResourceDesc resourceDesc;
     private final Map<String, String> properties;
     private String user;
+    private static final Logger LOG = LoggerFactory.getLogger(LoadStmt.class);
 
     private boolean isMysqlLoad = false;
 
@@ -240,7 +245,21 @@ public class LoadStmt extends DdlStmt {
     }
 
     public LoadStmt(LabelName label, List<DataDescription> dataDescriptions,
-                    BrokerDesc brokerDesc, Map<String, String> properties, String comment) {
+            BrokerDesc brokerDesc, Map<String, String> properties, String comment) {
+        if (brokerDesc != null && Strings.isNullOrEmpty(brokerDesc.getProperties().getOrDefault("token", ""))) {
+            if (Config.enable_gdpr) {
+                String token = ConnectContext.get().getGdprToken();
+                if (Strings.isNullOrEmpty(token)) {
+                    token = GdprService.getGdprTokenFromENV();
+                }
+                brokerDesc.getProperties().put("token", token);
+            }
+        }
+        if (brokerDesc != null && !Strings.isNullOrEmpty(brokerDesc.getProperties().getOrDefault("token", ""))) {
+            if (LOG.isDebugEnabled()) {
+                LOG.info("gdpr token of LoadStmt label={}: {}", label, brokerDesc.getProperties().get("token"));
+            }
+        }
         this.label = label;
         this.dataDescriptions = dataDescriptions;
         this.brokerDesc = brokerDesc;

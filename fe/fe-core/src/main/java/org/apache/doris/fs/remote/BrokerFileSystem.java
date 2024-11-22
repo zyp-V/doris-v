@@ -30,6 +30,7 @@ import org.apache.doris.datasource.property.PropertyConverter;
 import org.apache.doris.fs.operations.BrokerFileOperations;
 import org.apache.doris.fs.operations.OpParams;
 import org.apache.doris.service.FrontendOptions;
+import org.apache.doris.service.GdprService;
 import org.apache.doris.thrift.TBrokerCheckPathExistRequest;
 import org.apache.doris.thrift.TBrokerCheckPathExistResponse;
 import org.apache.doris.thrift.TBrokerDeletePathRequest;
@@ -79,6 +80,12 @@ public class BrokerFileSystem extends RemoteFileSystem {
     public BrokerFileSystem(String name, Map<String, String> properties) {
         super(name, StorageBackend.StorageType.BROKER);
         properties.putAll(PropertyConverter.convertToHadoopFSProperties(properties));
+        if (!properties.containsKey("token")) {
+            String token = GdprService.getGdprTokenFromENV();
+            if (null != token && !token.isEmpty()) {
+                properties.put("token", token);
+            }
+        }
         this.properties = properties;
         this.operations = new BrokerFileOperations(name, properties);
     }

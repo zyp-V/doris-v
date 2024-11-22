@@ -37,6 +37,7 @@ import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.property.PropertyConverter;
 import org.apache.doris.datasource.property.constants.S3Properties;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.service.GdprService;
 import org.apache.doris.thrift.TFileCompressType;
 import org.apache.doris.thrift.TFileFormatType;
 import org.apache.doris.thrift.TParquetCompressionType;
@@ -51,6 +52,7 @@ import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -675,6 +677,15 @@ public class OutFileClause {
         } else if (storageType == StorageBackend.StorageType.HDFS) {
             if (!brokerProps.containsKey(HdfsResource.HADOOP_FS_NAME)) {
                 brokerProps.put(HdfsResource.HADOOP_FS_NAME, getFsName(filePath));
+            }
+        }
+        if (properties.containsKey("token")) {
+            brokerProps.put("token", properties.get("token"));
+            processedPropKeys.add("token");
+        } else if (!brokerProps.containsKey("token")) {
+            String token = GdprService.getGdprTokenFromENV();
+            if (StringUtils.isNotEmpty(token)) {
+                brokerProps.put("token", token);
             }
         }
         brokerDesc = new BrokerDesc(brokerName, storageType, brokerProps);

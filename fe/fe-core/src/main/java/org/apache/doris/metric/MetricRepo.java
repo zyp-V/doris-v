@@ -132,6 +132,10 @@ public final class MetricRepo {
     public static LongCounterMetric COUNTER_ROUTINE_LOAD_TASK_EXECUTE_COUNT;
     public static LongCounterMetric COUNTER_HIT_SQL_BLOCK_RULE;
 
+    public static LongCounterMetric COUNTER_STREAM_LOAD_GDPR_AUTH_FAILED;
+
+    public static LongCounterMetric COUNTER_MYSQL_GDPR_AUTH_FAILED;
+
     public static AutoMappedMetric<LongCounterMetric> THRIFT_COUNTER_RPC_ALL;
     public static AutoMappedMetric<LongCounterMetric> THRIFT_COUNTER_RPC_LATENCY;
 
@@ -524,6 +528,16 @@ public final class MetricRepo {
         COUNTER_HIT_SQL_BLOCK_RULE = new LongCounterMetric("counter_hit_sql_block_rule", MetricUnit.ROWS,
                 "total hit sql block rule query");
         DORIS_METRIC_REGISTER.addMetrics(COUNTER_HIT_SQL_BLOCK_RULE);
+
+        // Gdpr auth metrics
+        COUNTER_STREAM_LOAD_GDPR_AUTH_FAILED = new LongCounterMetric("gdpr_verify_failed", MetricUnit.REQUESTS,
+                "counter of gdpr auth failed");
+        COUNTER_STREAM_LOAD_GDPR_AUTH_FAILED.addLabel(new MetricLabel("access_path", "stream_load"));
+        DORIS_METRIC_REGISTER.addMetrics(COUNTER_STREAM_LOAD_GDPR_AUTH_FAILED);
+        COUNTER_MYSQL_GDPR_AUTH_FAILED = new LongCounterMetric("gdpr_verify_failed", MetricUnit.REQUESTS,
+            "counter of gdpr auth failed");
+        COUNTER_MYSQL_GDPR_AUTH_FAILED.addLabel(new MetricLabel("access_path", "mysql"));
+        DORIS_METRIC_REGISTER.addMetrics(COUNTER_MYSQL_GDPR_AUTH_FAILED);
 
         THRIFT_COUNTER_RPC_ALL = addLabeledMetrics("method", () ->
                 new LongCounterMetric("thrift_rpc_total", MetricUnit.NOUNIT, ""));

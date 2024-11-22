@@ -72,6 +72,7 @@ import org.apache.doris.proto.Data;
 import org.apache.doris.qe.QueryState.MysqlStateType;
 import org.apache.doris.qe.cache.CacheAnalyzer;
 import org.apache.doris.thrift.TExprNode;
+import org.apache.doris.thrift.TIdentity;
 import org.apache.doris.thrift.TMasterOpRequest;
 import org.apache.doris.thrift.TMasterOpResult;
 import org.apache.doris.thrift.TUniqueId;
@@ -86,6 +87,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
+import org.byted.security.common.LegacyIdentity;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -216,11 +218,11 @@ public abstract class ConnectProcessor {
     }
 
     protected void auditAfterExec(String origStmt, StatementBase parsedStmt,
-            Data.PQueryStatistics statistics, boolean printFuzzyVariables, String logId) {
+            Data.PQueryStatistics statistics, boolean printFuzzyVariables) {
         if (Config.enable_bdbje_debug_mode) {
             return;
         }
-        AuditLogHelper.logAuditLog(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables, logId);
+        AuditLogHelper.logAuditLog(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables);
     }
 
     // only throw an exception when there is a problem interacting with the requesting client
@@ -327,7 +329,6 @@ public abstract class ConnectProcessor {
         long parseSqlFinishTime = System.currentTimeMillis();
 
         boolean usingOrigSingleStmt = origSingleStmtList != null && origSingleStmtList.size() == stmts.size();
-        String logId = null;
         for (int i = 0; i < stmts.size(); ++i) {
             String auditStmt = usingOrigSingleStmt ? origSingleStmtList.get(i) : convertedStmt;
             if (stmts.size() > 1 && usingOrigSingleStmt) {
@@ -355,9 +356,6 @@ public abstract class ConnectProcessor {
 
                 try {
                     executor.execute();
-                    if (logId == null) {
-                        logId = executor.getLogId();
-                    }
                     if (connectType.equals(ConnectType.MYSQL)) {
                         if (i != stmts.size() - 1) {
                             ctx.getState().serverStatus |= MysqlServerStatusFlag.SERVER_MORE_RESULTS_EXISTS;
@@ -386,7 +384,7 @@ public abstract class ConnectProcessor {
                         }
                     }
                     auditAfterExec(auditStmt, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(),
-                            true, logId);
+                            true);
                     // execute failed, skip remaining stmts
                     if (ctx.getState().getStateType() == MysqlStateType.ERR || (!Env.getCurrentEnv().isMaster()
                             && ctx.executor != null && ctx.executor.isForwardToMaster()
@@ -517,7 +515,7 @@ public abstract class ConnectProcessor {
                 ctx.getState().setErrType(QueryState.ErrType.ANALYSIS_ERR);
             }
         }
-        auditAfterExec(origStmt, parsedStmt, statistics, true, null);
+        auditAfterExec(origStmt, parsedStmt, statistics, true);
     }
 
     // analyze the origin stmt and return multi-statements
@@ -661,6 +659,13 @@ public abstract class ConnectProcessor {
         ctx.setQualifiedUser(request.user);
         ctx.setEnv(Env.getCurrentEnv());
         ctx.getState().reset();
+
+        ctx.setGdprIdentity(parseIdentityFromThrift(request.getGdprIdentity()));
+
+        if (request.isSetGdprToken()) {
+            ctx.setGdprToken(request.getGdprToken());
+        }
+
         if (request.isSetUserIp()) {
             ctx.setRemoteIP(request.getUserIp());
         }
@@ -835,5 +840,21 @@ public abstract class ConnectProcessor {
     protected void handleExecute(PrepareCommand prepareCommand, long stmtId, PreparedStatementContext prepCtx,
             ByteBuffer packetBuf, TUniqueId queryId) {
         throw new NotSupportedException("Just MysqlConnectProcessor support execute");
+    }
+
+    private LegacyIdentity parseIdentityFromThrift(TIdentity tIdentity) {
+        LegacyIdentity identity = null;
+        if (Config.enable_gdpr) {
+            if (tIdentity != null) {
+                identity = new LegacyIdentity();
+                identity.PSM = tIdentity.getPsm();
+                identity.User = tIdentity.getUser();
+                identity.Authority = tIdentity.getAuthority();
+                identity.PrimaryAuthType = tIdentity.getPrimaryAuthType();
+                identity.AuthorityChain = tIdentity.getAuthorityChain();
+                identity.Version = tIdentity.getVersion();
+            }
+        }
+        return identity;
     }
 }

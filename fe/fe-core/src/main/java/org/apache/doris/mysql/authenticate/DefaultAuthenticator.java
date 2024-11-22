@@ -20,15 +20,19 @@ package org.apache.doris.mysql.authenticate;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.AuthenticationException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorReport;
+import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mysql.authenticate.password.NativePassword;
 import org.apache.doris.mysql.authenticate.password.NativePasswordResolver;
 import org.apache.doris.mysql.authenticate.password.Password;
 import org.apache.doris.mysql.authenticate.password.PasswordResolver;
 
 import com.google.common.collect.Lists;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.byted.security.common.LegacyIdentity;
 
 import java.io.IOException;
 import java.util.List;
@@ -44,7 +48,22 @@ public class DefaultAuthenticator implements Authenticator {
     @Override
     public AuthenticateResponse authenticate(AuthenticateRequest request) throws IOException {
         if (LOG.isDebugEnabled()) {
-            LOG.debug("user:{} start to default authenticate.", request.getUserName());
+            LOG.debug("user:{} start to gdpr authenticate.", request.getUserName());
+        }
+        if (Config.enable_gdpr) {
+            try {
+                // if verify gdpr token succeed, return identity. Or throw UnauthorizedException if failed
+                ImmutablePair<LegacyIdentity, String> gdprIdentityToken = Env.getCurrentEnv().getGdprService()
+                        .verifyGdprAccount(request.getGdprAccountOrUserName());
+                String gdprUser = gdprIdentityToken.getLeft().User;
+                return new AuthenticateResponse(true, UserIdentity.createAnalyzedUserIdentWithIp(gdprUser, "%"),
+                    gdprIdentityToken, request.getGdprAccountOrUserName().replace(".", "_"));
+            } catch (AuthenticationException e) {
+                MetricRepo.COUNTER_MYSQL_GDPR_AUTH_FAILED.increase(1L);
+            }
+        }
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("user:{} start to default authenticate.", request.getDefaultUserName());
         }
         Password password = request.getPassword();
         if (!(password instanceof NativePassword)) {
@@ -54,13 +73,13 @@ public class DefaultAuthenticator implements Authenticator {
 
         List<UserIdentity> currentUserIdentity = Lists.newArrayList();
         try {
-            Env.getCurrentEnv().getAuth().checkPassword(request.getUserName(), request.getRemoteIp(),
+            Env.getCurrentEnv().getAuth().checkPassword(request.getDefaultUserName(), request.getRemoteIp(),
                     nativePassword.getRemotePasswd(), nativePassword.getRandomString(), currentUserIdentity);
         } catch (AuthenticationException e) {
             ErrorReport.report(e.errorCode, e.msgs);
             return AuthenticateResponse.failedResponse;
         }
-        return new AuthenticateResponse(true, currentUserIdentity.get(0));
+        return new AuthenticateResponse(true, currentUserIdentity.get(0), request.getDefaultUserName());
     }
 
     @Override

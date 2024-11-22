@@ -162,7 +162,7 @@ public class AnalysisJob {
         } finally {
             AuditLogHelper.logAuditLog(stmtExecutor.getContext(), stmtExecutor.getOriginStmt().originStmt,
                     stmtExecutor.getParsedStmt(), stmtExecutor.getQueryStatisticsForAuditLog(),
-                    true, stmtExecutor.getLogId());
+                    true);
         }
     }
 

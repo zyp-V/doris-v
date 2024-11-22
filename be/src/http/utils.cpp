@@ -64,17 +64,32 @@ std::string encode_basic_auth(const std::string& user, const std::string& passwd
 bool parse_basic_auth(const HttpRequest& req, std::string* user, std::string* passwd) {
     const char k_basic[] = "Basic ";
     const auto& auth = req.header(HttpHeaders::AUTHORIZATION);
+
+    /* 
+       if request contains gdpr token, user & passwd need be inited 
+       to avoid parse basic auth failed returning NULL string 
+     */
+    user->assign("");
+    passwd->assign("");
+    
+    bool contain_gdpr_token = false;
+    if (!req.param("token").empty()) {
+        if (auth.empty()) {
+            return true;
+        }
+        contain_gdpr_token = true;
+    }
     if (auth.compare(0, sizeof(k_basic) - 1, k_basic, sizeof(k_basic) - 1) != 0) {
-        return false;
+        return contain_gdpr_token;
     }
     std::string encoded_str = auth.substr(sizeof(k_basic) - 1);
     std::string decoded_auth;
     if (!base64_decode(encoded_str, &decoded_auth)) {
-        return false;
+        return contain_gdpr_token;
     }
     auto pos = decoded_auth.find(':');
     if (pos == std::string::npos) {
-        return false;
+        return contain_gdpr_token;
     }
     user->assign(decoded_auth.c_str(), pos);
     passwd->assign(decoded_auth.c_str() + pos + 1);
@@ -111,6 +126,11 @@ bool parse_basic_auth(const HttpRequest& req, AuthInfo* auth) {
     }
 
     return true;
+}
+
+bool parse_basic_auth(const HttpRequest& req, AuthInfo* auth, std::string* gdpr_token) {
+    gdpr_token->assign(req.param("token"));
+    return parse_basic_auth(req, auth);
 }
 
 // Do a simple decision, only deal a few type

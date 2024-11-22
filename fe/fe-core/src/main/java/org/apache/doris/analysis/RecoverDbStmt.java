@@ -62,7 +62,7 @@ public class RecoverDbStmt extends DdlStmt {
 
         if (!Env.getCurrentEnv().getAccessManager()
                 .checkDbPriv(ConnectContext.get(), InternalCatalog.INTERNAL_CATALOG_NAME, dbName,
-                        PrivPredicate.ALTER_CREATE)) {
+                        PrivPredicate.ALTER_CREATE, true)) {
             ErrorReport.reportAnalysisException(
                     ErrorCode.ERR_DBACCESS_DENIED_ERROR, analyzer.getQualifiedUser(), dbName);
         }

@@ -91,43 +91,6 @@ export FE_IP_PORT=`/opt/tiger/consul_deploy/bin/sd lookup olap.doris.${CLUSTER}_
 BE_PSM_PREFIX="${BE_PSM_PREFIX}.${CLUSTER}_be"
 echo "be psm: ${BE_PSM_PREFIX}"
 
-# export env variables from be.conf
-#
-# LOG_DIR
-# PID_DIR
-export LOG_DIR="${DORIS_HOME}/log"
-PID_DIR="$(
-    cd "${curdir}"
-    pwd
-)"
-export PID_DIR
-
-jdk_version() {
-    local java_cmd="${1}"
-    local result
-    local IFS=$'\n'
-
-    if ! command -v "${java_cmd}" >/dev/null; then
-        echo "ERROR: invalid java_cmd ${java_cmd}" >>"${LOG_DIR}/be.out"
-        result=no_java
-        return 1
-    else
-        echo "INFO: java_cmd ${java_cmd}" >>"${LOG_DIR}/be.out"
-        local version
-        # remove \r for Cygwin
-        version="$("${java_cmd}" -Xms32M -Xmx32M -version 2>&1 | tr '\r' '\n' | grep version | awk '{print $3}')"
-        version="${version//\"/}"
-        if [[ "${version}" =~ ^1\. ]]; then
-            result="$(echo "${version}" | awk -F '.' '{print $2}')"
-        else
-            result="$(echo "${version}" | awk -F '.' '{print $1}')"
-        fi
-        echo "INFO: jdk_version ${result}" >>"${LOG_DIR}/be.out"
-    fi
-    echo "${result}"
-    return 0
-}
-
 setup_java_env() {
     local java_version
 

@@ -19,6 +19,21 @@ package org.apache.doris.httpv2.entity;
 
 // Status of RESTful action
 public enum ActionStatus {
-    OK,
-    FAILED
+    OK(0),
+    FAILED(1),
+    INVALID_GDPR_TOKEN(2),
+    GDPR_NOT_ENABLE(3),
+    ANALYZE_ERROR(5),
+    NOT_SUPPORT_ERROR(6),
+    BAD_REQUEST(403),
+    NOT_FOUND(404),
+    RESOURCE_NOT_FOUND(1001);
+    public int status;
+    ActionStatus(int code) {
+        this.status = code;
+    }
+
+    public int getStatus() {
+        return status;
+    }
 }

@@ -27,9 +27,11 @@ import org.apache.doris.common.util.PrintableMap;
 import org.apache.doris.nereids.parser.Dialect;
 import org.apache.doris.plugin.PluginInfo.PluginType;
 import org.apache.doris.plugin.PluginLoader.PluginStatus;
+import org.apache.doris.plugin.audit.AuditEvent;
 import org.apache.doris.plugin.audit.AuditLoader;
 import org.apache.doris.plugin.audit.AuditLogBuilder;
 import org.apache.doris.plugin.dialect.HttpDialectConverterPlugin;
+import org.apache.doris.qe.AuditKafkaBuilder;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -128,6 +130,20 @@ public class PluginMgr implements Writable {
         }
 
         // other builtin plugins
+
+        // create data transmission : audit_log -> kafka
+        try {
+            if (Config.audit_query_log_enable_kafka) {
+                AuditKafkaBuilder auditKafkaBuilder = new AuditKafkaBuilder(Config.audit_query_log_kafka_cluster,
+                        Config.audit_query_log_kafka_topic, AuditEvent.EventType.AFTER_QUERY);
+                if (!registerBuiltinPlugin(auditKafkaBuilder.getPluginInfo(), auditKafkaBuilder)) {
+                    LOG.warn("failed to register audit kafka builder");
+                }
+            }
+        } catch (Throwable e) {
+            // catch all exception to get failed cause
+            LOG.error("failed to register kafka audit plugin", e);
+        }
     }
 
     // install a plugin from user's command.

@@ -648,6 +648,12 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String DISABLE_INVERTED_INDEX_V1_FOR_VARIANT = "disable_inverted_index_v1_for_variant";
 
+    public static final String REPORT_QUERY_TIME_THRESHOLD = "report_query_time_threshold";
+
+    public static final String FORCE_SEND_PROFILE = "force_send_profile";
+
+    public static final String LOG_ID = "log_id";
+
     // CLOUD_VARIABLES_BEGIN
     public static final String CLOUD_CLUSTER = "cloud_cluster";
     public static final String DISABLE_EMPTY_PARTITION_PRUNE = "disable_empty_partition_prune";
@@ -2333,6 +2339,17 @@ public class SessionVariable implements Serializable, Writable {
     public boolean isEnableSortSpill() {
         return enableSortSpill;
     }
+
+    @VariableMgr.VarAttr(name = REPORT_QUERY_TIME_THRESHOLD)
+    private int reportQueryTimeThreshold = -1;
+
+    // if true, need report to coordinator when plan fragment execute successfully.
+    @VariableMgr.VarAttr(name = FORCE_SEND_PROFILE, needForward = true)
+    public boolean forceSendProfile = false;
+
+    @VariableMgr.VarAttr(name = LOG_ID, needForward = true)
+    public String logId = "";
+
 
     // If this fe is in fuzzy mode, then will use initFuzzyModeVariables to generate some variables,
     // not the default value set in the code.
@@ -4282,6 +4299,27 @@ public class SessionVariable implements Serializable, Writable {
             return true;
         }
         return connectContext.getSessionVariable().enableAggState;
+    }
+
+
+    public int getReportQueryTimeThreshold() {
+        return reportQueryTimeThreshold;
+    }
+
+    public void setReportQueryTimeThreshold(int reportQueryTimeThreshold) {
+        this.reportQueryTimeThreshold = reportQueryTimeThreshold;
+    }
+
+    public boolean isForceSendProfile() {
+        return forceSendProfile;
+    }
+
+    public String getLogId() {
+        return logId;
+    }
+
+    public String setLogId(String logId) {
+        return this.logId = logId;
     }
 
     public static boolean getEnableDecimal256() {

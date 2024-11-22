@@ -28,6 +28,7 @@ import org.apache.doris.common.profile.ProfileTreeBuilder;
 import org.apache.doris.common.profile.ProfileTreeNode;
 import org.apache.doris.common.profile.SummaryProfile;
 import org.apache.doris.nereids.stats.StatsErrorEstimator;
+import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.thrift.TUniqueId;
 
 import com.google.common.base.Strings;
@@ -110,6 +111,8 @@ public class ProfileManager {
     // execution profile's query id is not related with Profile's query id.
     private Map<TUniqueId, ExecutionProfile> queryIdToExecutionProfiles;
 
+    private ProfileToTos profiletoTos = null;
+
     public static ProfileManager getInstance() {
         if (INSTANCE == null) {
             synchronized (ProfileManager.class) {
@@ -184,7 +187,7 @@ public class ProfileManager {
         return this.queryIdToExecutionProfiles.get(queryId);
     }
 
-    public void pushProfile(Profile profile) {
+    public void pushProfile(Profile profile, boolean isLastWriteProfile, long elapsedTimeMs) {
         if (profile == null) {
             return;
         }
@@ -198,6 +201,20 @@ public class ProfileManager {
             LOG.warn("the key or value of Map is null, "
                     + "may be forget to insert 'QUERY_ID' or 'JOB_ID' column into infoStrings");
         }
+
+        if (isLastWriteProfile && Config.audit_log_enable_send_profile_to_tos
+                && ((elapsedTimeMs > Config.audit_log_send_profile_min_time_ms)
+                || (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().isForceSendProfile()))) {
+            // execute profile => Tos
+            if (profiletoTos == null) {
+                profiletoTos = new ProfileToTos(Config.audit_log_profile_tos_bucket,
+                        Config.audit_log_profile_tos_access_key, Config.audit_log_profile_tos_cluster);
+                profiletoTos.start();
+            }
+            profiletoTos.handleProfile(key, profile.getProfileByLevel());
+        }
+
+
         writeLock.lock();
         // a profile may be updated multiple times in queryIdToProfileMap,
         // and only needs to be inserted into the queryIdDeque for the first time.

@@ -20,6 +20,7 @@ package org.apache.doris.httpv2.rest;
 import org.apache.doris.analysis.AlterDatabaseQuotaStmt;
 import org.apache.doris.analysis.AlterDatabaseRename;
 import org.apache.doris.analysis.AlterTableStmt;
+import org.apache.doris.analysis.Analyzer;
 import org.apache.doris.analysis.CreateDbStmt;
 import org.apache.doris.analysis.CreateTableLikeStmt;
 import org.apache.doris.analysis.CreateTableStmt;
@@ -28,8 +29,8 @@ import org.apache.doris.analysis.DescribeStmt;
 import org.apache.doris.analysis.DropDbStmt;
 import org.apache.doris.analysis.DropTableStmt;
 import org.apache.doris.analysis.Expr;
-import org.apache.doris.analysis.InlineViewRef;
 import org.apache.doris.analysis.InsertStmt;
+import org.apache.doris.analysis.QueryStmt;
 import org.apache.doris.analysis.SelectStmt;
 import org.apache.doris.analysis.SetOperationStmt;
 import org.apache.doris.analysis.SetStmt;
@@ -38,11 +39,11 @@ import org.apache.doris.analysis.ShowStmt;
 import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.analysis.Subquery;
 import org.apache.doris.analysis.TableName;
-import org.apache.doris.analysis.TableRef;
 import org.apache.doris.analysis.UseStmt;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
-import org.apache.doris.catalog.View;
+import org.apache.doris.catalog.TableIf;
+import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.UserException;
@@ -54,6 +55,8 @@ import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.system.SystemInfoService;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import org.apache.logging.log4j.LogManager;
@@ -349,161 +352,33 @@ public class GetQueryTableAction extends RestBaseController {
         }
 
         void handleSelect() throws SpecifiedException {
-            // handle with cte as xxx with recursive call
-            Set<String> withTables = new HashSet<>();
-            handleSelect(withTables);
-        }
-
-        void handleSelect(Set<String> withTables) throws SpecifiedException {
-            String statementType = "invalid";
-            List<String> dbTables = new ArrayList<>();
-            boolean isConstant = false;
-            int rawTableSize = dbTableToOperator.size();
-
-            if (parsedStmt instanceof SelectStmt) {
-                SelectStmt selectStmt = (SelectStmt) parsedStmt;
-                if (selectStmt.getTableRefs().isEmpty()) {
-                    // maybe stmt is select 1 + 2, we can't get tables from the sql but it's right.
-                    isConstant = true;
-                } else {
-                    if (selectStmt.hasWithClause()) {
-                        for (View view : selectStmt.getWithClause().getViews()) {
-                            withTables.add(view.getName());
-                            StatementBase parserStmt = this.parsedStmt;
-                            StatementBase queryStmt = view.getQueryStmt();
-                            try {
-                                setParsedStmt(queryStmt);
-                                // run and get tables from childStmt (child can be SetOperationStmt)
-                                handleSelect(withTables);
-                                setParsedStmt(parserStmt);
-                            } catch (Exception e) {
-                                throw e;
-                            }
-                        }
-                    }
-
-                    // handle where k1 in (select ...)
-                    if (selectStmt.hasWhereClause()) {
-                        List<Subquery> subqueries = collectSubQuery(selectStmt.getWhereClause());
-                        for (Subquery subquery : subqueries) {
-                            StatementBase parserStmt = this.parsedStmt;
-                            StatementBase queryStmt = subquery.getStatement();
-                            try {
-                                setParsedStmt(queryStmt);
-                                // run and get tables from childStmt (child can be SetOperationStmt)
-                                handleSelect(withTables);
-                                setParsedStmt(parserStmt);
-                            } catch (Exception e) {
-                                throw e;
-                            }
-                        }
-                    }
-
-                    // handle having k1 in (select ...)
-                    if (selectStmt.hasHavingClause()) {
-                        List<Subquery> subqueries = collectSubQuery(selectStmt.getHavingClause());
-                        for (Subquery subquery : subqueries) {
-                            StatementBase parserStmt = this.parsedStmt;
-                            StatementBase queryStmt = subquery.getStatement();
-                            try {
-                                setParsedStmt(queryStmt);
-                                // run and get tables from childStmt (child can be SetOperationStmt)
-                                handleSelect(withTables);
-                                setParsedStmt(parserStmt);
-                            } catch (Exception e) {
-                                throw e;
-                            }
-                        }
-                    }
-
-                    for (TableRef tableRef : selectStmt.getTableRefs()) {
-                        if (tableRef instanceof InlineViewRef) {
-                            StatementBase parserStmt = this.parsedStmt;
-                            StatementBase queryStmt = ((InlineViewRef) tableRef).getViewStmt();
-                            try {
-                                setParsedStmt(queryStmt);
-                                // run and get tables from childStmt (child can be SetOperationStmt)
-                                handleSelect(withTables);
-                                setParsedStmt(parserStmt);
-                            } catch (Exception e) {
-                                throw e;
-                            }
-                            continue;
-                        } else if (withTables.contains(tableRef.getName().toString())) {
-                            // has handled in withClause
-                            continue;
-                        } else if (!(tableRef instanceof TableRef)) {
-                            throw new SpecifiedException(RestApiStatusCode.NOT_SUPPORT_ERROR,
-                                "only support check table from inlineViewRef or TableRef");
-                        }
-                        String db = "null";
-                        String table = "null";
-                        String completeName = null;
-
-                        TableName tbl = tableRef.getName();
-                        if (tbl == null) {
-                            throw new SpecifiedException(RestApiStatusCode.ANALYZE_ERROR,
-                                "operator [select] -> select table but tableName is null");
-                        }
-                        db = tbl.getDb();
-                        table = tbl.getTbl();
-                        db = Strings.isNullOrEmpty(db) ? defaultDb : getFullDb(db);
-                        if (Strings.isNullOrEmpty(table)) {
-                            throw new SpecifiedException(RestApiStatusCode.ANALYZE_ERROR,
-                                "operator [select] -> select table but table is null");
-                        }
-
-                        completeName = db + "." + table;
-                        dbTables.add(completeName);
-                    }
+            try {
+                if (!(this.parsedStmt instanceof QueryStmt)) {
+                    throw new SpecifiedException(RestApiStatusCode.ANALYZE_ERROR, "not query stmt");
                 }
-                statementType = "SelectStmt";
-            } else if (parsedStmt instanceof SetOperationStmt) {
-                SetOperationStmt setOperationStmt = (SetOperationStmt) parsedStmt;
-
-                for (SetOperationStmt.SetOperand setOperand : setOperationStmt.getOperands()) {
-                    // stmt1 union all stmt2, handle union -> handle queryStmt1 + handle queryStmt2
-                    StatementBase parserStmt = this.parsedStmt;
-                    StatementBase queryStmt = setOperand.getQueryStmt();
-                    try {
-                        setParsedStmt(queryStmt);
-                        // run and get tables from childStmt (child can be SetOperationStmt)
-                        handleSelect(withTables);
-                        setParsedStmt(parserStmt);
-                    } catch (Exception e) {
-                        throw e;
+                ConnectContext context = new ConnectContext();
+                context.setDatabase(this.defaultDb);
+                Analyzer analyzer = new Analyzer(Env.getCurrentEnv(), context);
+                QueryStmt queryStmt = (QueryStmt) this.parsedStmt;
+                Map<Long, TableIf> tableMap = Maps.newHashMap();
+                Set<String> parentViewNameSet = Sets.newHashSet();
+                queryStmt.getTables(analyzer, true, tableMap, parentViewNameSet);
+                String db = "null";
+                String table = "null";
+                String completeName;
+                for (TableIf tbl : tableMap.values()) {
+                    db = ClusterNamespace.getFullName(SystemInfoService.DEFAULT_CLUSTER,
+                        tbl.getDatabase().getFullName());
+                    table = tbl.getName();
+                    completeName = db + "." + table;
+                    if (!dbTableToOperator.containsKey(completeName)) {
+                        Set<Operator> opSet = new HashSet<>();
+                        dbTableToOperator.put(completeName, opSet);
                     }
+                    dbTableToOperator.get(completeName).add(Operator.SELECT);
                 }
-
-                statementType = "SetOperationStmt";
-            }
-
-            if (!isConstant) {
-                if (!dbTables.isEmpty() || dbTableToOperator.size() > rawTableSize) {
-                    // if dbTableToOperator add new element but dbTables is empty
-                    // then it's maybe "xxx union xxx" or
-                    // "with viewTable as (select * from t where xxx) select * from viewTable",eg.;
-                    for (String dbTbl : dbTables) {
-                        if (!dbTbl.equals("null.null")) {
-                            if (!dbTableToOperator.containsKey(dbTbl)) {
-                                Set<Operator> opSet = new HashSet<>();
-                                dbTableToOperator.put(dbTbl, opSet);
-                            }
-                            dbTableToOperator.get(dbTbl).add(Operator.SELECT);
-                        } else {
-                            throw new SpecifiedException(RestApiStatusCode.NOT_SUPPORT_ERROR,
-                                "operator [select] -> table is null and db is null too, statementType: "
-                                    + statementType);
-                        }
-                    }
-                } else {
-                    // nested inline view query could go there
-                    if (LOG.isDebugEnabled()) {
-                        LOG.info("no new table found in handleSelect phase");
-                    }
-                    //   throw new SpecifiedException(RestApiStatusCode.NOT_SUPPORT_ERROR,
-                    //     "operator [select] -> table is null and db is null too, statementType: " + statementType);
-                }
+            } catch (Exception e) {
+                throw new SpecifiedException(RestApiStatusCode.ANALYZE_ERROR, e.getMessage());
             }
         }
 
@@ -614,6 +489,7 @@ public class GetQueryTableAction extends RestBaseController {
                     db = getFullDb(db);
                 }
                 statementType = "DropDbStmt";
+                return;
             } else if (parsedStmt instanceof DropTableStmt) {
                 DropTableStmt dropTableStmt = ((DropTableStmt) parsedStmt);
                 db = dropTableStmt.getDbName();

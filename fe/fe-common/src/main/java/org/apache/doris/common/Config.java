@@ -2827,6 +2827,70 @@ public class Config extends ConfigBase {
     // ATTN: it only used in test environment.
     @ConfField(mutable = true, masterOnly = true)
     public static boolean enable_checkpoint = true;
+    /*---------------------- GDPR CONFIG START ------------------------*/
+    @ConfField(description = {
+        "gdpr 账户缓存池大小",
+        "Control the max num of gdpr account cache size"})
+    public static long gdpr_account_cache_size = 20000;
+
+    /**
+     * Control the max num of gdpr account cache size
+     */
+    @ConfField(description = {
+        "gdpr 账户缓存时间",
+        "Control the expire time gdpr account cache(ms)"})
+    public static long gdpr_account_expire_time_ms = 60000;
+
+    @ConfField(description = {
+        "开启gdpr校验",
+        "Enable gdpr verify to access resource"})
+    public static boolean enable_gdpr = true;
+
+    /*---------------------- GDPR CONFIG END ------------------------*/
+
+    /*---------------------- PROFILE & AUDIT LOG CONFIG START ------------------------*/
+    /**
+     * start process : audit log -> kafka
+     */
+    @ConfField
+    public static boolean audit_query_log_enable_kafka = false;
+
+    @ConfField
+    public static String audit_query_log_kafka_cluster = "";
+
+    @ConfField
+    public static String audit_query_log_kafka_topic = "";
+
+    @ConfField
+    public static int audit_query_log_kafka_parallelism = 1;
+
+
+    /**
+     * start process : profile -> tos
+     */
+    @ConfField
+    public static String audit_log_send_profile_url_prefix = "http://tosv.byted.org/obj/";
+
+    @ConfField
+    public static boolean audit_log_enable_send_profile_to_tos = false;
+
+    @ConfField
+    public static String audit_log_profile_tos_bucket = "";
+
+    @ConfField
+    public static String audit_log_profile_tos_access_key = "";
+
+    @ConfField
+    public static String audit_log_profile_tos_cluster = "default";
+
+    @ConfField(mutable = true)
+    public static int audit_log_send_profile_min_time_ms = 2000;
+
+    @ConfField
+    public static int audit_log_profile_tos_parallelism = 3;
+
+    /*---------------------- PROFILE & AUDIT LOG CONFIG END ------------------------*/
+
 
     //==========================================================================
     //                    begin of cloud config

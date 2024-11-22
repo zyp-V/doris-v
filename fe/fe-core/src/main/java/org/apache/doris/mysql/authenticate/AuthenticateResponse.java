@@ -19,20 +19,36 @@ package org.apache.doris.mysql.authenticate;
 
 import org.apache.doris.analysis.UserIdentity;
 
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.byted.security.common.LegacyIdentity;
+
 public class AuthenticateResponse {
-    public static AuthenticateResponse failedResponse = new AuthenticateResponse(false);
+    public static AuthenticateResponse failedResponse = new AuthenticateResponse(false, null);
 
     private boolean success;
     private UserIdentity userIdentity;
     private boolean isTemp = false;
+    private ImmutablePair<LegacyIdentity, String> gdprIdentityToken = null;
+    private String qualifiedUser;
 
-    public AuthenticateResponse(boolean success) {
+    public AuthenticateResponse(boolean success, String qualifiedUser) {
         this.success = success;
+        this.qualifiedUser = qualifiedUser;
     }
 
-    public AuthenticateResponse(boolean success, UserIdentity userIdentity) {
+    public AuthenticateResponse(boolean success, UserIdentity userIdentity, String qualifiedUser) {
         this.success = success;
         this.userIdentity = userIdentity;
+        this.qualifiedUser = qualifiedUser;
+    }
+
+    public AuthenticateResponse(boolean success, UserIdentity userIdentity,
+                                ImmutablePair<LegacyIdentity, String> gdprIdentityToken, String qualifiedUser) {
+        this.success = success;
+        this.userIdentity = userIdentity;
+        this.gdprIdentityToken = gdprIdentityToken;
+        this.isTemp = true;
+        this.qualifiedUser = qualifiedUser;
     }
 
     public AuthenticateResponse(boolean success, UserIdentity userIdentity, boolean isTemp) {
@@ -65,12 +81,25 @@ public class AuthenticateResponse {
         isTemp = temp;
     }
 
+    public LegacyIdentity getGdprIdentity() {
+        return this.gdprIdentityToken == null ?  null : this.gdprIdentityToken.getLeft();
+    }
+
+    public String getGdprToken() {
+        return this.gdprIdentityToken == null ?  null : this.gdprIdentityToken.getRight();
+    }
+
+    public String getQualifiedUser() {
+        return this.qualifiedUser;
+    }
+
     @Override
     public String toString() {
         return "AuthenticateResponse{"
                 + "success=" + success
                 + ", userIdentity=" + userIdentity
                 + ", isTemp=" + isTemp
+                + ", qualifiedUser=" + qualifiedUser
                 + '}';
     }
 }

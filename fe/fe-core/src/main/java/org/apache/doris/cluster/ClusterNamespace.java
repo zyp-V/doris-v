@@ -30,7 +30,7 @@ import com.google.common.base.Strings;
  */
 public class ClusterNamespace {
 
-    private static final String CLUSTER_DELIMITER = ":";
+    public static final String CLUSTER_DELIMITER = ":";
 
     public static String getFullName(String cluster, String name) {
         return linkString(cluster, name);

@@ -176,6 +176,9 @@ public class HttpServer extends SpringBootServletInitializer {
         } else {
             properties.put("logging.config", Config.custom_config_dir + "/" + SpringLog4j2Config.SPRING_LOG_XML_FILE);
         }
+        //there is an 'application.yml' file jar: org.byted.security:zti-jwt-java jar file
+        //if we not set spring.config.name it will load that file and report ERROR
+        properties.put("spring.config.name", "application.xml");
         new SpringApplicationBuilder()
                 .sources(HttpServer.class)
                 .properties(properties)

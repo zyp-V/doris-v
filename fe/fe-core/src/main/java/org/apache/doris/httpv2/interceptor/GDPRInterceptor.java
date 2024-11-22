@@ -26,47 +26,29 @@ import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.system.SystemInfoService;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.byted.security.common.LegacyIdentity;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.RequestMethod;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.ModelAndView;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-public class AuthInterceptor extends BaseController implements HandlerInterceptor {
-    private static final Logger LOG = LogManager.getLogger(AuthInterceptor.class);
+public class GDPRInterceptor extends BaseController implements HandlerInterceptor {
 
-    private Set<String> gdprURIS = new HashSet<>(Arrays.asList("/stream_load"));
+    private static final Logger LOG = LoggerFactory.getLogger(GDPRInterceptor.class);
 
     @Override
     public boolean preHandle(HttpServletRequest request,
                              HttpServletResponse response, Object handler) throws Exception {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("get prehandle. thread: {}", Thread.currentThread().getId());
-        }
-        // String sessionId = getCookieValue(request, BaseController.PALO_SESSION_ID, response);
-        // SessionValue sessionValue = HttpAuthManager.getInstance().getSessionValue(sessionId);
-        String method = request.getMethod();
-        if (method.equalsIgnoreCase(RequestMethod.OPTIONS.toString())) {
-            response.setStatus(HttpStatus.NO_CONTENT.value());
-            return true;
-        }
-
         verifyGdpr(request);
-        checkAuthWithCookie(request, response);
         return true;
     }
 
     private void verifyGdpr(HttpServletRequest request) throws AuthenticationException {
         ConnectContext ctx = new ConnectContext(null);
-        if (Config.enable_gdpr && isGdprSupportAction(request.getRequestURI())) {
+        if (Config.enable_gdpr) {
             LegacyIdentity identity = null;
             try {
                 identity = Env.getCurrentEnv().getGdprService().verifyGdprToken(
@@ -99,17 +81,13 @@ public class AuthInterceptor extends BaseController implements HandlerIntercepto
         ctx.setCurrentUserIdentity(currentUser);
     }
 
-    private boolean isGdprSupportAction(String requestURI) {
-        return gdprURIS.contains(requestURI);
-    }
-
     @Override
     public void postHandle(HttpServletRequest request, HttpServletResponse response,
-            Object handler, ModelAndView modelAndView) throws Exception {
+                           Object handler, ModelAndView modelAndView) throws Exception {
     }
 
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
-            Object handler, Exception ex) throws Exception {
+                                Object handler, Exception ex) throws Exception {
     }
 }

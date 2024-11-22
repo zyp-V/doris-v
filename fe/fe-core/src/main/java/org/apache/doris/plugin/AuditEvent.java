@@ -17,6 +17,7 @@
 
 package org.apache.doris.plugin;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -50,42 +51,57 @@ public class AuditEvent {
 
     // all fields which is about to be audit should be annotated by "@AuditField"
     // make them all "public" so that easy to visit.
+    @JsonProperty("timestamp")
     @AuditField(value = "Timestamp")
     public long timestamp = -1;
+    @JsonProperty("client_ip")
     @AuditField(value = "Client")
     public String clientIp = "";
+    @JsonProperty("user")
     @AuditField(value = "User")
     public String user = "";
+    @JsonProperty("ctl")
     @AuditField(value = "Ctl")
     public String ctl = "";
+    @JsonProperty("db")
     @AuditField(value = "Db")
     public String db = "";
     @AuditField(value = "CommandType")
     public String commandType = "";
+    @JsonProperty("state")
     @AuditField(value = "State")
     public String state = "";
     @AuditField(value = "ErrorCode")
     public int errorCode = 0;
+    @JsonProperty("error_message")
     @AuditField(value = "ErrorMessage")
     public String errorMessage = "";
+    @JsonProperty("duration_ms")
     @AuditField(value = "Time(ms)")
     public long queryTime = -1;
+    @JsonProperty("scan_bytes")
     @AuditField(value = "ScanBytes")
     public long scanBytes = -1;
+    @JsonProperty("scan_rows")
     @AuditField(value = "ScanRows")
     public long scanRows = -1;
+    @JsonProperty("return_rows")
     @AuditField(value = "ReturnRows")
     public long returnRows = -1;
     @AuditField(value = "StmtId")
     public long stmtId = -1;
+    @JsonProperty("query_id")
     @AuditField(value = "QueryId")
     public String queryId = "";
+    @JsonProperty("is_query")
     @AuditField(value = "IsQuery")
     public boolean isQuery = false;
     @AuditField(value = "IsNereids")
     public boolean isNereids = false;
+    @JsonProperty("fe_ip")
     @AuditField(value = "FeIp")
     public String feIp = "";
+    @JsonProperty("sql")
     @AuditField(value = "Stmt")
     public String stmt = "";
     @AuditField(value = "CpuTimeMS")
@@ -109,8 +125,14 @@ public class AuditEvent {
     public long scanBytesFromLocalStorage = -1;
     @AuditField(value = "scanBytesFromRemoteStorage")
     public long scanBytesFromRemoteStorage = -1;
+    @JsonProperty("log_id")
     @AuditField(value = "LogId")
     public String logId = "";
+    @JsonProperty("cluster")
+    public String cluster = "";
+    @JsonProperty("profile")
+    @AuditField(value = "Profile")
+    public String profile = "";
 
     public long pushToAuditLogQueueTime;
 
@@ -269,6 +291,17 @@ public class AuditEvent {
             auditEvent.logId = logId;
             return this;
         }
+
+        public AuditEventBuilder setProfile(String profile) {
+            auditEvent.profile = profile;
+            return this;
+        }
+
+        public AuditEventBuilder setCluster(String cluster) {
+            auditEvent.cluster = cluster;
+            return this;
+        }
+
 
         public AuditEvent build() {
             return this.auditEvent;

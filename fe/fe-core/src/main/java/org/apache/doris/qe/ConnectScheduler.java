@@ -19,6 +19,7 @@ package org.apache.doris.qe;
 
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ThreadPoolManager;
 import org.apache.doris.qe.ConnectContext.ThreadInfo;
 import org.apache.doris.service.arrowflight.sessions.FlightSqlConnectPoolMgr;
@@ -82,6 +83,48 @@ public class ConnectScheduler {
         context.setConnectionId(nextConnectionId.getAndAdd(1));
         context.resetLoginTime();
         return true;
+    }
+
+    // Register one connection with its connection id.
+    public boolean registerConnection(ConnectContext ctx) {
+        if (numberConnection.incrementAndGet() > maxConnections) {
+            numberConnection.decrementAndGet();
+            return false;
+        }
+        // TODO(weihongkai.me): specify user or psm in gdpr token in order to control max_user_connections
+        if (Config.enable_gdpr) {
+            if (ctx.getGdprIdentity() != null) {
+                connectionMap.put(ctx.getConnectionId(), ctx);
+                return true;
+            }
+        }
+        // Check user
+        connByUser.putIfAbsent(ctx.getQualifiedUser(), new AtomicInteger(0));
+        AtomicInteger conns = connByUser.get(ctx.getQualifiedUser());
+        if (conns.incrementAndGet() > ctx.getEnv().getAuth().getMaxConn(ctx.getQualifiedUser())) {
+            conns.decrementAndGet();
+            numberConnection.decrementAndGet();
+            return false;
+        }
+        connectionMap.put(ctx.getConnectionId(), ctx);
+        if (ctx.getConnectType().equals(ConnectType.ARROW_FLIGHT_SQL)) {
+            flightToken2ConnectionId.put(ctx.getPeerIdentity(), ctx.getConnectionId());
+        }
+        return true;
+    }
+
+    public void unregisterConnection(ConnectContext ctx) {
+        ctx.closeTxn();
+        if (connectionMap.remove(ctx.getConnectionId()) != null) {
+            AtomicInteger conns = connByUser.get(ctx.getQualifiedUser());
+            if (conns != null) {
+                conns.decrementAndGet();
+            }
+            numberConnection.decrementAndGet();
+            if (ctx.getConnectType().equals(ConnectType.ARROW_FLIGHT_SQL)) {
+                flightToken2ConnectionId.remove(ctx.getPeerIdentity());
+            }
+        }
     }
 
     public ConnectContext getContext(int connectionId) {

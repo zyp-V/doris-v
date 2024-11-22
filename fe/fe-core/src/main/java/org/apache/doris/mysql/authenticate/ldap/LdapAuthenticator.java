@@ -111,7 +111,7 @@ public class LdapAuthenticator implements Authenticator {
         // Search the user in doris.
         List<UserIdentity> userIdentities = Env.getCurrentEnv().getAuth()
                 .getUserIdentityForLdap(qualifiedUser, remoteIp);
-        AuthenticateResponse response = new AuthenticateResponse(true);
+        AuthenticateResponse response = new AuthenticateResponse(true, qualifiedUser);
         if (userIdentities.isEmpty()) {
             response.setUserIdentity(tempUserIdentity);
             if (LOG.isDebugEnabled()) {

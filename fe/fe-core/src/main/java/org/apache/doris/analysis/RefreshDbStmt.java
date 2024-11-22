@@ -87,7 +87,17 @@ public class RefreshDbStmt extends DdlStmt {
         }
         // check access
         if (!Env.getCurrentEnv().getAccessManager().checkDbPriv(ConnectContext.get(), catalogName,
-                dbName, PrivPredicate.SHOW)) {
+                dbName, PrivPredicate.DROP, true)) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_DBACCESS_DENIED_ERROR,
+                    ConnectContext.get().getQualifiedUser(), dbName);
+        }
+        if (!Env.getCurrentEnv().getAccessManager().checkDbPriv(ConnectContext.get(), catalogName,
+                dbName, PrivPredicate.CREATE, true)) {
+            ErrorReport.reportAnalysisException(
+                    ErrorCode.ERR_DBACCESS_DENIED_ERROR, analyzer.getQualifiedUser(), dbName);
+        }
+        if (!Env.getCurrentEnv().getAccessManager().checkDbPriv(ConnectContext.get(), catalogName,
+                dbName, PrivPredicate.SHOW, true)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_DB_ACCESS_DENIED_ERROR,
                     PrivPredicate.SHOW.getPrivs().toString(), dbName);
         }

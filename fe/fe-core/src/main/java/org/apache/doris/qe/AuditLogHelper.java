@@ -17,6 +17,7 @@
 
 package org.apache.doris.qe;
 
+import org.apache.doris.DorisFE;
 import org.apache.doris.analysis.NativeInsertStmt;
 import org.apache.doris.analysis.Queriable;
 import org.apache.doris.analysis.QueryStmt;
@@ -67,10 +68,10 @@ public class AuditLogHelper {
      * query process. Ignore this error and just write warning log.
      */
     public static void logAuditLog(ConnectContext ctx, String origStmt, StatementBase parsedStmt,
-            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables, String logId) {
+            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables) {
         try {
             origStmt = handleStmt(origStmt, parsedStmt);
-            logAuditLogImpl(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables, logId);
+            logAuditLogImpl(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables);
         } catch (Throwable t) {
             LOG.warn("Failed to write audit log.", t);
         }
@@ -180,7 +181,7 @@ public class AuditLogHelper {
     }
 
     private static void logAuditLogImpl(ConnectContext ctx, String origStmt, StatementBase parsedStmt,
-            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables, String logId) {
+            org.apache.doris.proto.Data.PQueryStatistics statistics, boolean printFuzzyVariables) {
         // slow query
         long endTime = System.currentTimeMillis();
         long elapseMs = endTime - ctx.getStartTime();
@@ -212,7 +213,24 @@ public class AuditLogHelper {
                 .setWorkloadGroup(ctx.getWorkloadGroupName())
                 .setFuzzyVariables(!printFuzzyVariables ? "" : ctx.getSessionVariable().printFuzzyVariables())
                 .setCommandType(ctx.getCommand().toString())
-                .setLogId(logId);
+                .setCluster(DorisFE.CLUSTER)
+                .setLogId(ctx.getSessionVariable().getLogId());
+
+        // construct TOS profile url
+        // we maybe fail to get TOS profile url because of sending failed.
+        if (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().enableProfile()) {
+            long timeThreshold = ConnectContext.get().getSessionVariable().getReportQueryTimeThreshold();
+            if (Config.audit_log_enable_send_profile_to_tos
+                    && (elapseMs >= Math.max(timeThreshold, Config.audit_log_send_profile_min_time_ms)
+                    || (ConnectContext.get() != null
+                    && ConnectContext.get().getSessionVariable().isForceSendProfile()))) {
+                StringBuilder profileUrl = new StringBuilder(Config.audit_log_send_profile_url_prefix);
+                profileUrl.append(Config.audit_log_profile_tos_bucket);
+                profileUrl.append("/");
+                profileUrl.append(ctx.queryId() == null ? "NaN" : DebugUtil.printId(ctx.queryId()));
+                auditEventBuilder.setProfile(profileUrl.toString());
+            }
+        }
 
         if (ctx.getState().isQuery()) {
             if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {

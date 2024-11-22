@@ -239,7 +239,7 @@ int StreamLoadAction::on_header(HttpRequest* req) {
 
 Status StreamLoadAction::_on_header(HttpRequest* http_req, std::shared_ptr<StreamLoadContext> ctx) {
     // auth information
-    if (!parse_basic_auth(*http_req, &ctx->auth)) {
+    if (!parse_basic_auth(*http_req, &ctx->auth, &ctx->gdpr_token)) {
         LOG(WARNING) << "parse basic authorization failed." << ctx->brief();
         return Status::NotAuthorized("no valid Basic authorization");
     }
@@ -418,6 +418,7 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req,
     request.__set_compress_type(ctx->compress_type);
     request.__set_header_type(ctx->header_type);
     request.__set_loadId(ctx->id.to_thrift());
+    request.__set_gdpr_token(ctx->gdpr_token);
     if (ctx->use_streaming) {
         std::shared_ptr<io::StreamLoadPipe> pipe;
         if (ctx->is_chunked_transfer) {

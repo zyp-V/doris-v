@@ -17,6 +17,7 @@
 
 package org.apache.doris.mysql.authenticate;
 
+import org.apache.doris.common.Config;
 import org.apache.doris.mysql.MysqlAuthPacket;
 import org.apache.doris.mysql.MysqlChannel;
 import org.apache.doris.mysql.MysqlHandshakePacket;
@@ -67,6 +68,11 @@ public class AuthenticatorManager {
         String remoteIp = context.getMysqlChannel().getRemoteIp();
         AuthenticateRequest request = new AuthenticateRequest(userName, password.get(), remoteIp);
         AuthenticateResponse response = authenticator.authenticate(request);
+        context.setQualifiedUser(response.getQualifiedUser());
+        if (Config.enable_gdpr) {
+            context.setGdprIdentity(response.getGdprIdentity());
+            context.setGdprToken(response.getGdprToken());
+        }
         if (!response.isSuccess()) {
             MysqlProto.sendResponsePacket(context);
             return false;

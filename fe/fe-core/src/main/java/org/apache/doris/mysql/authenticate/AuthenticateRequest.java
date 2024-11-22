@@ -17,9 +17,11 @@
 
 package org.apache.doris.mysql.authenticate;
 
+import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.mysql.authenticate.password.Password;
 
 public class AuthenticateRequest {
+    // qualifiedUser consists of ${DEFAULT_USER}:${GDPR_USER} or just a single ${USER}
     private String userName;
     private Password password;
     private String remoteIp;
@@ -32,6 +34,17 @@ public class AuthenticateRequest {
 
     public String getUserName() {
         return userName;
+    }
+
+    public String getGdprAccountOrUserName() {
+        String[] splits = this.userName.split(ClusterNamespace.CLUSTER_DELIMITER);
+        return splits[0];
+    }
+
+    public String getDefaultUserName() {
+        String[] splits = this.userName.split(ClusterNamespace.CLUSTER_DELIMITER);
+        String gdprAccountOrUserName = splits.length == 1 ? splits[0] : splits[1];
+        return gdprAccountOrUserName;
     }
 
     public Password getPassword() {

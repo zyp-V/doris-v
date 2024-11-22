@@ -730,6 +730,16 @@ struct TUserIdentity {
     3: optional bool is_domain
 }
 
+struct TIdentity {
+  1: optional i64 _version
+  2: optional string _authority
+  3: optional list<string> _authority_chain
+  4: optional string _primary_auth_type
+  5: optional string _psm
+  6: optional string _user
+  7: optional i64 _expire_time
+}
+
 const i32 TSNAPSHOT_REQ_VERSION1 = 3; // corresponding to alpha rowset
 const i32 TSNAPSHOT_REQ_VERSION2 = 4; // corresponding to beta rowset
 // the snapshot request should always set prefer snapshot version to TPREFER_SNAPSHOT_REQ_VERSION

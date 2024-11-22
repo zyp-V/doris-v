@@ -55,8 +55,6 @@ public class MysqlProto {
         if (strList.length > 1) {
             tmpUser = strList[0];
         }
-
-        context.setQualifiedUser(tmpUser);
         return tmpUser;
     }
 

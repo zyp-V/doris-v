@@ -19,6 +19,7 @@ package org.apache.doris.httpv2.config;
 
 import org.apache.doris.common.Config;
 import org.apache.doris.httpv2.interceptor.AuthInterceptor;
+import org.apache.doris.httpv2.interceptor.GDPRInterceptor;
 
 import org.springframework.boot.web.server.ErrorPage;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
@@ -41,6 +42,10 @@ public class WebConfigurer implements WebMvcConfigurer {
                 .addPathPatterns("/rest/v1/**")
                 .excludePathPatterns("/", "/api/**", "/rest/v1/login", "/rest/v1/logout", "/static/**", "/metrics")
                 .excludePathPatterns("/image", "/info", "/version", "/put", "/journal_id", "/role", "/check", "/dump");
+
+        //only stream load should validate GDPR now
+        registry.addInterceptor(new GDPRInterceptor())
+                .addPathPatterns("/api/*/*/_stream_load");
     }
 
     @Override

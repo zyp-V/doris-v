@@ -573,6 +573,10 @@ struct TMasterOpRequest {
     30: optional TGroupCommitInfo groupCommitInfo
     31: optional binary prepareExecuteBuffer
     32: optional bool AIFunctionsFoldByBe
+    
+    // bytedance variable
+    40: optional Types.TIdentity gdpr_identity
+    41: optional string gdpr_token
 }
 
 struct TColumnDefinition {
@@ -626,6 +630,9 @@ struct TLoadTxnBeginRequest {
     11: optional Types.TUniqueId request_id
     12: optional string token
     15: optional i64 backend_id
+    // bytedance variable
+    30: optional string auth_code_uuid
+    31: optional string gdpr_token
 }
 
 struct TLoadTxnBeginResult {
@@ -730,6 +737,8 @@ struct TStreamLoadPutRequest {
     54: optional bool group_commit // deprecated
     55: optional i32 stream_per_node;
     56: optional string group_commit_mode
+    // bytedance variable
+    70: optional string gdpr_token
 }
 
 struct TStreamLoadPutResult {
@@ -807,6 +816,7 @@ struct TLoadTxnCommitRequest {
     18: optional bool groupCommit
     19: optional i64 receiveBytes
     20: optional i64 backendId 
+    30: optional string gdpr_token
 }
 
 struct TLoadTxnCommitResult {
@@ -888,6 +898,7 @@ struct TLoadTxnRollbackRequest {
     13: optional list<string> tbls
     14: optional string auth_code_uuid
     15: optional string label
+    30: optional string gdpr_token
 }
 
 struct TLoadTxnRollbackResult {

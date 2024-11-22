@@ -1120,6 +1120,41 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         checkPasswordAndPrivs(user, passwd, db, null, clientIp, predicate);
     }
 
+    private void gdprTokenCheckResource(final String gdprToken, final String database,
+            final String table, final String sourceIp) throws AuthenticationException {
+        if (null == gdprToken || gdprToken.isEmpty()) {
+            throw new AuthenticationException("gdpr token is empty");
+        }
+
+        if (Env.getCurrentEnv().getGdprService().checkGlobalPriv(gdprToken, sourceIp)) {
+            return;
+        }
+
+        Env.getCurrentEnv().getGdprService()
+                .verifyTokenAndCheckPermission(database, table, gdprToken, PrivPredicate.LOAD, sourceIp);
+    }
+
+    private void checkGDPRAndPasswordAndPrivs(String gdprToken, String user, String passwd, String db,
+            String tbl, String clientIp, PrivPredicate predicate) throws AuthenticationException {
+        checkGDPRAndPasswordAndPrivs(gdprToken, user, passwd, db, Lists.newArrayList(tbl),
+                clientIp, predicate);
+    }
+
+    private void checkGDPRAndPasswordAndPrivs(String gdprToken, String user, String passwd, String db,
+            List<String> tables, String clientIp, PrivPredicate predicate) throws AuthenticationException {
+        if (Config.enable_gdpr) {
+            try {
+                for (String tbl : tables) {
+                    gdprTokenCheckResource(gdprToken, db, tbl, clientIp);
+                }
+                return;
+            } catch (AuthenticationException e) {
+                LOG.warn("Gdpr token verify failed.", e);
+            }
+        }
+        checkPasswordAndPrivs(user, passwd, db, tables, clientIp, predicate);
+    }
+
     private void checkPasswordAndPrivs(String user, String passwd, String db, List<String> tables,
             String clientIp, PrivPredicate predicate) throws AuthenticationException {
 
@@ -1210,9 +1245,8 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         if (request.isSetAuthCode()) {
             // TODO(cmy): find a way to check
         } else if (Strings.isNullOrEmpty(request.getToken())) {
-            checkSingleTablePasswordAndPrivs(request.getUser(), request.getPasswd(), request.getDb(),
-                    request.getTbl(),
-                    request.getUserIp(), PrivPredicate.LOAD);
+            checkGDPRAndPasswordAndPrivs(request.getGdprToken(), request.getUser(), request.getPasswd(),
+                    request.getDb(), request.getTbl(), request.getUserIp(), PrivPredicate.LOAD);
         } else {
             if (!checkToken(request.getToken())) {
                 throw new AuthenticationException("Invalid token: " + request.getToken());
@@ -1615,11 +1649,11 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             checkToken(request.getToken());
         } else {
             if (CollectionUtils.isNotEmpty(request.getTbls())) {
-                checkPasswordAndPrivs(request.getUser(), request.getPasswd(), request.getDb(),
-                        request.getTbls(), request.getUserIp(), PrivPredicate.LOAD);
+                checkGDPRAndPasswordAndPrivs(request.getGdprToken(), request.getUser(), request.getPasswd(),
+                        request.getDb(), request.getTbls(), request.getUserIp(), PrivPredicate.LOAD);
             } else {
-                checkSingleTablePasswordAndPrivs(request.getUser(), request.getPasswd(), request.getDb(),
-                        request.getTbl(), request.getUserIp(), PrivPredicate.LOAD);
+                checkGDPRAndPasswordAndPrivs(request.getGdprToken(), request.getUser(), request.getPasswd(),
+                        request.getDb(), request.getTbl(), request.getUserIp(), PrivPredicate.LOAD);
             }
         }
         if (request.groupCommit) {
@@ -1820,14 +1854,12 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             // multi table load
             if (CollectionUtils.isNotEmpty(request.getTbls())) {
                 for (String tbl : request.getTbls()) {
-                    checkSingleTablePasswordAndPrivs(request.getUser(), request.getPasswd(), request.getDb(),
-                            tbl,
-                            request.getUserIp(), PrivPredicate.LOAD);
+                    checkGDPRAndPasswordAndPrivs(request.getGdprToken(), request.getUser(),
+                            request.getPasswd(), request.getDb(), tbl, request.getUserIp(), PrivPredicate.LOAD);
                 }
             } else {
-                checkSingleTablePasswordAndPrivs(request.getUser(), request.getPasswd(), request.getDb(),
-                        request.getTbl(),
-                        request.getUserIp(), PrivPredicate.LOAD);
+                checkGDPRAndPasswordAndPrivs(request.getGdprToken(), request.getUser(), request.getPasswd(),
+                        request.getDb(), request.getTbl(), request.getUserIp(), PrivPredicate.LOAD);
             }
         }
         String dbName = request.getDb();

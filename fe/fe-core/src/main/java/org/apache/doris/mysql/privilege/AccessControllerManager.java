@@ -34,6 +34,7 @@ import com.google.common.collect.Maps;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.byted.security.common.LegacyIdentity;
 
 import java.util.List;
 import java.util.Map;
@@ -149,7 +150,33 @@ public class AccessControllerManager {
     }
 
     // ==== Database ====
+    public boolean checkDbPriv(ConnectContext ctx, String qualifiedDb, PrivPredicate wanted) {
+        return checkDbPriv(ctx, qualifiedDb, wanted, false);
+    }
+
+    public boolean checkDbPriv(ConnectContext ctx, String qualifiedDb, PrivPredicate wanted, boolean needCheckGDPR) {
+        if (Config.enable_gdpr && ctx != null && ctx.getGdprIdentity() != null) {
+            if (!needCheckGDPR || checkGDPRGlobalPriv(ctx, wanted)) {
+                return true;
+            }
+        }
+        return checkDbPriv(ctx.getCurrentUserIdentity(), qualifiedDb, wanted);
+    }
+
+    public boolean checkDbPriv(UserIdentity currentUser, String db, PrivPredicate wanted) {
+        return checkDbPriv(currentUser, Auth.DEFAULT_CATALOG, db, wanted);
+    }
+
     public boolean checkDbPriv(ConnectContext ctx, String ctl, String db, PrivPredicate wanted) {
+        return checkDbPriv(ctx, ctl, db, wanted, false);
+    }
+
+    public boolean checkDbPriv(ConnectContext ctx, String ctl, String db, PrivPredicate wanted, boolean needCheckGDPR) {
+        if (Config.enable_gdpr && ctx != null && ctx.getGdprIdentity() != null) {
+            if (!needCheckGDPR || checkGDPRGlobalPriv(ctx, wanted)) {
+                return true;
+            }
+        }
         return checkDbPriv(ctx.getCurrentUserIdentity(), ctl, db, wanted);
     }
 
@@ -174,6 +201,46 @@ public class AccessControllerManager {
 
     public boolean checkTblPriv(UserIdentity currentUser, String ctl, String db, String tbl, PrivPredicate wanted) {
         boolean hasGlobal = checkGlobalPriv(currentUser, wanted);
+
+        boolean checkResourceGdpr;
+        ConnectContext ctx = ConnectContext.get();
+        LegacyIdentity identity = null;
+        if (ctx != null) {
+            identity = ctx.getGdprIdentity();
+        }
+        if (Config.enable_gdpr && identity != null) {
+            try {
+                // doris cluster maintainer
+                if (Env.getCurrentEnv().getGdprService().checkGlobalPriv(identity)) {
+                    LOG.info("Gdpr check global priv succeed, user: {}, psm: {}, ip: {}",
+                            identity.User, identity.PSM,
+                            ctx.getRemoteIP() == null ? "" : ctx.getRemoteIP());
+                    return true;
+                }
+                if (wanted.getPrivs().containsNodePriv()) {
+                    return false;
+                }
+                if (wanted.getPrivs().containsPrivs(
+                        Privilege.SELECT_PRIV,
+                        Privilege.LOAD_PRIV,
+                        Privilege.ALTER_PRIV,
+                        Privilege.CREATE_PRIV,
+                        Privilege.DROP_PRIV)) {  // Gdpr token only check permission of these
+                    if (StringUtils.isNotBlank(db)) {
+                        // qualifiedDb = [default_cluster:dbname | dbname]
+                        String[] clusterDb = db.split(":");
+                        db = clusterDb.length == 2 ? clusterDb[1] : clusterDb[0];
+                    }
+                    checkResourceGdpr = Env.getCurrentEnv().getGdprService()
+                            .checkResource(identity, db, tbl, wanted);
+                    if (checkResourceGdpr) {
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("Gdpr check resource permission failed, empty identity", e);
+            }
+        }
         return getAccessControllerOrDefault(ctl).checkTblPriv(hasGlobal, currentUser, ctl, db, tbl, wanted);
     }
 
@@ -260,5 +327,19 @@ public class AccessControllerManager {
         Objects.requireNonNull(db, "require db object");
         Objects.requireNonNull(tbl, "require tbl object");
         return getAccessControllerOrDefault(ctl).evalRowFilterPolicies(currentUser, ctl, db, tbl);
+    }
+
+    public boolean checkGDPRGlobalPriv(ConnectContext ctx, PrivPredicate wanted) {
+        LegacyIdentity identity = null;
+        if (ctx != null) {
+            identity = ctx.get().getGdprIdentity();
+        }
+        if (!Env.getCurrentEnv().getGdprService().checkGlobalPriv(identity)) {
+            return false;
+        }
+        LOG.info("database auth type={} : Gdpr check global priv succeed, user: {}, psm: {}, ip: {}",
+                wanted, identity.User, identity.PSM,
+                ConnectContext.get().getRemoteIP() == null ? "" : ConnectContext.get().getRemoteIP());
+        return true;
     }
 }

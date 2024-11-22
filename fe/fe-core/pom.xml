@@ -297,10 +297,6 @@ under the License.
             <groupId>javax.validation</groupId>
             <artifactId>validation-api</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-        </dependency>
         <!-- https://mvnrepository.com/artifact/com.github.oshi/oshi-core -->
         <dependency>
             <groupId>com.github.oshi</groupId>
@@ -558,6 +554,18 @@ under the License.
             <artifactId>hadoop-auth</artifactId>
         </dependency>
 
+        <!-- gdpr dependency -->
+        <dependency>
+            <groupId>org.byted.infsec</groupId>
+            <artifactId>dps</artifactId>
+            <exclusions>
+                <exclusion>
+                    <artifactId>logback-classic</artifactId>
+                    <groupId>ch.qos.logback</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.iceberg</groupId>
             <artifactId>iceberg-core</artifactId>
@@ -689,6 +697,30 @@ under the License.
         <dependency>
             <groupId>com.esotericsoftware</groupId>
             <artifactId>kryo-shaded</artifactId>
+        </dependency>
+
+        <!-- gdpr dependency -->
+        <dependency>
+            <groupId>org.byted.security</groupId>
+            <artifactId>zti-jwt-helper-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.byted.security</groupId>
+            <artifactId>zti-jwt-java</artifactId>
+        </dependency>
+
+        <!-- support kafka -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka-clients.version}</version>
+        </dependency>
+
+        <!-- support tos -->
+        <dependency>
+            <groupId>com.bytedance.storage</groupId>
+            <artifactId>tos-core</artifactId>
+            <version>1.4.18</version>
         </dependency>
 
         <!-- for arrow flight sql -->

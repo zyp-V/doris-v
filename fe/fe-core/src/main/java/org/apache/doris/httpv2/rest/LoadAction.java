@@ -40,6 +40,7 @@ import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.TNetworkAddress;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Sets;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -117,15 +118,17 @@ public class LoadAction extends RestBaseController {
         }
 
         String authToken = request.getHeader("token");
-        // if auth token is not null, check it first
-        if (!Strings.isNullOrEmpty(authToken)) {
+        // if auth token (non-gdpr) is not null, check it first
+        if (!Strings.isNullOrEmpty(authToken) && !Config.enable_gdpr) {
             if (!checkClusterToken(authToken)) {
                 throw new UnauthorizedException("Invalid token: " + authToken);
             }
             return executeWithClusterToken(request, db, table, true);
         } else {
             try {
-                executeCheckPassword(request, response);
+                if (ConnectContext.get() == null || ConnectContext.get().getGdprIdentity() == null) {
+                    executeCheckPassword(request, response);
+                }
                 return executeWithoutPassword(request, response, db, table, true, groupCommit);
             } finally {
                 ConnectContext.remove();
@@ -382,7 +385,10 @@ public class LoadAction extends RestBaseController {
         Backend backend = null;
         BeSelectionPolicy policy = null;
         String qualifiedUser = ConnectContext.get().getQualifiedUser();
-        Set<Tag> userTags = Env.getCurrentEnv().getAuth().getResourceTags(qualifiedUser);
+        Set<Tag> userTags = Sets.newHashSet();
+        if (ConnectContext.get().getGdprIdentity() == null) { // gdpr users do not have to specify resource tag
+            userTags = Env.getCurrentEnv().getAuth().getResourceTags(qualifiedUser);
+        }
         policy = new BeSelectionPolicy.Builder()
                 .addTags(userTags)
                 .setEnableRoundRobin(true)

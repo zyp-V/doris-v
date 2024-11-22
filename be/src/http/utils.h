@@ -37,6 +37,8 @@ bool parse_basic_auth(const HttpRequest& req, std::string* user, std::string* pa
 
 bool parse_basic_auth(const HttpRequest& req, AuthInfo* auth);
 
+bool parse_basic_auth(const HttpRequest& req, AuthInfo* auth, std::string* gdpr_token);
+
 void do_file_response(const std::string& dir_path, HttpRequest* req,
                       bufferevent_rate_limit_group* rate_limit_group = nullptr,
                       bool is_acquire_md5 = false);

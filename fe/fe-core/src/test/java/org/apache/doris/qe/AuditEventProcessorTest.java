@@ -62,11 +62,11 @@ public class AuditEventProcessorTest {
                 .setScanRows(200000)
                 .setReturnRows(1)
                 .setStmtId(1234)
-                .setStmt("select * from tbl1")
-                .setLogId("2021/3/28-11:40").build();
+                .setStmt("select * from tbl1").build();
 
         Assert.assertEquals("127.0.0.1", event.clientIp);
         Assert.assertEquals(200000, event.scanRows);
+        Assert.assertEquals("2021/3/28-11:40", event.logId);
     }
 
     @Test

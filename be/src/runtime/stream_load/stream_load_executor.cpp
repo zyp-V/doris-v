@@ -103,7 +103,8 @@ Status StreamLoadExecutor::execute_plan_fragment(std::shared_ptr<StreamLoadConte
             DorisMetrics::instance()->stream_load_rows_total->increment(ctx->number_loaded_rows);
         } else {
             LOG(WARNING) << "fragment execute failed"
-                         << ", err_msg=" << status->to_string() << ", " << ctx->brief();
+                         << ", err_msg=" << status->to_string() << ", " << ctx->brief()
+                         << ", error_url=" << ctx->error_url;
             ctx->number_loaded_rows = 0;
             // cancel body_sink, make sender known it
             if (ctx->body_sink != nullptr) {
@@ -172,6 +173,7 @@ Status StreamLoadExecutor::begin_txn(StreamLoadContext* ctx) {
     request.db = ctx->db;
     request.tbl = ctx->table;
     request.label = ctx->label;
+    request.__set_gdpr_token(ctx->gdpr_token);
     // set timestamp
     request.__set_timestamp(GetCurrentTimeMicros());
     if (ctx->timeout_second != -1) {
@@ -302,6 +304,7 @@ void StreamLoadExecutor::get_commit_request(StreamLoadContext* ctx,
     request.__set_thrift_rpc_timeout_ms(config::txn_commit_rpc_timeout_ms);
     request.tbls = ctx->table_list;
     request.__isset.tbls = true;
+    request.__set_gdpr_token(ctx->gdpr_token);
 
     VLOG_DEBUG << "commit txn request:" << apache::thrift::ThriftDebugString(request);
 
@@ -364,6 +367,7 @@ void StreamLoadExecutor::rollback_txn(StreamLoadContext* ctx) {
     request.tbl = ctx->table;
     request.txnId = ctx->txn_id;
     request.__set_reason(ctx->status.to_string());
+    request.__set_gdpr_token(ctx->gdpr_token);
     request.tbls = ctx->table_list;
     request.__isset.tbls = true;
 

@@ -19,6 +19,7 @@ package org.apache.doris.common.profile;
 
 import org.apache.doris.common.util.ProfileManager;
 import org.apache.doris.common.util.RuntimeProfile;
+import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.planner.Planner;
 
 import com.google.common.collect.Lists;
@@ -105,8 +106,8 @@ public class Profile {
             if (planner != null) {
                 this.planNodeMap = planner.getExplainStringMap();
             }
-            ProfileManager.getInstance().pushProfile(this);
             this.isFinished = isFinished;
+            ProfileManager.getInstance().pushProfile(this, isFinished, TimeUtils.getElapsedTimeMs(startTime));
         } catch (Throwable t) {
             LOG.warn("update profile failed", t);
             throw t;

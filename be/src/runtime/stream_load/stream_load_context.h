@@ -159,6 +159,7 @@ public:
     AuthInfo auth;
     bool two_phase_commit = false;
     std::string load_comment;
+    std::string gdpr_token;
 
     // the following members control the max progress of a consuming
     // process. if any of them reach, the consuming will finish.
