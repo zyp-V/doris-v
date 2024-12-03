@@ -154,7 +154,7 @@ if [[ "$#" == 1 ]]; then
     # default
     BUILD_FE=1
     BUILD_BE=1
-    BUILD_BROKER=1
+    BUILD_BROKER=0
     BUILD_META_TOOL='OFF'
     BUILD_INDEX_TOOL='OFF'
     BUILD_SPARK_DPP=1
@@ -243,7 +243,7 @@ else
     if [[ "${PARAMETER_COUNT}" -eq 3 ]] && [[ "${PARAMETER_FLAG}" -eq 1 ]]; then
         BUILD_FE=1
         BUILD_BE=1
-        BUILD_BROKER=1
+        BUILD_BROKER=0
         BUILD_META_TOOL='ON'
         BUILD_INDEX_TOOL='ON'
         BUILD_SPARK_DPP=1
