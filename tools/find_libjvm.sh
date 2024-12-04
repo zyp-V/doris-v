@@ -55,7 +55,7 @@ else
 fi
 
 if [[ "$(uname -s)" != 'Darwin' ]]; then
-    echo "${LIBJVM_PATH}"/*/libjvm.so
+    echo "${LIBJVM_PATH}"/server/libjvm.so
 else
     echo "${LIBJVM_PATH}"/*/libjvm.dylib
 fi
