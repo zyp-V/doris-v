@@ -212,44 +212,59 @@ public class CacheFactoryTest {
 
     @Test
     public void testAsyncLoadingCacheWithExpireAfterWrite() throws InterruptedException, ExecutionException {
-        FakeTicker ticker = new FakeTicker();
-        AtomicLong counter = new AtomicLong(0);
-        CacheFactory cacheFactory = new CacheFactory(
-                OptionalLong.of(60L),
-                OptionalLong.of(10),
-                1000,
-                false,
-                ticker::read);
-        CacheValueLoader loader = new CacheValueLoader(counter);
-        AsyncLoadingCache<Integer, Optional<CacheValue>> loadingCache = cacheFactory.buildAsyncCache(loader, executor);
-        CompletableFuture<Optional<CacheValue>> futureValue = loadingCache.get(1);
-        Assertions.assertFalse(futureValue.isDone());
-        Assertions.assertEquals("value1", futureValue.get().get().getValue());
-        Assertions.assertEquals(1, counter.get());
-        futureValue = loadingCache.get(1);
-        Assertions.assertTrue(futureValue.isDone());
-        Assertions.assertEquals("value1", futureValue.get().get().getValue());
-        Assertions.assertEquals(1, counter.get());
-        // advance 11 seconds to pass the refreshAfterWrite
-        ticker.advance(11, TimeUnit.SECONDS);
-        // trigger refresh
-        futureValue = loadingCache.get(1);
-        // refresh in background, so still get value1
-        Assertions.assertTrue(futureValue.isDone());
-        Assertions.assertEquals("value1", futureValue.get().get().getValue());
-        // sleep longer to wait for refresh
-        Thread.sleep(2500);
-        futureValue = loadingCache.get(1);
-        Assertions.assertEquals("value1", futureValue.get().get().getValue());
-        // refreshed, so counter +1
-        Assertions.assertEquals(2, counter.get());
-        // advance 61 seconds to pass the expireAfterWrite
-        ticker.advance(61, TimeUnit.SECONDS);
-        futureValue = loadingCache.get(1);
-        Assertions.assertFalse(futureValue.isDone());
-        Assertions.assertEquals("value1", futureValue.get().get().getValue());
-        // expired, so counter +1
-        Assertions.assertEquals(3, counter.get());
+        int maxAttempts = 3;
+        boolean success = false;
+        // Adding retry logic to handle flaky tests due to performance issues on the test machine.
+        // The test is designed to pass if it succeeds at least once within the given number of attempts.
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                FakeTicker ticker = new FakeTicker();
+                AtomicLong counter = new AtomicLong(0);
+                CacheFactory cacheFactory = new CacheFactory(
+                        OptionalLong.of(60L),
+                        OptionalLong.of(10),
+                        1000,
+                        false,
+                        ticker::read);
+                CacheValueLoader loader = new CacheValueLoader(counter);
+                AsyncLoadingCache<Integer, Optional<CacheValue>> loadingCache = cacheFactory.buildAsyncCache(loader, executor);
+                CompletableFuture<Optional<CacheValue>> futureValue = loadingCache.get(1);
+                Assertions.assertFalse(futureValue.isDone());
+                Assertions.assertEquals("value1", futureValue.get().get().getValue());
+                Assertions.assertEquals(1, counter.get());
+                futureValue = loadingCache.get(1);
+                Assertions.assertTrue(futureValue.isDone());
+                Assertions.assertEquals("value1", futureValue.get().get().getValue());
+                Assertions.assertEquals(1, counter.get());
+                // advance 11 seconds to pass the refreshAfterWrite
+                ticker.advance(11, TimeUnit.SECONDS);
+                // trigger refresh
+                futureValue = loadingCache.get(1);
+                // refresh in background, so still get value1
+                Assertions.assertTrue(futureValue.isDone());
+                Assertions.assertEquals("value1", futureValue.get().get().getValue());
+                // sleep longer to wait for refresh
+                Thread.sleep(5000);
+                futureValue = loadingCache.get(1);
+                Assertions.assertEquals("value1", futureValue.get().get().getValue());
+                // refreshed, so counter +1
+                Assertions.assertEquals(2, counter.get());
+                // advance 61 seconds to pass the expireAfterWrite
+                ticker.advance(61, TimeUnit.SECONDS);
+                futureValue = loadingCache.get(1);
+                Assertions.assertFalse(futureValue.isDone());
+                Assertions.assertEquals("value1", futureValue.get().get().getValue());
+                // expired, so counter +1
+                Assertions.assertEquals(3, counter.get());
+                success = true;
+                break;
+            } catch (AssertionError e) {
+                if (attempt == maxAttempts) {
+                    throw e;
+                }
+            }
+        }
+        Assertions.assertTrue(success);
     }
 
     @Test

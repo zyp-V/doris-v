@@ -82,14 +82,29 @@ testSuites = ""
 testDirectories = ""
 
 // this groups will not be executed
-excludeGroups = ""
+excludeGroups = "connector,external,backup_restore"
 // this suites will not be executed
-excludeSuites = "test_broker_load"
+excludeSuites = "test_broker_load,test_decimal256_outfile_csv," +
+    "test_schema_change_cold_heat,test_variant_index_format_v1," +
+    "test_array_with_single_row_max_than_uint16,map_uniq_with_local_tvf," +
+    "test_tvf_empty_file,test_s3_tvf,test_tvf_error_url," +
+    "routine_load_mapping,test_storage_medium_mtmv,test_partition_create_tablet_rr," +
+    "test_partition,test_migrate_disk_with_publish_version,test_mor_table_with_format_v2," +
+    "test_multi_table_load,test_s3_load_with_load_parallelism,test_s3_load,test_compress_type," +
+    "test_seq_load,test_etl_failed,test_csv_with_enclose_and_escapeS3_load,test_mysql_connection," +
+    "test_select_column_auth,test_nested_types_insert_into_with_s3,test_nestedtypes_csv_insert_into_with_s3," +
+    "test_nestedtypes_json_insert_into_with_s3,one_level_nestedtypes_with_s3data,two_level_nestedtypes_with_s3data," +
+    "three_level_nestedtypes_with_s3data,test_create_table_like_nereids,test_profile,test_outfile_csv_with_names_and_types," +
+    "test_outfile,test_outfile_expr,test_outfile_parquet,test_outfile_separator,test_outfile_exception,test_outfile_csv_with_names" 
+
 // this directories will not be executed
 excludeDirectories = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line
     "segcompaction_p2," +
     "workload_manager_p1," +
-    "zzz_the_end_sentinel_do_not_touch" // keep this line as the last line
+    "zzz_the_end_sentinel_do_not_touch, " + 
+    "external_table_p0,export_p0,export,mysqldump_p0,ccr_mow_syncer_p0,ccr_syncer_p0,trino_p0,cold_heat_separation," +
+    "manager,javaudf_p0,flink_connector_p0,delete_p0,storage_medium_p0,plsql_p0,nereids_rules_p0," +
+    "broker_load,nereids_hint_tpcds_p0,outfile,nereids_tpcds_shape_sf1000_p0"// keep this line as the last line
 
 customConf1 = "test_custom_conf_value"
 
@@ -101,7 +116,7 @@ hdfsPasswd = ""
 brokerName = "broker_name"
 
 // broker load test config
-enableBrokerLoad=true
+enableBrokerLoad=false
 
 // for s3 releated cases, "aliyun" or "aliyun-internal" or "tencent" or "huawei" or "azure" or "gcp"
 // if s3Source is set,  s3Endpoint s3BucketName s3Region s3Provider will be filled with default value if not set

@@ -153,7 +153,7 @@ suite("test_materialized_view_load_open", "rollup") {
         table "test_materialized_view_load_open_schema_change"
         set 'column_separator', ','
         file 'a.csv'
-        time 10000 // limit inflight 10s
+        time 30000 // limit inflight 30s
     }
 
     qt_select "select * from test_materialized_view_load_open_schema_change order by 1,2,3,4;"

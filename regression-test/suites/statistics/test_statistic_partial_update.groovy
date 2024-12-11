@@ -31,7 +31,7 @@ suite("test_statistic_partial_update", "p0, nonConcurrent") {
         COMMENT "OLAP" 
         DISTRIBUTED BY HASH(`key1`) BUCKETS 2
         PROPERTIES (
-            "enable_unique_key_merge_on_write" = false,
+            "enable_unique_key_merge_on_write" = "false",
             "replication_num" = "1"
         );
     """

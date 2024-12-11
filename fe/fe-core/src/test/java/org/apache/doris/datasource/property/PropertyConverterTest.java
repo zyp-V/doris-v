@@ -28,6 +28,7 @@ import org.apache.doris.analysis.TableValuedFunctionRef;
 import org.apache.doris.backup.Repository;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Resource;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.FeMetaVersion;
@@ -85,6 +86,7 @@ public class PropertyConverterTest extends TestWithFeService {
         checkSet.addAll(Arrays.asList(S3Properties.ENDPOINT, S3Properties.ACCESS_KEY, S3Properties.SECRET_KEY));
         expectedCredential.put("access_key", "akk");
         expectedCredential.put("secret_key", "skk");
+        Config.enable_gdpr = false;
     }
 
     @Test

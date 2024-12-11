@@ -38,6 +38,7 @@ set +o posix
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 export DORIS_HOME="${ROOT}"
+export DORIS_CLUSTER=""
 
 . "${DORIS_HOME}/env.sh"
 
@@ -120,7 +121,7 @@ if [[ "$#" != 1 ]]; then
 fi
 
 if [[ -z "${PARALLEL}" ]]; then
-    PARALLEL="$(($(nproc) / 5 + 1))"
+    PARALLEL="$(($(nproc) / 4 + 1))"
 fi
 
 CMAKE_BUILD_TYPE="${BUILD_TYPE_UT:-ASAN}"
@@ -158,6 +159,29 @@ update_submodule() {
 
 update_submodule "be/src/apache-orc" "apache-orc" "https://github.com/apache/doris-thirdparty/archive/refs/heads/orc.tar.gz"
 update_submodule "be/src/clucene" "clucene" "https://github.com/apache/doris-thirdparty/archive/refs/heads/clucene.tar.gz"
+
+jdk_version() {
+    local java_cmd="${1}"
+    local result
+    local IFS=$'\n'
+
+    if [[ -z "${java_cmd}" ]]; then
+        result=no_java
+        return 1
+    else
+        local version
+        # remove \r for Cygwin
+        version="$("${java_cmd}" -Xms32M -Xmx32M -version 2>&1 | tr '\r' '\n' | grep version | awk '{print $3}')"
+        version="${version//\"/}"
+        if [[ "${version}" =~ ^1\. ]]; then
+            result="$(echo "${version}" | awk -F '.' '{print $2}')"
+        else
+            result="$(echo "${version}" | awk -F '.' '{print $1}')"
+        fi
+    fi
+    echo "${result}"
+    return 0
+}
 
 if [[ "_${DENABLE_CLANG_COVERAGE}" == "_ON" ]]; then
     echo "export DORIS_TOOLCHAIN=clang" >>custom_env.sh
@@ -367,28 +391,6 @@ export CLASSPATH="${DORIS_CLASSPATH}"
 # DORIS_CLASSPATH is for self-managed jni
 export DORIS_CLASSPATH="-Djava.class.path=${DORIS_CLASSPATH}"
 
-jdk_version() {
-    local java_cmd="${1}"
-    local result
-    local IFS=$'\n'
-
-    if [[ -z "${java_cmd}" ]]; then
-        result=no_java
-        return 1
-    else
-        local version
-        # remove \r for Cygwin
-        version="$("${java_cmd}" -Xms32M -Xmx32M -version 2>&1 | tr '\r' '\n' | grep version | awk '{print $3}')"
-        version="${version//\"/}"
-        if [[ "${version}" =~ ^1\. ]]; then
-            result="$(echo "${version}" | awk -F '.' '{print $2}')"
-        else
-            result="$(echo "${version}" | awk -F '.' '{print $1}')"
-        fi
-    fi
-    echo "${result}"
-    return 0
-}
 
 # check java version and choose correct JAVA_OPTS
 java_version="$(

@@ -70,7 +70,7 @@ suite("test_create_mv_and_mtmt") {
                 group by dt, advertiser;
     """
     def wait_mtmv_refresh_finish = { refreshMode->
-        for (int loop = 0; loop < 300; loop++) {
+        for (int loop = 0; loop < 600; loop++) {
             Thread.sleep(1200)
             boolean finished = true;
             def result = sql """

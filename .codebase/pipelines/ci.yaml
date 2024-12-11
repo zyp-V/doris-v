@@ -1,0 +1,118 @@
+# Author: @chenboyang.922
+name: Test
+trigger:
+  change:
+    types:
+      - create
+      - push
+    notification:
+      when: [failure]
+jobs:
+  docker_default:
+    name: Unit Test
+    runs-on:
+      spec: c1.16xlarge
+    image: hub.byted.org/compile/doris_compile_2.1.0:beb208fec8bca45e8c28ab1f81eeadf4
+    continue-on-error: true
+    timeout: 60
+    steps:
+      - uses: actions/checkout
+        inputs:
+          depth: 1
+      - name: be_ut
+        commands:
+          - BUILD_TYPE=DEBUG bash run-be-ut.sh --run
+        continue-on-error: true
+        parallel-with-next-step: true
+      - name: fe_ut
+        commands:
+          - export FE_UT_PARALLEL=4
+          - bash run-fe-ut.sh
+        continue-on-error: true
+      - name: upload be unit test log
+        uses: actions/upload-artifact
+        continue-on-error: true
+        inputs:
+          name: Logs
+          path: ${{Envs["CI_REPO_WORKSPACE"]}}/log
+  regression_test:
+    name: Regression Test - P0
+    image: hub.byted.org/compile/doris_compile_2.1.0:bf4da4046cfd36bed6dfa9f7d6cfd722
+    runs-on:
+      spec: c1.16xlarge
+    depends: [docker_default]
+    timeout: 120
+    steps:
+      - uses: actions/scm
+        id: scm_build
+        inputs:
+          scm_repo: dp/doris/doris_debian_dev
+          version_type: test
+          sync_bvc: True
+          sync_aws: false
+          sync_oss: false
+      - &action_checkout
+        uses: actions/checkout
+        inputs:
+          depth: 1
+      - uses: actions/setup-consul
+      - &doas 
+        uses: actions/doas
+        commands:
+          - echo $SEC_TOKEN_STRING # 通过环境变量获取 GDPR token
+      - &before_test
+        name: Before Test
+        commands:
+          - export CI_JOB_TOKEN=${{CI_JOB_TOKEN}}
+          - apt-get update && apt-get install -y --allow-unauthenticated bvc  # 升级bvc版本
+          - export VERSION=${{ Steps.scm_build.Outputs.version }}
+          - mkdir -p /opt/tiger/ && cd /opt/tiger/
+          - bvc clone jdk /opt/tiger/jdk # 安装java
+          - bvc clone -f consul_deploy /opt/tiger/consul_deploy && pip install six # 安装consul
+          - bvc clone -f dp/doris/doris_debian_dev --version ${VERSION} && mv doris_debian_dev doris_deploy
+          - apt-get update && apt-get install -y --allow-unauthenticated  default-mysql-client # 安装mysql
+      - &deploy_doris
+        name: Deploy Doris
+        commands:
+          - PRIORITY_IP=$(hostname -I | cut -d " " -f 1) && export PRIORITY_ADDRESS="${PRIORITY_IP}/32" 
+          - echo "\npriority_networks = ${PRIORITY_ADDRESS}"
+          - echo "\npriority_networks = ${PRIORITY_ADDRESS}" >> /opt/tiger/doris_deploy/fe/conf/fe.conf
+          - echo "\npriority_networks = ${PRIORITY_ADDRESS}" >> /home/code/regression-test/pipeline/p0/conf/be.conf
+          - mkdir -p /opt/tiger/doris_deploy/fe/conf/doris_regression_test_v2 && mkdir -p /opt/tiger/doris_deploy/be/conf/doris_regression_test_v2
+          - cp /home/code/regression-test/pipeline/p0/conf/be.conf /opt/tiger/doris_deploy/be/conf/doris_regression_test_v2/
+          - mv /opt/tiger/doris_deploy/fe/conf/fe.conf /opt/tiger/doris_deploy/fe/conf/doris_regression_test_v2/
+          - /bin/bash /opt/tiger/doris_deploy/fe/bin/start_fe.sh --daemon --cluster doris_regression_test_v2 && sleep 30 # run fe
+          - tail /opt/tiger/doris_deploy/fe/log/fe.out
+          - tail /opt/tiger/doris_deploy/fe/log/fe.log
+          - /bin/bash /opt/tiger/doris_deploy/be/bin/start_be.sh --daemon --cluster doris_regression_test_v2 && sleep 120 # run be
+          - tail /opt/tiger/doris_deploy/be/log/be.out
+          - tail /opt/tiger/doris_deploy/be/log/be.INFO
+          - mysql -h 0.0.0.0 -P 9030 -u root -c -e "alter system add backend \"$PRIORITY_IP:9050\";" &&  sleep 30 # add be
+          - mysql -h 0.0.0.0 -P 9030 -u root -c -e "show frontends;" && mysql -h 0.0.0.0 -P 9030 -u root -c -e "show backends;" # show status
+          - mysql -h 0.0.0.0 -P 9030 -u root -c -e "SET PROPERTY FOR 'root' 'max_user_connections'='1000';"
+      - &download_resource
+        name: Download Rersource
+        commands:
+          - cd ${{Envs["CI_REPO_WORKSPACE"]}} && cd regression-test && wget https://tosv.byted.org/obj/doris-regression-test-cache/regressionCacheDataV2.tar.gz
+          - tar -xzf regressionCacheDataV2.tar.gz && rm regressionCacheDataV2.tar.gz && ls
+          - wget -qO - http://maven.byted.org/assets/install_settings.sh | bash -s #加速maven下载速度
+          - cd ~/.m2/ && rm -r repository && wget https://tosv.byted.org/obj/doris-regression-test-cache/repositoryV2.tar.gz && tar -xzf repositoryV2.tar.gz && rm repositoryV2.tar.gz && ls
+      - &run_regression
+        name: Run Regression Test
+        commands:
+          -  cd ${{Envs["CI_REPO_WORKSPACE"]}} && export JAVA_HOME=/opt/tiger/jdk/jdk1.8.0_131/ && bash run-regression-test.sh --run -g p0  -parallel 3
+      - &create_artifact
+        name: Create Artifact
+        continue-on-error: true
+        commands:
+          - mkdir -p /Artifacts/be && mkdir /Artifacts/fe && mkdir /Artifacts/broker && mkdir /Artifacts/regression
+          - cp -r /opt/tiger/doris_deploy/be/log/ /Artifacts/be/.
+          - cp -r /opt/tiger/doris_deploy/fe/log/ /Artifacts/fe/.
+          - cp ${{Envs["CI_REPO_WORKSPACE"]}}/output/regression-test/log/* /Artifacts/regression/.
+      - &upload_artifact
+        name: Upload Artifact
+        uses: actions/upload-artifact
+        continue-on-error: true
+        inputs:
+          name: Artifacts
+          path: /Artifacts

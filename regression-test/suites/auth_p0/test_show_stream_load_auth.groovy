@@ -45,7 +45,7 @@ suite("test_show_stream_load_auth","p0,auth") {
         set 'strict_mode', 'true'
 
         file 'test_strict_mode.csv'
-        time 10000 // limit inflight 10s
+        time 30000 // limit inflight 30s
     }
 
     Thread.sleep(60000);

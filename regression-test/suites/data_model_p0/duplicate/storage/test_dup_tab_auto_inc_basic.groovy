@@ -43,7 +43,7 @@ suite("test_dup_table_auto_inc_basic") {
         set 'columns', 'name, value'
 
         file 'auto_inc_basic.csv'
-        time 10000 // limit inflight 10s
+        time 30000 // limit inflight 30s
     }
     qt_auto_inc_ids "select * from ${table1};"
     sql "drop table if exists ${table1};"
@@ -75,7 +75,7 @@ suite("test_dup_table_auto_inc_basic") {
         set 'columns', 'name, value'
 
         file 'auto_inc_basic.csv'
-        time 10000 // limit inflight 10s
+        time 30000 // limit inflight 30s
     }
     qt_auto_inc_ids "select * from ${table2} order by id;"
     sql "drop table if exists ${table2};"

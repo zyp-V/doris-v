@@ -23,6 +23,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.FsBroker;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.ClientPool;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.BrokerUtil;
@@ -80,7 +81,7 @@ public class BrokerFileSystem extends RemoteFileSystem {
     public BrokerFileSystem(String name, Map<String, String> properties) {
         super(name, StorageBackend.StorageType.BROKER);
         properties.putAll(PropertyConverter.convertToHadoopFSProperties(properties));
-        if (!properties.containsKey("token")) {
+        if (Config.enable_gdpr && !properties.containsKey("token")) {
             String token = GdprService.getGdprTokenFromENV();
             if (null != token && !token.isEmpty()) {
                 properties.put("token", token);

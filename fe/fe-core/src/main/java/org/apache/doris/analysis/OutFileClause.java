@@ -679,13 +679,15 @@ public class OutFileClause {
                 brokerProps.put(HdfsResource.HADOOP_FS_NAME, getFsName(filePath));
             }
         }
-        if (properties.containsKey("token")) {
-            brokerProps.put("token", properties.get("token"));
-            processedPropKeys.add("token");
-        } else if (!brokerProps.containsKey("token")) {
-            String token = GdprService.getGdprTokenFromENV();
-            if (StringUtils.isNotEmpty(token)) {
-                brokerProps.put("token", token);
+        if (Config.enable_gdpr) {
+            if (properties.containsKey("token")) {
+                brokerProps.put("token", properties.get("token"));
+                processedPropKeys.add("token");
+            } else if (!brokerProps.containsKey("token")) {
+                String token = GdprService.getGdprTokenFromENV();
+                if (StringUtils.isNotEmpty(token)) {
+                    brokerProps.put("token", token);
+                }
             }
         }
         brokerDesc = new BrokerDesc(brokerName, storageType, brokerProps);

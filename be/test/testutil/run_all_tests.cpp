@@ -41,6 +41,10 @@
 #include "util/mem_info.h"
 
 int main(int argc, char** argv) {
+    std::string conf = std::string(getenv("DORIS_HOME")) + "/conf/be.conf";
+    auto st = doris::config::init(conf.c_str(), true, true, true);
+    LOG(INFO) << "init config " << conf << ", st=" << st;
+
     doris::ThreadLocalHandle::create_thread_local_if_not_exits();
     doris::ExecEnv::GetInstance()->init_mem_tracker();
     doris::thread_context()->thread_mem_tracker_mgr->init();
@@ -53,8 +57,6 @@ int main(int argc, char** argv) {
     doris::ExecEnv::GetInstance()->set_storage_page_cache(
             doris::StoragePageCache::create_global_cache(1 << 30, 10, 0));
     doris::ExecEnv::GetInstance()->set_segment_loader(new doris::SegmentLoader(1000, 1000));
-    std::string conf = std::string(getenv("DORIS_HOME")) + "/conf/be.conf";
-    auto st = doris::config::init(conf.c_str(), false);
     doris::ExecEnv::GetInstance()->set_tablet_schema_cache(
             doris::TabletSchemaCache::create_global_schema_cache(
                     doris::config::tablet_schema_cache_capacity));
@@ -64,7 +66,6 @@ int main(int argc, char** argv) {
     doris::ExecEnv::GetInstance()->set_tablet_column_object_pool(
             doris::TabletColumnObjectPool::create_global_column_cache(
                     doris::config::tablet_schema_cache_capacity));
-    LOG(INFO) << "init config " << st;
 
     doris::init_glog("be-test");
     ::testing::InitGoogleTest(&argc, argv);

@@ -155,7 +155,7 @@ public class UtFrameUtils {
     public static int startFEServer(String runningDir) throws EnvVarNotSetException, IOException,
             FeStartException, NotInitException, DdlException, InterruptedException {
         IOException exception = null;
-        for (int i = 0; i <= 3; i++) {
+        for (int i = 0; i <= 10; i++) {
             try {
                 return startFEServerWithoutRetry(runningDir);
             } catch (IOException ignore) {

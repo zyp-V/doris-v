@@ -131,7 +131,7 @@ FE_PSM_PREFIX="${FE_PSM_PREFIX}.${CLUSTER}"
 echo "fe psm: ${FE_PSM_PREFIX}"
 echo "fe origin psm: ${FE_ORIGIN_PSM}"
 export TCE_PSM="${FE_PSM_PREFIX}_fe"
-FE_METADATA_DIR=/data01/doris/fe/meta
+
 
 DORIS_HOME="$(
     cd "${curdir}/.."
@@ -139,6 +139,8 @@ DORIS_HOME="$(
 )"
 export DORIS_HOME
 export DORIS_CLUSTER=$CLUSTER
+
+FE_METADATA_DIR=${DORIS_HOME}/doris-meta # default meta folder
 
 # process --helper param
 function append_helper(){
@@ -174,6 +176,34 @@ function append_helper(){
     fi
 }
 
+# export env variables from fe.conf
+#
+# JAVA_OPTS
+# LOG_DIR
+# PID_DIR
+export JAVA_OPTS="-Xmx1024m"
+export LOG_DIR="${DORIS_HOME}/log"
+export PID_DIR=`cd "$curdir"; pwd`
+
+while read -r line; do
+    envline="$(echo "${line}" |
+        sed 's/[[:blank:]]*=[[:blank:]]*/=/g' |
+        sed 's/^[[:blank:]]*//g' |
+        grep -E "^[[:upper:]]([[:upper:]]|_|[[:digit:]])*=" ||
+        true)"
+    envline="$(eval "echo ${envline}")"
+    if [[ "${envline}" == *"="* ]]; then
+        eval 'export "${envline}"'
+    fi
+    # check for meta_dir
+    envline=`echo $line | sed 's/[[:blank:]]*=[[:blank:]]*/=/g' | sed 's/^[[:blank:]]*//g' | egrep "^meta_dir="`
+    envline=`eval "echo $envline"`
+    if [[ $envline == *"="* ]]; then
+        FE_METADATA_DIR=$(echo "$envline" | sed 's/meta_dir=//g')
+        echo "FE_METADATA_DIR=${FE_METADATA_DIR}"
+    fi
+done <"${DORIS_HOME}/conf/$CLUSTER/fe.conf"
+
 # if first deploy in this mechine
 role_file_path=${FE_METADATA_DIR}/image/ROLE
 if [ ! -d $FE_METADATA_DIR ] || [ ! -f $role_file_path ];
@@ -191,31 +221,6 @@ else
 fi
 # process --helper param end
 
-# export env variables from fe.conf
-#
-# JAVA_OPTS
-# LOG_DIR
-# PID_DIR
-export JAVA_OPTS="-Xmx1024m"
-export LOG_DIR="${DORIS_HOME}/log"
-PID_DIR="$(
-    cd "${curdir}"
-    pwd
-)"
-export PID_DIR
-
-while read -r line; do
-    envline="$(echo "${line}" |
-        sed 's/[[:blank:]]*=[[:blank:]]*/=/g' |
-        sed 's/^[[:blank:]]*//g' |
-        grep -E "^[[:upper:]]([[:upper:]]|_|[[:digit:]])*=" ||
-        true)"
-    envline="$(eval "echo ${envline}")"
-    if [[ "${envline}" == *"="* ]]; then
-        eval 'export "${envline}"'
-    fi
-done <"${DORIS_HOME}/conf/$CLUSTER/fe.conf"
-
 if [[ -e "${DORIS_HOME}/bin/palo_env.sh" ]]; then
     # shellcheck disable=1091
     source "${DORIS_HOME}/bin/palo_env.sh"
@@ -223,8 +228,6 @@ fi
 
 #Due to the machine not being configured with Java home, in this case, when FE cannot start, it is necessary to prompt an error message indicating that it has not yet been configured with Java home.
 
-# TODO remove this after JAVA_HOME can be configured in EMR
-export JAVA_HOME="/opt/tiger/jdk/jdk17"
 
 if [[ -z "${JAVA_HOME}" ]]; then
     if ! command -v java &>/dev/null; then

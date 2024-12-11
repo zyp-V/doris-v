@@ -237,7 +237,7 @@ suite("test_primary_key_partial_update", "p0") {
 
             qt_select_date "select count(*) from ${tableName} where `ctime` > \"1970-01-01\""
 
-            sql "set time_zone = 'America/New_York'"
+            sql "set time_zone = 'Asia/Tokyo'"
 
             sql "INSERT INTO ${tableName}(`name`, `userid`, `corp_name`) VALUES ('test2', 1234567, 'B');"
 

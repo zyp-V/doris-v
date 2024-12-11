@@ -26,6 +26,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <filesystem>
+#include <iostream>
 
 #include "gtest/gtest_pred_impl.h"
 #include "gutil/strings/split.h"
@@ -45,6 +46,7 @@ public:
     void handle(HttpRequest* req) override {
         std::string user;
         std::string passwd;
+        std::cout << req->debug_string()<< std::endl;
         if (!parse_basic_auth(*req, &user, &passwd) || user != "test1") {
             HttpChannel::send_basic_challenge(req, "abc");
             return;
@@ -151,6 +153,7 @@ public:
         EXPECT_NE(0, real_port);
         address = "127.0.0.1:" + std::to_string(real_port);
         hostname = "http://" + address;
+        std::cout << "hostname=" << hostname << std::endl;
     }
 
     static void TearDownTestCase() { delete s_server; }

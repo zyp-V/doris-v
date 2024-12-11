@@ -27,7 +27,9 @@ import org.apache.doris.regression.suite.Suite
 import org.apache.doris.regression.suite.event.EventListener
 import org.apache.doris.regression.suite.GroovyFileSource
 import org.apache.doris.regression.suite.ScriptContext
+import org.apache.doris.regression.suite.ScriptInfo
 import org.apache.doris.regression.suite.ScriptSource
+import org.apache.doris.regression.suite.SuiteInfo
 import org.apache.doris.regression.suite.SqlFileSource
 import org.apache.doris.regression.suite.event.RecorderEventListener
 import org.apache.doris.regression.suite.event.StackEventListeners
@@ -386,6 +388,7 @@ class RegressionTest {
         int fatalScriptNum = recorder.fatalScriptList.size()
         int skippedNum = recorder.skippedList.size()
 
+        println("::add-message::Test ${allSuiteNum} suites, failed ${failedSuiteNum} suites, fatal ${fatalScriptNum} scripts".toString())
         // print success list
         if (!recorder.successList.isEmpty()) {
             String successList = recorder.successList.collect { info ->
@@ -408,12 +411,18 @@ class RegressionTest {
                     "${info.file.absolutePath}: group=${info.group}, name=${info.suiteName}"
                 }.join('\n')
                 log.info("Failure suites:\n${failureList}".toString())
+                for (SuiteInfo info : recorder.failureList) {
+                    println("::add-message level=error::failed suite=" + "${info.file.absolutePath}: group=${info.group}, name=${info.suiteName}")
+                }
             }
             if (!recorder.fatalScriptList.isEmpty()) {
                 def failureList = recorder.fatalScriptList.collect() { info ->
                     "${info.file.absolutePath}"
                 }.join('\n')
                 log.info("Fatal scripts:\n${failureList}".toString())
+                for (ScriptInfo info : recorder.fatalScriptList) {
+                    println("::add-message level=error::fatal script=" + "${info.file.absolutePath}")
+                }
             }
             printFailed()
         } else {

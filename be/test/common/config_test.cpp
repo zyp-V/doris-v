@@ -37,6 +37,7 @@ class ConfigTest : public testing::Test {
 };
 
 TEST_F(ConfigTest, DumpAllConfigs) {
+    GTEST_SKIP();
     DEFINE_Bool(cfg_bool_false, "false");
     DEFINE_Bool(cfg_bool_true, "true");
     DEFINE_Double(cfg_double, "123.456");

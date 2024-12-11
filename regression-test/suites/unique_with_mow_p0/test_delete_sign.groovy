@@ -27,6 +27,7 @@ suite("test_delete_sign", "p0") {
         connect( context.config.jdbcUser, context.config.jdbcPassword, context.config.jdbcUrl) {
             sql "use ${db};"
             def tableName = "test_delete_sign"
+            sql "set query_timeout=600;"
             // test delete sigin X sequence column
             sql """ DROP TABLE IF EXISTS ${tableName} """
             sql """ CREATE TABLE ${tableName} (

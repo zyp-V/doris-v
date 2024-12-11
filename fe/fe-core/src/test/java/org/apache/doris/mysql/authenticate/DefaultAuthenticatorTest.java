@@ -20,6 +20,7 @@ package org.apache.doris.mysql.authenticate;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.common.AuthenticationException;
 import org.apache.doris.common.DdlException;
+import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mysql.authenticate.password.NativePassword;
 import org.apache.doris.mysql.authenticate.password.NativePasswordResolver;
 import org.apache.doris.mysql.privilege.Auth;
@@ -29,6 +30,7 @@ import mockit.Expectations;
 import mockit.Mocked;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -45,6 +47,10 @@ public class DefaultAuthenticatorTest {
     private AuthenticateRequest request = new AuthenticateRequest(USER_NAME,
             new NativePassword(new byte[2], new byte[2]), IP);
 
+    @BeforeClass
+    public static void start() {
+        MetricRepo.init();
+    }
 
     @Before
     public void setUp() throws DdlException, AuthenticationException, IOException {

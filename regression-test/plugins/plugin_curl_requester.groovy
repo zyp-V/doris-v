@@ -140,10 +140,16 @@ Suite.metaClass.curl = { String method, String url, String body = null /* param 
     String out
 
     while (retryCount < maxRetries) {
-        process = cmd.execute()
+       process = cmd.execute()
+        def t1 = Thread.start('fetch-error') {
+            err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())))
+        }
+        def t2 = Thread.start('fetch-out') {
+            out = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getInputStream())))
+        }
         code = process.waitFor()
-        err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())))
-        out = process.getText()
+        t1.join()
+        t2.join()
 
         // If the command was successful, break the loop
         if (code == 0) {

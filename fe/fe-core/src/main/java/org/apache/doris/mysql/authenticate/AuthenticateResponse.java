@@ -31,6 +31,11 @@ public class AuthenticateResponse {
     private ImmutablePair<LegacyIdentity, String> gdprIdentityToken = null;
     private String qualifiedUser;
 
+    // for test only
+    public AuthenticateResponse(boolean success) {
+        this.success = success;
+    }
+
     public AuthenticateResponse(boolean success, String qualifiedUser) {
         this.success = success;
         this.qualifiedUser = qualifiedUser;

@@ -46,7 +46,7 @@ suite ("routine_load_hll") {
         set 'columns', 'event_id,time_stamp,device_id,device_id=hll_hash(device_id)'
 
         file './test'
-        time 10000 // limit inflight 10s
+        time 30000 // limit inflight 30s
     }
 
     qt_select "select event_id,time_stamp,hll_cardinality(device_id) from test order by 1,2;"

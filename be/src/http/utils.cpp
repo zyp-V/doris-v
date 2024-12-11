@@ -64,16 +64,14 @@ std::string encode_basic_auth(const std::string& user, const std::string& passwd
 bool parse_basic_auth(const HttpRequest& req, std::string* user, std::string* passwd) {
     const char k_basic[] = "Basic ";
     const auto& auth = req.header(HttpHeaders::AUTHORIZATION);
-
-    /* 
-       if request contains gdpr token, user & passwd need be inited 
-       to avoid parse basic auth failed returning NULL string 
-     */
-    user->assign("");
-    passwd->assign("");
-    
     bool contain_gdpr_token = false;
     if (!req.param("token").empty()) {
+        /* 
+            if request contains gdpr token, user & passwd need be inited 
+            to avoid parse basic auth failed returning NULL string 
+        */
+        user->assign("");
+        passwd->assign("");
         if (auth.empty()) {
             return true;
         }
