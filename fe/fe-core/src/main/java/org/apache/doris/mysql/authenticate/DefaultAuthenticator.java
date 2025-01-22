@@ -55,9 +55,9 @@ public class DefaultAuthenticator implements Authenticator {
                 // if verify gdpr token succeed, return identity. Or throw UnauthorizedException if failed
                 ImmutablePair<LegacyIdentity, String> gdprIdentityToken = Env.getCurrentEnv().getGdprService()
                         .verifyGdprAccount(request.getGdprAccountOrUserName());
-                String gdprUser = gdprIdentityToken.getLeft().User;
+                String gdprUser = gdprIdentityToken.getLeft().User.replace(".", "_");
                 return new AuthenticateResponse(true, UserIdentity.createAnalyzedUserIdentWithIp(gdprUser, "%"),
-                    gdprIdentityToken, request.getGdprAccountOrUserName().replace(".", "_"));
+                    gdprIdentityToken, gdprUser);
             } catch (AuthenticationException e) {
                 MetricRepo.COUNTER_MYSQL_GDPR_AUTH_FAILED.increase(1L);
             }

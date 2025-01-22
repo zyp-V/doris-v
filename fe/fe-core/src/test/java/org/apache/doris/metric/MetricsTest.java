@@ -71,7 +71,6 @@ public class MetricsTest {
     public void testUserQueryMetrics() {
         MetricRepo.USER_COUNTER_QUERY_ALL.getOrAdd("test_user").increase(1L);
         MetricRepo.USER_COUNTER_QUERY_ERR.getOrAdd("test_user").increase(1L);
-        MetricRepo.USER_HISTO_QUERY_LATENCY.getOrAdd("test_user").update(10L);
         MetricVisitor visitor = new PrometheusMetricVisitor();
         MetricRepo.DORIS_METRIC_REGISTER.accept(visitor);
         SortedMap<String, Histogram> histograms = MetricRepo.METRIC_REGISTER.getHistograms();
@@ -85,7 +84,6 @@ public class MetricsTest {
         Assert.assertTrue(metricResult.contains("doris_fe_query_err{user=\"test_user\"} 1"));
         Assert.assertTrue(metricResult.contains("# TYPE doris_fe_query_latency_ms summary"));
         Assert.assertTrue(metricResult.contains("doris_fe_query_latency_ms{quantile=\"0.999\"} 0.0"));
-        Assert.assertTrue(metricResult.contains("doris_fe_query_latency_ms{quantile=\"0.999\",user=\"test_user\"} 10.0"));
 
     }
 

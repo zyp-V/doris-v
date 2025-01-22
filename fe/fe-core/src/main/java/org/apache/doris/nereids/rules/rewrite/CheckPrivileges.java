@@ -18,6 +18,7 @@
 package org.apache.doris.nereids.rules.rewrite;
 
 import org.apache.doris.catalog.TableIf;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.UserException;
 import org.apache.doris.nereids.CascadesContext;
 import org.apache.doris.nereids.SqlCacheContext;
@@ -109,6 +110,9 @@ public class CheckPrivileges extends ColumnPruning {
     private void checkColumnPrivileges(TableIf table, Set<String> usedColumns) {
         CascadesContext cascadesContext = jobContext.getCascadesContext();
         ConnectContext connectContext = cascadesContext.getConnectContext();
+        if (Config.enable_gdpr && connectContext.getGdprIdentity() != null) { // is gdpr auth skip check
+            return;
+        }
         try {
             UserAuthentication.checkPermission(table, connectContext, usedColumns);
         } catch (UserException e) {
