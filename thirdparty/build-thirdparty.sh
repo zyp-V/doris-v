@@ -1504,6 +1504,21 @@ build_hdfs3() {
     strip_lib libhdfs3.a
 }
 
+# hdfs_client
+build_hdfs_client() {
+    check_if_source_exist "${HDFS_CLIENT_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${HDFS_CLIENT_SOURCE}"
+    if [[ -z "${DORIS_GCC_HOME}" ]]; then
+        DORIS_GCC_HOME="$(dirname "$(command -v gcc)")"/..
+        echo "hdfs_client DORIS_GCC_HOME: "$DORIS_GCC_HOME
+        export DORIS_GCC_HOME
+    fi
+    CC="${DORIS_GCC_HOME}/bin/gcc" CXX="${DORIS_GCC_HOME}/bin/g++" ./build.sh
+    mkdir -p "${TP_INSTALL_DIR}/include/hdfs_client"
+    cp ./output/include/* "${TP_INSTALL_DIR}/include/hdfs_client/"
+    cp ./output/lib/libhdfs_client.so "${TP_INSTALL_DIR}/lib/"
+}
+
 # jemalloc
 build_jemalloc() {
     check_if_source_exist "${JEMALLOC_DORIS_SOURCE}"
@@ -1890,6 +1905,7 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
         base64
         brotli
         icu
+        hdfs_client
     )
     if [[ "$(uname -s)" == 'Darwin' ]]; then
         read -r -a packages <<<"binutils gettext ${packages[*]}"

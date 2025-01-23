@@ -522,6 +522,12 @@ JINDOFS_NAME=jindofs-6.8.2-libs-0.1.tar.gz
 JINDOFS_SOURCE=jindofs-6.8.2-libs-0.1
 JINDOFS_MD5SUM="0e5b0f71e636b8ed3f09e0bf16208fd1"
 
+# hdfs_client
+HDFS_CLIENT_DOWNLOAD="https://code.byted.org/inf/native_dfs_client.git"
+HDFS_CLIENT_NAME="hdfs-client-1.2.51.tar.gz"
+HDFS_CLIENT_SOURCE="hdfs-client-1.2.51"
+HDFS_CLIENT_MD5SUM="4f2fd6b2a319c6368fa3241442060677"
+
 # all thirdparties which need to be downloaded is set in array TP_ARCHIVES
 export TP_ARCHIVES=(
     'LIBEVENT'
@@ -599,6 +605,7 @@ export TP_ARCHIVES=(
     'BASE64'
     'ICU'
     'JINDOFS'
+    'HDFS_CLIENT'
 )
 
 if [[ "$(uname -s)" == 'Darwin' ]]; then

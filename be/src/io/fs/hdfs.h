@@ -19,6 +19,8 @@
 
 #ifdef USE_HADOOP_HDFS
 #include <hadoop_hdfs/hdfs.h> // IWYU pragma: export
-#else
+#elif defined(USE_LIBHDFS3)
 #include <hdfs/hdfs.h> // IWYU pragma: export
+#else
+#include <hdfs_client/hdfs.h>
 #endif

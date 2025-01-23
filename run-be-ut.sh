@@ -338,6 +338,7 @@ mkdir "${GTEST_OUTPUT_DIR}"
 
 # prepare util test_data
 mkdir -p "${DORIS_TEST_BINARY_DIR}/util"
+mkdir -p "${DORIS_TEST_BINARY_DIR}/lib"
 if [[ -d "${DORIS_TEST_BINARY_DIR}/util/test_data" ]]; then
     rm -rf "${DORIS_TEST_BINARY_DIR}/util/test_data"
 fi
@@ -358,6 +359,10 @@ if [[ -d "${DORIS_THIRDPARTY}/installed/lib/hadoop_hdfs/" ]]; then
 fi
 if [[ -f "${DORIS_HOME}/output/be/lib/java-udf-jar-with-dependencies.jar" ]]; then
     cp "${DORIS_HOME}/output/be/lib/java-udf-jar-with-dependencies.jar" "${LIB_DIR}/"
+fi
+
+if [[ -f "${DORIS_THIRDPARTY}/installed/lib/libhdfs_client.so" ]]; then
+    cp -r "${DORIS_THIRDPARTY}/installed/lib/libhdfs_client.so" "${LIB_DIR}"
 fi
 
 # add java libs
@@ -446,6 +451,7 @@ test="${DORIS_TEST_BINARY_DIR}/doris_be_test"
 profraw=${DORIS_TEST_BINARY_DIR}/doris_be_test.profraw
 profdata=${DORIS_TEST_BINARY_DIR}/doris_be_test.profdata
 
+export LD_LIBRARY_PATH="${DORIS_TEST_BINARY_DIR}/lib:${LD_LIBRARY_PATH}"
 file_name="${test##*/}"
 if [[ -f "${test}" ]]; then
     if [[ "_${DENABLE_CLANG_COVERAGE}" == "_ON" ]]; then

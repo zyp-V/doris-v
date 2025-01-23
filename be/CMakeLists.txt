@@ -511,16 +511,31 @@ set(COMMON_THIRDPARTY
     ${COMMON_THIRDPARTY}
 )
 
-if ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX)
-    add_library(hadoop_hdfs STATIC IMPORTED)
-    set_target_properties(hadoop_hdfs PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/hadoop_hdfs/native/libhdfs.a)
+set (BYTEDANCE_HADOOP 1)
 
-    set(COMMON_THIRDPARTY
-        ${COMMON_THIRDPARTY}
-        hadoop_hdfs
-    )
-    add_definitions(-DUSE_HADOOP_HDFS)
+if ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX)
+    if(BYTEDANCE_HADOOP)
+        message(STATUS "use hdfs_client for hdfs")
+        add_library(hdfs_client SHARED IMPORTED)
+        set_target_properties(hdfs_client PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libhdfs_client.so)
+        set(COMMON_THIRDPARTY
+            ${COMMON_THIRDPARTY}
+            hdfs_client
+        )
+        add_definitions(-DUSE_HDFS_CLIENT)
+    else()
+        message(STATUS "use hadoop_hdfs for hdfs")
+        add_library(hadoop_hdfs STATIC IMPORTED)
+        set_target_properties(hadoop_hdfs PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/hadoop_hdfs/native/libhdfs.a)
+
+        set(COMMON_THIRDPARTY
+            ${COMMON_THIRDPARTY}
+            hadoop_hdfs
+        )
+        add_definitions(-DUSE_HADOOP_HDFS)
+    endif()
 else()
+    message(STATUS "use hdfs3 for hdfs")
     add_library(hdfs3 STATIC IMPORTED)
     set_target_properties(hdfs3 PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libhdfs3.a)
 

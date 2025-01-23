@@ -685,6 +685,11 @@ if [[ "${OUTPUT_BE_BINARY}" -eq 1 ]]; then
         cp -r -p "${DORIS_THIRDPARTY}/installed/lib/hadoop_hdfs/" "${DORIS_OUTPUT}/be/lib/"
     fi
 
+    # copy hdfs client library
+    if [[ -f "${DORIS_THIRDPARTY}/installed/lib/libhdfs_client.so" ]]; then
+        cp -r -p "${DORIS_THIRDPARTY}/installed/lib/libhdfs_client.so" "${DORIS_OUTPUT}/be/lib/"
+    fi
+
     if [[ -f "${DORIS_THIRDPARTY}/installed/lib/libz.so" ]]; then
         cp -r -p "${DORIS_THIRDPARTY}/installed/lib/libz.so"* "${DORIS_OUTPUT}/be/lib/"
     fi

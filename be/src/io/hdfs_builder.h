@@ -44,7 +44,7 @@ class HDFSCommonBuilder {
 public:
     HDFSCommonBuilder() {}
     ~HDFSCommonBuilder() {
-#ifdef USE_LIBHDFS3
+#if defined(USE_LIBHDFS3) || defined(USE_HDFS_CLIENT)
         // for hadoop hdfs, the hdfs_builder will be freed in hdfsConnect
         if (hdfs_builder != nullptr) {
             hdfsFreeBuilder(hdfs_builder);

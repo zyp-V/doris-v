@@ -12,7 +12,7 @@ jobs:
     name: Unit Test
     runs-on:
       spec: c1.16xlarge
-    image: hub.byted.org/compile/doris_compile_2.1.0:beb208fec8bca45e8c28ab1f81eeadf4
+    image: hub.byted.org/compile/doris_compile_2.1.6_hkp:cef8cf60fd59547a9fec389aa4f54c5f
     continue-on-error: true
     timeout: 60
     steps:
@@ -37,7 +37,7 @@ jobs:
           path: ${{Envs["CI_REPO_WORKSPACE"]}}/log
   regression_test:
     name: Regression Test - P0
-    image: hub.byted.org/compile/doris_compile_2.1.0:bf4da4046cfd36bed6dfa9f7d6cfd722
+    image: hub.byted.org/compile/doris_compile_2.1.6_hkp:cef8cf60fd59547a9fec389aa4f54c5f
     runs-on:
       spec: c1.16xlarge
     depends: [docker_default]
@@ -67,7 +67,7 @@ jobs:
           - apt-get update && apt-get install -y --allow-unauthenticated bvc  # 升级bvc版本
           - export VERSION=${{ Steps.scm_build.Outputs.version }}
           - mkdir -p /opt/tiger/ && cd /opt/tiger/
-          - bvc clone jdk /opt/tiger/jdk # 安装java
+          - bvc clone -f jdk /opt/tiger/jdk # 安装java
           - bvc clone -f consul_deploy /opt/tiger/consul_deploy && pip install six # 安装consul
           - bvc clone -f dp/doris/doris_debian_dev --version ${VERSION} && mv doris_debian_dev doris_deploy
           - apt-get update && apt-get install -y --allow-unauthenticated  default-mysql-client # 安装mysql
