@@ -12,7 +12,7 @@ jobs:
     name: Unit Test
     runs-on:
       spec: c1.16xlarge
-    image: hub.byted.org/compile/doris_image_test:9a3781e49949b2b241445050bee03497
+    image: hub.byted.org/compile/doris_compile_2.1.0:63ae944546073a9db5b884b63a67810f
     continue-on-error: true
     timeout: 60
     steps:
@@ -37,7 +37,7 @@ jobs:
           path: ${{Envs["CI_REPO_WORKSPACE"]}}/log
   regression_test:
     name: Regression Test - P0
-    image: hub.byted.org/compile/doris_image_test:9a3781e49949b2b241445050bee03497
+    image: hub.byted.org/compile/doris_compile_2.1.0:63ae944546073a9db5b884b63a67810f
     runs-on:
       spec: c1.16xlarge
     depends: [docker_default]
