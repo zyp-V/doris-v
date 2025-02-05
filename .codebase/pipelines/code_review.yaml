@@ -1,4 +1,4 @@
 template: cr-copilot
 trigger_paths:
-  - "be/*"
-  - "fe/*"
+  - "be/**"
+  - "fe/**"

@@ -534,6 +534,11 @@ if ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX)
         )
         add_definitions(-DUSE_HADOOP_HDFS)
     endif()
+    set(COMMON_THIRDPARTY
+        ${COMMON_THIRDPARTY}
+        zti-sdk
+        consul
+    )
 else()
     message(STATUS "use hdfs3 for hdfs")
     add_library(hdfs3 STATIC IMPORTED)
@@ -561,6 +566,13 @@ if (absl_FOUND)
         absl::strings
     )
 endif()
+
+add_library(zti-sdk STATIC IMPORTED)
+set_target_properties(zti-sdk PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libzti-sdk-static.a)
+
+add_library(consul STATIC IMPORTED)
+set_target_properties(consul PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libconsul.a)
+
 
 if (OS_MACOSX)
     set(COMMON_THIRDPARTY

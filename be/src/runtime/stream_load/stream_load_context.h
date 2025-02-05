@@ -54,7 +54,9 @@ public:
             : brokers(t_info.brokers),
               topic(t_info.topic),
               begin_offset(t_info.partition_begin_offset),
-              properties(t_info.properties) {
+              properties(t_info.properties),
+              cluster(t_info.cluster),
+              gdpr_token(t_info.gdpr_token) {
         // The offset(begin_offset) sent from FE is the starting offset,
         // and the offset(cmt_offset) reported by BE to FE is the consumed offset,
         // so we need to minus 1 here.
@@ -86,6 +88,10 @@ public:
     std::map<int32_t, int64_t> cmt_offset;
     //custom kafka property key -> value
     std::map<std::string, std::string> properties;
+
+    // Only used by Bytedance kafka
+    std::string cluster;
+    std::string gdpr_token;
 };
 
 class MessageBodySink;

@@ -25,6 +25,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.planner.StreamLoadPlanner;
+import org.apache.doris.service.GdprService;
 import org.apache.doris.thrift.TExecPlanFragmentParams;
 import org.apache.doris.thrift.TFileFormatType;
 import org.apache.doris.thrift.TKafkaLoadInfo;
@@ -70,6 +71,10 @@ public class KafkaTaskInfo extends RoutineLoadTaskInfo {
     @Override
     public TRoutineLoadTask createRoutineLoadTask() throws UserException {
         KafkaRoutineLoadJob routineLoadJob = (KafkaRoutineLoadJob) routineLoadManager.getJob(jobId);
+        String gdprToken = GdprService.getGdprTokenFromENV();
+        if (gdprToken.isEmpty()) {
+            throw new UserException("Gdpr token is empty");
+        }
 
         // init tRoutineLoadTask and create plan fragment
         TRoutineLoadTask tRoutineLoadTask = new TRoutineLoadTask();
@@ -91,6 +96,8 @@ public class KafkaTaskInfo extends RoutineLoadTaskInfo {
         tKafkaLoadInfo.setBrokers(routineLoadJob.getBrokerList());
         tKafkaLoadInfo.setPartitionBeginOffset(partitionIdToOffset);
         tKafkaLoadInfo.setProperties(routineLoadJob.getConvertedCustomProperties());
+        tKafkaLoadInfo.setCluster(routineLoadJob.getKafkaCluster());
+        tKafkaLoadInfo.setGdprToken(gdprToken);
         tRoutineLoadTask.setKafkaLoadInfo(tKafkaLoadInfo);
         tRoutineLoadTask.setType(TLoadSourceType.KAFKA);
         tRoutineLoadTask.setIsMultiTable(isMultiTable);

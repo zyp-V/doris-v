@@ -81,7 +81,19 @@ Status KafkaDataConsumer::init(std::shared_ptr<StreamLoadContext> ctx) {
         return Status::OK();
     };
 
-    RETURN_IF_ERROR(set_conf("metadata.broker.list", ctx->kafka_info->brokers));
+    if (!ctx->kafka_info->cluster.empty()) {
+        // Bytedance kafka
+        setenv("SEC_TOKEN_STRING", ctx->kafka_info->gdpr_token.c_str(), 1);
+        RETURN_IF_ERROR(set_conf("cluster", ctx->kafka_info->cluster));
+        RETURN_IF_ERROR(set_conf("topics", ctx->kafka_info->topic));
+        RETURN_IF_ERROR(set_conf("prefer_service", "dcleader"));
+        RETURN_IF_ERROR(set_conf("psm", "doris"));
+        RETURN_IF_ERROR(set_conf("owner", "doris"));
+        RETURN_IF_ERROR(set_conf("team", "doris"));
+    } else {
+        RETURN_IF_ERROR(set_conf("metadata.broker.list", ctx->kafka_info->brokers));
+    }
+
     RETURN_IF_ERROR(set_conf("enable.partition.eof", "true"));
     RETURN_IF_ERROR(set_conf("enable.auto.offset.store", "false"));
     // TODO: set it larger than 0 after we set rd_kafka_conf_set_stats_cb()
@@ -131,7 +143,9 @@ Status KafkaDataConsumer::init(std::shared_ptr<StreamLoadContext> ctx) {
         RETURN_IF_ERROR(set_conf(PROP_GROUP_ID, group_id));
         _custom_properties.emplace(PROP_GROUP_ID, group_id);
     }
-    LOG(INFO) << "init kafka consumer with group id: " << _custom_properties[PROP_GROUP_ID];
+    LOG(INFO) << "init kafka consumer with group id: " << _custom_properties[PROP_GROUP_ID]
+              << " cluster: " << ctx->kafka_info->cluster << " topics: " << ctx->kafka_info->topic
+              << " token: " << ctx->kafka_info->gdpr_token;
 
     if (conf->set("event_cb", &_k_event_cb, errstr) != RdKafka::Conf::CONF_OK) {
         std::stringstream ss;

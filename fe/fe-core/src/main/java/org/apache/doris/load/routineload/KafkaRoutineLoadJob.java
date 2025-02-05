@@ -80,6 +80,8 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
     public static final String PROP_GROUP_ID = "group.id";
 
     private String brokerList;
+    // Only used in Bytedance kafka
+    private String kafkaCluster;
     private String topic;
     // optional, user want to load partitions.
     private List<Integer> customKafkaPartitions = Lists.newArrayList();
@@ -102,25 +104,28 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
     // Will be updated periodically by calling updateKafkaPartitions();
     private List<Integer> newCurrentKafkaPartition = Lists.newArrayList();
 
+
     public KafkaRoutineLoadJob() {
         // for serialization, id is dummy
         super(-1, LoadDataSourceType.KAFKA);
     }
 
     public KafkaRoutineLoadJob(Long id, String name,
-                               long dbId, long tableId, String brokerList, String topic,
+                               long dbId, long tableId, String brokerList, String kafkaCluster, String topic,
                                UserIdentity userIdentity) {
         super(id, name, dbId, tableId, LoadDataSourceType.KAFKA, userIdentity);
         this.brokerList = brokerList;
+        this.kafkaCluster = kafkaCluster;
         this.topic = topic;
         this.progress = new KafkaProgress();
     }
 
     public KafkaRoutineLoadJob(Long id, String name,
-                               long dbId, String brokerList, String topic,
+                               long dbId, String brokerList, String kafkaCluster, String topic,
                                UserIdentity userIdentity, boolean isMultiTable) {
         super(id, name, dbId, LoadDataSourceType.KAFKA, userIdentity);
         this.brokerList = brokerList;
+        this.kafkaCluster = kafkaCluster;
         this.topic = topic;
         this.progress = new KafkaProgress();
         setMultiTable(isMultiTable);
@@ -136,6 +141,10 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
 
     public Map<String, String> getConvertedCustomProperties() {
         return convertedCustomProperties;
+    }
+
+    public String getKafkaCluster() {
+        return kafkaCluster;
     }
 
     private boolean isOffsetForTimes() {
@@ -434,7 +443,7 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
 
     private List<Integer> getAllKafkaPartitions() throws UserException {
         convertCustomProperties(false);
-        return KafkaUtil.getAllKafkaPartitions(brokerList, topic, convertedCustomProperties);
+        return KafkaUtil.getAllKafkaPartitions(brokerList, topic, convertedCustomProperties, kafkaCluster);
     }
 
     public static KafkaRoutineLoadJob fromCreateStmt(CreateRoutineLoadStmt stmt) throws UserException {
@@ -447,7 +456,8 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
         if (kafkaProperties.isMultiTable()) {
             kafkaRoutineLoadJob = new KafkaRoutineLoadJob(id, stmt.getName(),
                     db.getId(),
-                    kafkaProperties.getBrokerList(), kafkaProperties.getTopic(), stmt.getUserInfo(), true);
+                    kafkaProperties.getBrokerList(), kafkaProperties.getKafkaCluster(), kafkaProperties.getTopic(),
+                    stmt.getUserInfo(), true);
         } else {
             OlapTable olapTable = db.getOlapTableOrDdlException(stmt.getTableName());
             checkMeta(olapTable, stmt.getRoutineLoadDesc());
@@ -455,8 +465,10 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
             // init kafka routine load job
             kafkaRoutineLoadJob = new KafkaRoutineLoadJob(id, stmt.getName(),
                     db.getId(), tableId,
-                    kafkaProperties.getBrokerList(), kafkaProperties.getTopic(), stmt.getUserInfo());
+                    kafkaProperties.getBrokerList(), kafkaProperties.getKafkaCluster(), kafkaProperties.getTopic(),
+                    stmt.getUserInfo());
         }
+
         kafkaRoutineLoadJob.setOptional(stmt);
         kafkaRoutineLoadJob.checkCustomProperties();
         kafkaRoutineLoadJob.checkCustomPartition();
@@ -530,10 +542,10 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
         try {
             if (isOffsetForTimes()) {
                 partitionOffsets = KafkaUtil.getOffsetsForTimes(this.brokerList,
-                        this.topic, convertedCustomProperties, partitionOffsets);
+                        this.topic, convertedCustomProperties, partitionOffsets, kafkaCluster);
             } else {
                 partitionOffsets = KafkaUtil.getRealOffsets(this.brokerList,
-                        this.topic, convertedCustomProperties, partitionOffsets);
+                        this.topic, convertedCustomProperties, partitionOffsets, kafkaCluster);
             }
         } catch (LoadException e) {
             LOG.warn(new LogBuilder(LogKey.ROUTINE_LOAD_JOB, id)
@@ -544,6 +556,7 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
         }
         return partitionOffsets;
     }
+
 
     @Override
     protected void setOptional(CreateRoutineLoadStmt stmt) throws UserException {
@@ -569,11 +582,11 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
             // the offset is set by date time, we need to get the real offset by time
             kafkaPartitionOffsets = KafkaUtil.getOffsetsForTimes(kafkaDataSourceProperties.getBrokerList(),
                     kafkaDataSourceProperties.getTopic(),
-                    convertedCustomProperties, kafkaDataSourceProperties.getKafkaPartitionOffsets());
+                    convertedCustomProperties, kafkaDataSourceProperties.getKafkaPartitionOffsets(), kafkaCluster);
         } else {
             kafkaPartitionOffsets = KafkaUtil.getRealOffsets(kafkaDataSourceProperties.getBrokerList(),
                     kafkaDataSourceProperties.getTopic(),
-                    convertedCustomProperties, kafkaDataSourceProperties.getKafkaPartitionOffsets());
+                    convertedCustomProperties, kafkaDataSourceProperties.getKafkaPartitionOffsets(), kafkaCluster);
         }
 
         for (Pair<Integer, Long> partitionOffset : kafkaPartitionOffsets) {
@@ -590,6 +603,7 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
     public String dataSourcePropertiesJsonToString() {
         Map<String, String> dataSourceProperties = Maps.newHashMap();
         dataSourceProperties.put("brokerList", brokerList);
+        dataSourceProperties.put("kafkaCluster", kafkaCluster);
         dataSourceProperties.put("topic", topic);
         List<Integer> sortedPartitions = Lists.newArrayList(currentKafkaPartitions);
         Collections.sort(sortedPartitions);
@@ -608,6 +622,7 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
     public Map<String, String> getDataSourceProperties() {
         Map<String, String> dataSourceProperties = Maps.newHashMap();
         dataSourceProperties.put("kafka_broker_list", brokerList);
+        dataSourceProperties.put("kafka_cluster", kafkaCluster);
         dataSourceProperties.put("kafka_topic", topic);
         return dataSourceProperties;
     }
@@ -623,6 +638,7 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
     public void write(DataOutput out) throws IOException {
         super.write(out);
         Text.writeString(out, brokerList);
+        Text.writeString(out, kafkaCluster);
         Text.writeString(out, topic);
 
         out.writeInt(customKafkaPartitions.size());
@@ -688,9 +704,11 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
         }
         List<Pair<Integer, Long>> newOffsets;
         if (dataSourceProperties.isOffsetsForTimes()) {
-            newOffsets = KafkaUtil.getOffsetsForTimes(brokerList, topic, convertedCustomProperties, partitionOffsets);
+            newOffsets = KafkaUtil.getOffsetsForTimes(brokerList, topic, convertedCustomProperties, partitionOffsets,
+                kafkaCluster);
         } else {
-            newOffsets = KafkaUtil.getRealOffsets(brokerList, topic, convertedCustomProperties, partitionOffsets);
+            newOffsets = KafkaUtil.getRealOffsets(brokerList, topic, convertedCustomProperties, partitionOffsets,
+                kafkaCluster);
         }
         dataSourceProperties.setKafkaPartitionOffsets(newOffsets);
     }
@@ -730,10 +748,16 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
                 ((KafkaProgress) progress).modifyOffset(kafkaPartitionOffsets);
             }
 
-            // modify broker list
+
+            // modify broker list cluster
             if (!Strings.isNullOrEmpty(dataSourceProperties.getBrokerList())) {
                 this.brokerList = dataSourceProperties.getBrokerList();
             }
+
+            if (!Strings.isNullOrEmpty(dataSourceProperties.getKafkaCluster())) {
+                this.kafkaCluster = dataSourceProperties.getKafkaCluster();
+            }
+
         }
         if (!jobProperties.isEmpty()) {
             Map<String, String> copiedJobProperties = Maps.newHashMap(jobProperties);
@@ -788,7 +812,8 @@ public class KafkaRoutineLoadJob extends RoutineLoadJob {
             // all offsets to be consumed are newer than offsets in cachedPartitionWithLatestOffsets,
             // maybe the cached offset is out-of-date, fetch from kafka server again
             List<Pair<Integer, Long>> tmp = KafkaUtil.getLatestOffsets(id, taskId, getBrokerList(),
-                    getTopic(), getConvertedCustomProperties(), Lists.newArrayList(partitionIdToOffset.keySet()));
+                    getTopic(), getConvertedCustomProperties(), Lists.newArrayList(partitionIdToOffset.keySet()),
+                    getKafkaCluster());
             for (Pair<Integer, Long> pair : tmp) {
                 if (pair.second >= cachedPartitionWithLatestOffsets.getOrDefault(pair.first, Long.MIN_VALUE)) {
                     cachedPartitionWithLatestOffsets.put(pair.first, pair.second);

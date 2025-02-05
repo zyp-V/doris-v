@@ -528,6 +528,30 @@ HDFS_CLIENT_NAME="hdfs-client-1.2.51.tar.gz"
 HDFS_CLIENT_SOURCE="hdfs-client-1.2.51"
 HDFS_CLIENT_MD5SUM="4f2fd6b2a319c6368fa3241442060677"
 
+# consul
+CONSUL_DOWNLOAD="https://code.byted.org/cpputil/consul.git"
+CONSUL_NAME="libconsul-1.0.0.tar.gz"
+CONSUL_SOURCE="consul"
+CONSUL_MD5SUM="6100c0db16c76de40e11efab6689cd76"
+
+# infsec
+INFSEC_DOWNLOAD="https://code.byted.org/cpputil/infsec.git"
+INFSEC_NAME="libinfsec-1.0.0.tar.gz"
+INFSEC_SOURCE="infsec"
+INFSEC_MD5SUM="18546b2f158d7658dffa0035e94d2784"
+
+# zti_sdk
+ZTI_SDK_DOWNLOAD="https://code.byted.org/security/zti-sdk.git"
+ZTI_SDK_NAME="zti-sdk-1.0.0.tar.gz"
+ZTI_SDK_SOURCE="zti-sdk"
+ZTI_SDK_MD5SUM="27ccf15ea48387946c8f85d11ce35ca9"
+
+# rdkafka
+RDKAFKA_DOWNLOAD="https://code.byted.org/dp/librdkafka.git"
+RDKAFKA_NAME="librdkafka-bmq-1.0.3.tar.gz"
+RDKAFKA_SOURCE="librdkafka"
+RDKAFKA_MD5SUM="17fbd80190622e3721e318a9ecb3dc72"
+
 # all thirdparties which need to be downloaded is set in array TP_ARCHIVES
 export TP_ARCHIVES=(
     'LIBEVENT'
@@ -555,7 +579,7 @@ export TP_ARCHIVES=(
     'BRPC'
     'ROCKSDB'
     'CYRUS_SASL'
-    'LIBRDKAFKA'
+    #'LIBRDKAFKA'
     'FLATBUFFERS'
     'ARROW'
     'BROTLI'
@@ -606,6 +630,10 @@ export TP_ARCHIVES=(
     'ICU'
     'JINDOFS'
     'HDFS_CLIENT'
+    'CONSUL'
+    'INFSEC'
+    'ZTI_SDK'
+    'RDKAFKA'
 )
 
 if [[ "$(uname -s)" == 'Darwin' ]]; then

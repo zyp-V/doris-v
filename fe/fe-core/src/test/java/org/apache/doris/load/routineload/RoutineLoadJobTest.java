@@ -272,7 +272,7 @@ public class RoutineLoadJobTest {
         new MockUp<KafkaUtil>() {
             @Mock
             public List<Integer> getAllKafkaPartitions(String brokerList, String topic,
-                    Map<String, String> convertedCustomProperties) throws UserException {
+                    Map<String, String> convertedCustomProperties, String cluster) throws UserException {
                 return Lists.newArrayList(1, 2, 3);
             }
         };
@@ -281,7 +281,7 @@ public class RoutineLoadJobTest {
             @Mock
             public List<Pair<Integer, Long>> getRealOffsets(String brokerList, String topic,
                                                              Map<String, String> convertedCustomProperties,
-                                                             List<Pair<Integer, Long>> offsetFlags)
+                                                             List<Pair<Integer, Long>> offsetFlags, String cluster)
                                                              throws LoadException {
                 List<Pair<Integer, Long>> pairList = new ArrayList<>();
                 pairList.add(Pair.of(1, 0L));
@@ -351,7 +351,7 @@ public class RoutineLoadJobTest {
     @Test
     public void testGetShowCreateInfo() throws UserException {
         KafkaRoutineLoadJob routineLoadJob = new KafkaRoutineLoadJob(111L, "test_load", 1,
-                11, "localhost:9092", "test_topic", UserIdentity.ADMIN);
+                11, "localhost:9092", null, "test_topic", UserIdentity.ADMIN);
         Deencapsulation.setField(routineLoadJob, "maxErrorNum", 10);
         Deencapsulation.setField(routineLoadJob, "maxBatchRows", 10);
         String showCreateInfo = routineLoadJob.getShowCreateInfo();

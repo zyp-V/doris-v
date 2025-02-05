@@ -1836,6 +1836,66 @@ build_jindofs() {
     cp -r ${TP_SOURCE_DIR}/${JINDOFS_SOURCE}/* "${TP_INSTALL_DIR}/jindofs_libs/"
 }
 
+# consul
+build_consul() {
+    check_if_source_exist "${CONSUL_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${CONSUL_SOURCE}"
+
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+    rm -rf ./*
+
+    "${CMAKE_CMD}" -G "${GENERATOR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" ..
+
+    "${BUILD_SYSTEM}" -j "${PARALLEL}"
+    "${BUILD_SYSTEM}" install
+}
+
+# infsec
+build_infsec() {
+    check_if_source_exist "${INFSEC_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${INFSEC_SOURCE}"
+
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+    rm -rf ./*
+
+    "${CMAKE_CMD}" -G "${GENERATOR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" ..
+
+    "${BUILD_SYSTEM}" -j "${PARALLEL}"
+    "${BUILD_SYSTEM}" install
+}
+
+# zti_sdk
+build_zti_sdk() {
+    check_if_source_exist "${ZTI_SDK_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${ZTI_SDK_SOURCE}"
+
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+    rm -rf ./*
+
+    "${CMAKE_CMD}" -G "${GENERATOR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" ..
+
+    "${BUILD_SYSTEM}" -j "${PARALLEL}"
+    "${BUILD_SYSTEM}" install
+}
+
+# rdkafka
+build_rdkafka() {
+    check_if_source_exist "${RDKAFKA_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${RDKAFKA_SOURCE}"
+
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+    rm -rf ./*
+
+    "${CMAKE_CMD}" -G "${GENERATOR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" ..
+
+    "${BUILD_SYSTEM}" -j "${PARALLEL}"
+    "${BUILD_SYSTEM}" install
+}
+
 if [[ "${#packages[@]}" -eq 0 ]]; then
     packages=(
         jindofs
@@ -1866,7 +1926,7 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
         rocksdb
         krb5 # before cyrus_sasl
         cyrus_sasl
-        librdkafka
+        #librdkafka
         flatbuffers
         orc
         cares
@@ -1906,6 +1966,10 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
         brotli
         icu
         hdfs_client
+        consul
+        infsec
+        zti_sdk
+        rdkafka
     )
     if [[ "$(uname -s)" == 'Darwin' ]]; then
         read -r -a packages <<<"binutils gettext ${packages[*]}"

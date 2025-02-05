@@ -50,6 +50,9 @@ struct TKafkaLoadInfo {
     2: required string topic;
     3: required map<i32, i64> partition_begin_offset;
     4: optional map<string, string> properties;
+    // bytedance kafka
+    12: optional string cluster;
+    13: optional string gdpr_token;
 }
 
 struct TRoutineLoadTask {

@@ -329,15 +329,15 @@ fi
 echo "Finished patching ${ARROW_SOURCE}"
 
 # patch librdkafka to avoid crash
-if [[ "${LIBRDKAFKA_SOURCE}" == "librdkafka-1.9.2" ]]; then
-    cd "${TP_SOURCE_DIR}/${LIBRDKAFKA_SOURCE}"
-    if [[ ! -f "${PATCHED_MARK}" ]]; then
-        patch -p0 <"${TP_PATCH_DIR}/librdkafka-1.9.2.patch"
-        touch "${PATCHED_MARK}"
-    fi
-    cd -
-fi
-echo "Finished patching ${LIBRDKAFKA_SOURCE}"
+# if [[ "${LIBRDKAFKA_SOURCE}" == "librdkafka-1.9.2" ]]; then
+#     cd "${TP_SOURCE_DIR}/${LIBRDKAFKA_SOURCE}"
+#     if [[ ! -f "${PATCHED_MARK}" ]]; then
+#         patch -p0 <"${TP_PATCH_DIR}/librdkafka-1.9.2.patch"
+#         touch "${PATCHED_MARK}"
+#     fi
+#     cd -
+# fi
+# echo "Finished patching ${LIBRDKAFKA_SOURCE}"
 
 # patch jemalloc, disable JEMALLOC_MANGLE for overloading the memory API.
 if [[ "${JEMALLOC_DORIS_SOURCE}" = "jemalloc-5.3.0" ]]; then

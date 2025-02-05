@@ -26,6 +26,7 @@ import org.apache.doris.load.routineload.KafkaProgress;
 import org.apache.doris.load.routineload.LoadDataSourceType;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.gson.annotations.SerializedName;
@@ -70,6 +71,10 @@ public class KafkaDataSourceProperties extends AbstractDataSourceProperties {
     private String brokerList;
 
     @Getter
+    @SerializedName(value = "kafkaCluster")
+    private String kafkaCluster;
+
+    @Getter
     @SerializedName(value = "topic")
     private String topic;
 
@@ -100,6 +105,7 @@ public class KafkaDataSourceProperties extends AbstractDataSourceProperties {
                     .add(KafkaConfiguration.KAFKA_TABLE_NAME_FORMAT.getName())
                     .add(KafkaConfiguration.KAFKA_TEXT_TABLE_NAME_FIELD_DELIMITER.getName())
                     .add(KafkaConfiguration.KAFKA_TEXT_TABLE_NAME_FIELD_INDEX.getName())
+                    .add(KafkaConfiguration.KAFKA_CLUSTER_PROPERTY.getName())
                     .build();
 
     public KafkaDataSourceProperties(Map<String, String> dataSourceProperties, boolean multiLoad) {
@@ -131,9 +137,17 @@ public class KafkaDataSourceProperties extends AbstractDataSourceProperties {
 
         this.brokerList = KafkaConfiguration.KAFKA_BROKER_LIST.getParameterValue(originalDataSourceProperties
                 .get(KafkaConfiguration.KAFKA_BROKER_LIST.getName()));
-        if (!isAlter() && StringUtils.isBlank(brokerList)) {
-            throw new AnalysisException(KafkaConfiguration.KAFKA_BROKER_LIST.getName() + " is a required property");
+        // in bmq broker is aquired by cluster
+        // if (!isAlter() && StringUtils.isBlank(brokerList)) {
+        //     throw new AnalysisException(KafkaConfiguration.KAFKA_BROKER_LIST.getName() + " is a required property");
+        // }
+
+        // check kafka cluster
+        if (!isAlter() && Strings.isNullOrEmpty(brokerList) && Strings.isNullOrEmpty(kafkaCluster)) {
+            throw new AnalysisException(KafkaConfiguration.KAFKA_BROKER_LIST.getName() + " or "
+                + KafkaConfiguration.KAFKA_CLUSTER_PROPERTY  + " is a required property");
         }
+
         //check broker list
         if (StringUtils.isNotBlank(brokerList)) {
             for (String broker : brokerList.split(",")) {

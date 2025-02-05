@@ -110,6 +110,12 @@ Status RoutineLoadTaskExecutor::_prepare_ctx(const PKafkaMetaProxyRequest& reque
         properties.emplace(pair.key(), pair.val());
     }
     t_info.__set_properties(std::move(properties));
+    if (request.kafka_info().has_cluster()) {
+        t_info.__set_cluster(request.kafka_info().cluster());
+    }
+    if (request.kafka_info().has_gdpr_token()) {
+        t_info.__set_gdpr_token(request.kafka_info().gdpr_token());
+    }
 
     ctx->kafka_info.reset(new KafkaLoadInfo(t_info));
     ctx->need_rollback = false;

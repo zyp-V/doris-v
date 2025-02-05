@@ -29,6 +29,8 @@ public enum KafkaConfiguration {
 
     KAFKA_TOPIC("kafka_topic", null, value -> value.replace(" ", "")),
 
+    KAFKA_CLUSTER_PROPERTY("kafka_cluster", "", value -> value.replace(" ", "")),
+
     KAFKA_PARTITIONS("kafka_partitions", null, partitionsString ->
             Arrays.stream(partitionsString.replace(" ", "").split(","))
                     .map(Integer::parseInt)

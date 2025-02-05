@@ -25,6 +25,7 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.proto.InternalService;
 import org.apache.doris.rpc.BackendServiceProxy;
+import org.apache.doris.service.GdprService;
 import org.apache.doris.system.Backend;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStatusCode;
@@ -46,8 +47,9 @@ public class KafkaUtil {
     private static final Logger LOG = LogManager.getLogger(KafkaUtil.class);
 
     public static List<Integer> getAllKafkaPartitions(String brokerList, String topic,
-            Map<String, String> convertedCustomProperties) throws UserException {
+            Map<String, String> convertedCustomProperties, String cluster) throws UserException {
         try {
+
             InternalService.PProxyRequest request = InternalService.PProxyRequest.newBuilder().setKafkaMetaRequest(
                     InternalService.PKafkaMetaProxyRequest.newBuilder()
                             .setKafkaInfo(InternalService.PKafkaLoadInfo.newBuilder()
@@ -57,6 +59,8 @@ public class KafkaUtil {
                                             .map(e -> InternalService.PStringPair.newBuilder().setKey(e.getKey())
                                                     .setVal(e.getValue()).build()).collect(Collectors.toList())
                                     )
+                                    .setCluster(cluster)
+                                    .setGdprToken(GdprService.getGdprTokenFromENV())
                             )
             ).build();
             return getInfoRequest(request, Config.max_get_kafka_meta_timeout_second)
@@ -71,7 +75,7 @@ public class KafkaUtil {
     // The input parameter "timestampOffsets" is <partition, timestamp>
     // Tne return value is <partition, offset>
     public static List<Pair<Integer, Long>> getOffsetsForTimes(String brokerList, String topic,
-            Map<String, String> convertedCustomProperties, List<Pair<Integer, Long>> timestampOffsets)
+            Map<String, String> convertedCustomProperties, List<Pair<Integer, Long>> timestampOffsets, String cluster)
             throws LoadException {
         if (LOG.isDebugEnabled()) {
             LOG.debug("begin to get offsets for times of topic: {}, {}", topic, timestampOffsets);
@@ -90,6 +94,8 @@ public class KafkaUtil {
                                                             .build()
                                             ).collect(Collectors.toList())
                                     )
+                                    .setCluster(cluster)
+                                    .setGdprToken(GdprService.getGdprTokenFromENV())
                             );
             for (Pair<Integer, Long> pair : timestampOffsets) {
                 metaRequestBuilder.addOffsetTimes(InternalService.PIntegerPair.newBuilder().setKey(pair.first)
@@ -118,7 +124,8 @@ public class KafkaUtil {
 
     public static List<Pair<Integer, Long>> getLatestOffsets(long jobId, UUID taskId, String brokerList, String topic,
                                                              Map<String, String> convertedCustomProperties,
-                                                             List<Integer> partitionIds) throws LoadException {
+                                                             List<Integer> partitionIds,
+                                                             String cluster) throws LoadException {
         if (LOG.isDebugEnabled()) {
             LOG.debug("begin to get latest offsets for partitions {} in topic: {}, task {}, job {}",
                     partitionIds, topic, taskId, jobId);
@@ -137,6 +144,8 @@ public class KafkaUtil {
                                                             .build()
                                             ).collect(Collectors.toList())
                                     )
+                                    .setCluster(cluster)
+                                    .setGdprToken(GdprService.getGdprTokenFromENV())
                             );
             for (Integer partitionId : partitionIds) {
                 metaRequestBuilder.addPartitionIdForLatestOffsets(partitionId);
@@ -164,7 +173,7 @@ public class KafkaUtil {
 
     public static List<Pair<Integer, Long>> getRealOffsets(String brokerList, String topic,
                                                              Map<String, String> convertedCustomProperties,
-                                                             List<Pair<Integer, Long>> offsets)
+                                                             List<Pair<Integer, Long>> offsets, String cluster)
                                                              throws LoadException {
         // filter values greater than 0 as these offsets is real offset
         // only update offset like OFFSET_BEGINNING or OFFSET_END
@@ -196,6 +205,8 @@ public class KafkaUtil {
                                                             .build()
                                             ).collect(Collectors.toList())
                                     )
+                                    .setCluster(cluster)
+                                    .setGdprToken(GdprService.getGdprTokenFromENV())
                             );
             for (Pair<Integer, Long> pair : offsetFlags) {
                 metaRequestBuilder.addOffsetFlags(InternalService.PIntegerPair.newBuilder().setKey(pair.first)

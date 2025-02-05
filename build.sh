@@ -305,6 +305,17 @@ update_submodule() {
     fi
 }
 
+# build kafka bmq library if necessary
+if [[ ! -f "${DORIS_THIRDPARTY}/installed/lib/libzti-sdk-static.a" ]]; then
+    echo "kafka bmq library need to be build ..."
+    rm -rf "${DORIS_THIRDPARTY}/installed/include/librdkafka"
+    mkdir -p "${DORIS_THIRDPARTY}/installed/include/librdkafka"
+
+    cd "${DORIS_HOME}/tools"
+    cp librdkafka-bmq/include/*.h "${DORIS_THIRDPARTY}/installed/include/librdkafka"
+    cp librdkafka-bmq/lib/*.a "${DORIS_THIRDPARTY}/installed/lib64/"
+fi
+
 if [[ "${CLEAN}" -eq 1 && "${BUILD_BE}" -eq 0 && "${BUILD_FE}" -eq 0 && "${BUILD_SPARK_DPP}" -eq 0 ]]; then
     clean_gensrc
     clean_be

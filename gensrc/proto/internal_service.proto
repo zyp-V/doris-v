@@ -408,6 +408,9 @@ message PKafkaLoadInfo {
     required string brokers = 1;
     required string topic = 2;
     repeated PStringPair properties = 3;
+    // bytedance kafka
+    optional string cluster = 12;
+    optional string gdpr_token = 13;
 };
 
 message PKafkaMetaProxyRequest {
