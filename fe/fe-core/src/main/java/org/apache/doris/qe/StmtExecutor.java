@@ -279,6 +279,7 @@ public class StmtExecutor {
     // The profile of this execution
     private final Profile profile;
     private Boolean isForwardedToMaster = null;
+    private String logId;
 
     private ExecuteStmt execStmt;
     PrepareStmtContext preparedStmtCtx = null;
@@ -301,12 +302,14 @@ public class StmtExecutor {
         this.profile = new Profile("Query", this.context.getSessionVariable().enableProfile,
                 this.context.getSessionVariable().profileLevel,
                 this.context.getSessionVariable().getEnablePipelineXEngine());
+        this.logId = this.context.getSessionVariable().getLogId();
     }
 
     // for test
     public StmtExecutor(ConnectContext context, String stmt) {
         this(context, new OriginStatement(stmt, 0), false);
         this.stmtName = stmt;
+        this.logId = context.getSessionVariable().getLogId();
     }
 
     // constructor for receiving parsed stmt from connect processor
@@ -332,6 +335,7 @@ public class StmtExecutor {
         this.context.setStatementContext(statementContext);
         this.profile = new Profile("Query", context.getSessionVariable().enableProfile(),
                 context.getSessionVariable().profileLevel, context.getSessionVariable().getEnablePipelineXEngine());
+        this.logId = this.context.getSessionVariable().getLogId();
     }
 
     public boolean isProxy() {
@@ -621,6 +625,7 @@ public class StmtExecutor {
         } finally {
             // revert Session Value
             try {
+                this.logId = sessionVariable.getLogId();
                 VariableMgr.revertSessionValue(sessionVariable);
                 // origin value init
                 sessionVariable.setIsSingleSetVar(false);
@@ -3280,7 +3285,7 @@ public class StmtExecutor {
                 coord.close();
             }
             AuditLogHelper.logAuditLog(context, originStmt.originStmt, parsedStmt, getQueryStatisticsForAuditLog(),
-                    true);
+                    true, context.getSessionVariable().getLogId());
             if (Config.enable_collect_internal_query_profile) {
                 updateProfile(true);
             }
@@ -3466,6 +3471,10 @@ public class StmtExecutor {
 
     public Profile getProfile() {
         return profile;
+    }
+
+    public String getLogId() {
+        return logId;
     }
 
     public void setProfileType(ProfileType profileType) {

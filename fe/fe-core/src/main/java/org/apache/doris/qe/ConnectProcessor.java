@@ -218,11 +218,11 @@ public abstract class ConnectProcessor {
     }
 
     protected void auditAfterExec(String origStmt, StatementBase parsedStmt,
-            Data.PQueryStatistics statistics, boolean printFuzzyVariables) {
+            Data.PQueryStatistics statistics, boolean printFuzzyVariables, String logId) {
         if (Config.enable_bdbje_debug_mode) {
             return;
         }
-        AuditLogHelper.logAuditLog(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables);
+        AuditLogHelper.logAuditLog(ctx, origStmt, parsedStmt, statistics, printFuzzyVariables, logId);
     }
 
     // only throw an exception when there is a problem interacting with the requesting client
@@ -273,7 +273,7 @@ public abstract class ConnectProcessor {
                     stmts = new NereidsParser().parseSQL(convertedStmt, sessionVariable);
                 } catch (NotSupportedException e) {
                     // Parse sql failed, audit it and return
-                    handleQueryException(e, convertedStmt, null, null);
+                    handleQueryException(e, convertedStmt, null, null, ctx.getSessionVariable().getLogId());
                     return;
                 } catch (ParseException e) {
                     if (LOG.isDebugEnabled()) {
@@ -312,7 +312,7 @@ public abstract class ConnectProcessor {
                     throwable = nereidsParseException;
                 }
                 // Parse sql failed, audit it and return
-                handleQueryException(throwable, convertedStmt, null, null);
+                handleQueryException(throwable, convertedStmt, null, null, ctx.getSessionVariable().getLogId());
                 return;
             }
         }
@@ -384,7 +384,7 @@ public abstract class ConnectProcessor {
                         }
                     }
                     auditAfterExec(auditStmt, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(),
-                            true);
+                            true, executor.getLogId());
                     // execute failed, skip remaining stmts
                     if (ctx.getState().getStateType() == MysqlStateType.ERR || (!Env.getCurrentEnv().isMaster()
                             && ctx.executor != null && ctx.executor.isForwardToMaster()
@@ -393,7 +393,7 @@ public abstract class ConnectProcessor {
                     }
                 } catch (Throwable throwable) {
                     handleQueryException(throwable, auditStmt, executor.getParsedStmt(),
-                            executor.getQueryStatisticsForAuditLog());
+                            executor.getQueryStatisticsForAuditLog(), executor.getLogId());
                     // execute failed, skip remaining stmts
                     throw throwable;
                 }
@@ -482,7 +482,7 @@ public abstract class ConnectProcessor {
 
     // Use a handler for exception to avoid big try catch block which is a little hard to understand
     protected void handleQueryException(Throwable throwable, String origStmt,
-            StatementBase parsedStmt, Data.PQueryStatistics statistics) throws ConnectionException {
+            StatementBase parsedStmt, Data.PQueryStatistics statistics, String logId) throws ConnectionException {
         if (ctx.getMinidump() != null) {
             MinidumpUtils.saveMinidumpString(ctx.getMinidump(), DebugUtil.printId(ctx.queryId()));
         }
@@ -515,7 +515,7 @@ public abstract class ConnectProcessor {
                 ctx.getState().setErrType(QueryState.ErrType.ANALYSIS_ERR);
             }
         }
-        auditAfterExec(origStmt, parsedStmt, statistics, true);
+        auditAfterExec(origStmt, parsedStmt, statistics, true, logId);
     }
 
     // analyze the origin stmt and return multi-statements
@@ -586,7 +586,7 @@ public abstract class ConnectProcessor {
                 // TODO
             }
         } catch (Throwable throwable) {
-            handleQueryException(throwable, "", null, null);
+            handleQueryException(throwable, "", null, null, ctx.getSessionVariable().getLogId());
         } finally {
             table.readUnlock();
         }
