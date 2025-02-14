@@ -22,7 +22,7 @@ import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.iceberg.ClientPool;
 import org.apache.iceberg.hive.HiveTableOperations;
 import org.apache.iceberg.io.FileIO;
-import shade.doris.hive.org.apache.thrift.TException;
+import org.apache.thrift.TException;
 
 public class DLFTableOperations extends HiveTableOperations {
 

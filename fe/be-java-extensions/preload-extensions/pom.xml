@@ -57,14 +57,35 @@ under the License.
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
+            <version>${hadoop.version}</version>
             <!-- Must be provided, we use hadoop_libs in BE's 3rd party instead -->
             <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>tomcat</groupId>
+                    <artifactId>jasper-runtime</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>tomcat</groupId>
+                    <artifactId>jasper-compiler</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-annotations</artifactId>
             <version>${hadoop.version}</version>
             <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hudi</groupId>
@@ -75,6 +96,12 @@ under the License.
             <groupId>org.apache.hudi</groupId>
             <artifactId>hudi-spark-common_${scala.binary.version}</artifactId>
             <version>${hudi.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.avro</groupId>
@@ -187,12 +214,19 @@ under the License.
         <dependency>
             <groupId>org.apache.doris</groupId>
             <artifactId>hive-catalog-shade</artifactId>
+            <version>${doris.hive.catalog.shade.version}</version>
         </dependency>
         <!-- For BE CosN Access -->
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-cos</artifactId>
             <version>3.3.5</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- For BE Paimon OSS/S3 Access -->
         <dependency>

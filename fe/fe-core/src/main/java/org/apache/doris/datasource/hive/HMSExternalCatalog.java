@@ -133,6 +133,33 @@ public class HMSExternalCatalog extends ExternalCatalog {
                     "The parameter " + PARTITION_CACHE_TTL_SECOND + " is wrong, value is " + partitionCacheTtlSecond);
         }
 
+        if (HMSProperties.isBytedanceHive(catalogProperty.getProperties())) {
+            // the default region is BOE
+            String region = catalogProperty.getOrDefault("region", "BOE");
+            String confDir = HMSProperties.REGION_CONF_MAP.get(region.toUpperCase());
+            if (Strings.isNullOrEmpty(confDir)) {
+                LOG.warn("unsupported bytedance hive region: {}", region);
+                throw new DdlException("unsupported bytedance hive region:" + region);
+            }
+
+            // process token
+            String gdprToken = catalogProperty.getOrDefault("token", "");
+            if (Strings.isNullOrEmpty(gdprToken)) {
+                LOG.info("token is empty. will get token from zti");
+            } else {
+                LOG.info("manual set catalog token: {}", gdprToken);
+            }
+
+            // check staging dir
+            String stagingDir = catalogProperty.getOrDefault("staging_dir", "");
+            if (Strings.isNullOrEmpty(stagingDir)) {
+                LOG.warn("staging_dir should not be empty, please add staging_dir in catalog property.");
+                throw new DdlException("staging_dir must be set in catalog property");
+            }
+            // no need to check others below because the configuration is different for bytedance hadoop and hive
+            return;
+        }
+
         // check the dfs.ha properties
         // 'dfs.nameservices'='your-nameservice',
         // 'dfs.ha.namenodes.your-nameservice'='nn1,nn2',
@@ -178,6 +205,10 @@ public class HMSExternalCatalog extends ExternalCatalog {
     @Override
     protected void initLocalObjectsImpl() {
         initPreExecutionAuthenticator();
+        if (authenticator == null) {
+            AuthenticationConfig config = AuthenticationConfig.getKerberosConfig(getConfiguration());
+            authenticator = HadoopAuthenticator.getHadoopAuthenticator(config);
+        }
         HiveConf hiveConf = null;
         JdbcClientConfig jdbcClientConfig = null;
         String hiveMetastoreType = catalogProperty.getOrDefault(HMSProperties.HIVE_METASTORE_TYPE, "");

@@ -50,21 +50,63 @@ under the License.
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-client</artifactId>
             <scope>provided</scope>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.amazonaws</groupId>
+                    <artifactId>aws-java-sdk</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
             <scope>provided</scope>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.amazonaws</groupId>
+                    <artifactId>aws-java-sdk</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>tomcat</groupId>
+                    <artifactId>jasper-runtime</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>tomcat</groupId>
+                    <artifactId>jasper-compiler</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-hdfs</artifactId>
             <scope>provided</scope>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.amazonaws</groupId>
+                    <artifactId>aws-java-sdk</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.doris</groupId>
             <artifactId>hive-catalog-shade</artifactId>
             <scope>provided</scope>
+            <version>${doris.hive.catalog.shade.version}</version>
         </dependency>
     </dependencies>
 

@@ -23,6 +23,7 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.datasource.property.PropertyConverter;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.service.GdprService;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.Maps;
@@ -36,6 +37,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * CatalogProperty to store the properties for catalog.
@@ -51,6 +53,8 @@ public class CatalogProperty implements Writable {
     private Map<String, String> properties;
 
     private volatile Resource catalogResource = null;
+
+    private transient Optional<Map<String, String>> bytedanceHiveProperties;
 
     public CatalogProperty(String resource, Map<String, String> properties) {
         this.resource = Strings.nullToEmpty(resource);
@@ -98,6 +102,8 @@ public class CatalogProperty implements Writable {
 
     public void modifyCatalogProps(Map<String, String> props) {
         properties.putAll(PropertyConverter.convertToMetaProperties(props));
+        // reset cache
+        bytedanceHiveProperties = null;
     }
 
     public void rollBackCatalogProps(Map<String, String> props) {
@@ -108,15 +114,40 @@ public class CatalogProperty implements Writable {
     public Map<String, String> getHadoopProperties() {
         Map<String, String> hadoopProperties = getProperties();
         hadoopProperties.putAll(PropertyConverter.convertToHadoopFSProperties(getProperties()));
+
+        if (bytedanceHiveProperties == null) {
+            LOG.info("bytedanceHiveProperties is null. try to get");
+            Map<String, String> hiveConfs = PropertyConverter.getBytedanceHiveConf(hadoopProperties);
+            bytedanceHiveProperties = Optional.ofNullable(hiveConfs);
+        }
+        if (bytedanceHiveProperties.isPresent()) {
+            for (Map.Entry<String, String> entry : bytedanceHiveProperties.get().entrySet()) {
+                if (!hadoopProperties.containsKey(entry.getKey())) {
+                    hadoopProperties.put(entry.getKey(), entry.getValue());
+                }
+            }
+            String gdprToken = hadoopProperties.getOrDefault("token", "");
+            if (Strings.isNullOrEmpty(gdprToken)) {
+                gdprToken = GdprService.getGdprTokenFromENV();
+                LOG.info("get zti token: {}", gdprToken);
+            } else {
+                LOG.info("token from catalog: {}", gdprToken);
+                //hadoopProperties.remove("token");
+            }
+            hadoopProperties.put("ipc.client.custom_token", gdprToken);
+            hadoopProperties.put("hadoop.security.authentication", "token");
+        }
         return hadoopProperties;
     }
 
     public void addProperty(String key, String val) {
         this.properties.put(key, val);
+        bytedanceHiveProperties = null;
     }
 
     public void deleteProperty(String key) {
         this.properties.remove(key);
+        bytedanceHiveProperties = null;
     }
 
     @Override

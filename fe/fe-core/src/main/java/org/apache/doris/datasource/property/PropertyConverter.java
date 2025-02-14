@@ -39,6 +39,7 @@ import com.amazonaws.glue.catalog.util.AWSGlueConfig;
 import com.google.common.base.Strings;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.fs.LocalFileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.aliyun.oss.AliyunOSSFileSystem;
 import org.apache.hadoop.fs.s3a.Constants;
 import org.apache.hadoop.fs.s3a.S3AFileSystem;
@@ -136,6 +137,51 @@ public class PropertyConverter {
             return convertToCompatibleS3Properties(props, s3CliEndpoint, envCredentials, s3Properties);
         }
         return props;
+    }
+
+    public static Map<String, String> getBytedanceHiveConf(Map<String, String> properties) {
+        // hive version
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Get properties from hive-site.xml/core-site.xml/hdfs-site.xml for bytedance hive metastore");
+        }
+        String metastoreType = properties.get(HMSProperties.HIVE_METASTORE_TYPE);
+        if (!HMSProperties.BYTEDANCE_TYPE.equalsIgnoreCase(metastoreType)) {
+            return null;
+        }
+        String region = properties.getOrDefault("region", "BOE");
+        Map<String, String> hadoopProperties = getHiveConf(region);
+        hadoopProperties.put("fs.hdfs.impl.disable.cache", "true");
+        hadoopProperties.put("ipc.client.client-cache.enable", "false");
+        hadoopProperties.put("dfs.slowRead.bytesPerSec.threshold", "5242880");
+        hadoopProperties.put("dfs.client.hedged.read.enable", "true");
+        hadoopProperties.put(HMSProperties.HIVE_VERSION, "1.2.2");
+        return hadoopProperties;
+    }
+
+    private static Map<String, String> getHiveConf(String region) {
+        String confDir = HMSProperties.REGION_CONF_MAP.get(region.toUpperCase());
+        Map<String, String> res = Maps.newHashMap();
+        String hiveHome = Strings.isNullOrEmpty(HMSProperties.HIVE_HOME)
+                ? HMSProperties.DEFAULT_HIVE_HOME : HMSProperties.HIVE_HOME;
+        String hiveSiteFile = String.format("%s/%s/hive-site.xml", hiveHome, confDir);
+        String hadoopHome = Strings.isNullOrEmpty(HMSProperties.HADOOP_HOME)
+                ? HMSProperties.DEFAULT_HADOOP_HOME : HMSProperties.HADOOP_HOME;
+        String coreSiteFile =  String.format("%s/conf/core-site.xml", hadoopHome);
+        String hdfsSiteFile =  String.format("%s/conf/hdfs-site.xml", hadoopHome);
+        LOG.info("hive site path: {}, core site path: {}, hdfs site path: {}",
+                hiveSiteFile, coreSiteFile, hdfsSiteFile);
+
+        Path hiveSitePath = new Path(hiveSiteFile);
+        Path coreSitePath = new Path(coreSiteFile);
+        Path hdfsSitePath = new Path(hdfsSiteFile);
+        HiveConf hiveConf = new HiveConf();
+        hiveConf.addResource(hiveSitePath);
+        hiveConf.addResource(coreSitePath);
+        hiveConf.addResource(hdfsSitePath);
+        for (Map.Entry<String, String> entry : hiveConf) {
+            res.put(entry.getKey(), entry.getValue());
+        }
+        return res;
     }
 
     private static Map<String, String> convertToCompatibleS3Properties(Map<String, String> props,

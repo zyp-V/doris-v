@@ -193,7 +193,7 @@ public class LocalDfsFileSystem implements FileSystem {
         if (!exists(path1.getParent().toString()).ok()) {
             makeDir(path1.getParent().toString());
         }
-        FSDataOutputStream build = fs.createFile(path1).build();
+        FSDataOutputStream build = fs.create(path1);
         build.close();
     }
 }

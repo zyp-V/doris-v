@@ -18,12 +18,15 @@
 
 package org.apache.hadoop.hive.metastore;
 
+import com.bytedance.commons.consul.Discovery;
+import com.bytedance.commons.consul.ServiceNode;
 import org.apache.doris.datasource.hive.HiveVersionUtil;
 import org.apache.doris.datasource.hive.HiveVersionUtil.HiveVersion;
 import org.apache.doris.datasource.property.constants.HMSProperties;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import org.apache.doris.service.GdprService;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -219,15 +222,16 @@ import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import shade.doris.hive.org.apache.thrift.TApplicationException;
-import shade.doris.hive.org.apache.thrift.TException;
-import shade.doris.hive.org.apache.thrift.protocol.TBinaryProtocol;
-import shade.doris.hive.org.apache.thrift.protocol.TCompactProtocol;
-import shade.doris.hive.org.apache.thrift.protocol.TProtocol;
-import shade.doris.hive.org.apache.thrift.transport.TFramedTransport;
-import shade.doris.hive.org.apache.thrift.transport.TSocket;
-import shade.doris.hive.org.apache.thrift.transport.TTransport;
-import shade.doris.hive.org.apache.thrift.transport.TTransportException;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.apache.thrift.TApplicationException;
+import org.apache.thrift.TException;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.protocol.TCompactProtocol;
+import org.apache.thrift.protocol.TProtocol;
+//import org.apache.thrift.transport.TFramedTransport;
+import org.apache.thrift.transport.TSocket;
+import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -235,8 +239,10 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.security.PrivilegedExceptionAction;
@@ -294,7 +300,7 @@ import javax.security.auth.login.LoginException;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
+public class DorisHiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   /**
    * Capabilities of the current client. If this client talks to a MetaStore server in a manner
    * implying the usage of some expanded features that require client-side support that this client
@@ -306,6 +312,14 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   // Test capability for tests.
   public final static ClientCapabilities TEST_VERSION = new ClientCapabilities(
       Lists.newArrayList(ClientCapability.INSERT_ONLY_TABLES, ClientCapability.TEST_CAPABILITY));
+
+  private final static String METASTORE_USE_CONSUL = "hive.metastore.use.consul";
+  private final static String METASTORE_CONSUL_NAME_FIRST = "hive.metastore.consul.name.first";
+  private final static String METASTORE_CONSUL_NAME = "hive.metastore.consul.name";
+  private final static String METASTORE_CONSUL_NAMES = "hive.metastore.consul.names";
+  private final static String HIVE_CLIENT_ENABLE_PREFER_IPV6 = "hive.client.enable.prefer_ipv6";
+
+  private final static String METASTORE_URIS = "hive.metastore.uris";
 
   ThriftHiveMetastore.Iface client = null;
   private TTransport transport = null;
@@ -330,20 +344,22 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
 
   private final HiveVersion hiveVersion;
 
-  private static final Logger LOG = LogManager.getLogger(HiveMetaStoreClient.class);
+  private static final Logger LOG = LogManager.getLogger(DorisHiveMetaStoreClient.class);
+
+  private String userToken = null;
 
   //copied from ErrorMsg.java
   public static final String REPL_EVENTS_MISSING_IN_METASTORE = "Notification events are missing in the meta store.";
 
-  public HiveMetaStoreClient(Configuration conf) throws MetaException {
+  public DorisHiveMetaStoreClient(Configuration conf) throws MetaException {
     this(conf, null, true);
   }
 
-  public HiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader) throws MetaException {
+  public DorisHiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader) throws MetaException {
     this(conf, hookLoader, true);
   }
 
-  public HiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader, Boolean allowEmbedded)
+  public DorisHiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader, Boolean allowEmbedded)
     throws MetaException {
 
     this.hookLoader = hookLoader;
@@ -378,7 +394,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
       }
       // instantiate the metastore server handler directly instead of connecting
       // through the network
-      client = HiveMetaStore.newRetryingHMSHandler("hive client", this.conf, true);
+      // client = HiveMetaStore.newRetryingHMSHandler("hive client", this.conf, true);
       isConnected = true;
       snapshotActiveConf();
       return;
@@ -389,13 +405,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
     retryDelaySeconds = MetastoreConf.getTimeVar(conf,
         ConfVars.CLIENT_CONNECT_RETRY_DELAY, TimeUnit.SECONDS);
 
-    // user wants file store based configuration
-    if (MetastoreConf.getVar(conf, ConfVars.THRIFT_URIS) != null) {
-      resolveUris();
-    } else {
-      LOG.error("NOT getting uris from conf");
-      throw new MetaException("MetaStoreURIs not found in conf file");
-    }
+    initMetastoreUris();
 
     //If HADOOP_PROXY_USER is set in env or property,
     //then need to create metastore client that proxies as that user.
@@ -579,7 +589,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
 
       if (uriResolverHook != null) {
         //for dynamic uris, re-lookup if there are new metastore locations
-        resolveUris();
+        initMetastoreUris();
       }
 
       if (MetastoreConf.getVar(conf, ConfVars.THRIFT_URI_SELECTION).equalsIgnoreCase("RANDOM")) {
@@ -639,6 +649,137 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
 
   }
 
+    private URI[] getMetastoreIPfromConsul(String consulName){
+        HttpURLConnection connection = null;
+        try {
+            LOG.info("Try to parse metatsore uri from consul: " + consulName);
+            List<Map<String, Object>> list = new ArrayList<>();
+            LOG.info("client IPv6 addr: " + System.getenv().get("BYTED_HOST_IPV6"));
+            LOG.info("client IPv4 addr: " + System.getenv().get("BYTED_HOST_IP"));
+            LOG.info("hive.client.enable.prefer_ipv6: " + conf.getBoolean(HIVE_CLIENT_ENABLE_PREFER_IPV6, true));
+            if (conf.getBoolean(HIVE_CLIENT_ENABLE_PREFER_IPV6, true)) {
+                Discovery discovery = new Discovery();
+                List<ServiceNode> serviceNodes = discovery.lookupName(consulName);
+                int ipv6Cnt = 0;
+                for(ServiceNode node : serviceNodes) {
+                    Map<String, Object> map = new HashMap();
+                    map.put("Host", node.getHost());
+                    if (node.getHost().contains(":")) {
+                        ipv6Cnt++;
+                    }
+                    map.put("Port", node.getPort());
+                    list.add(map);
+                }
+                LOG.info(String.format("Parsed nodes, ipv4:%s, ipv6:%s", list.size() - ipv6Cnt, ipv6Cnt));
+            } else {
+                URL managerUr = new URL("http://127.0.0.1:2280/v1/lookup/name?name=" + consulName);
+                connection = (HttpURLConnection) managerUr.openConnection();
+                connection.setDoInput(true);
+                connection.setDoOutput(true);
+                connection.setUseCaches(false);
+                connection.setRequestMethod("GET");
+                ObjectMapper mapper = new ObjectMapper();
+                list = mapper.readValue(connection.getInputStream(), List.class);
+            }
+            LOG.info("Parsed nodes size: " + list.size());
+            if (list != null && list.size() > 0) {
+                Collections.shuffle(list, new Random(System.currentTimeMillis()));
+                URI[] newMetastoreUris = new URI[list.size()];
+                for(int i = 0; i < list.size(); i++){
+                    Map<String,Object> map = list.get(i);
+                    String host = (String)map.get("Host");
+                    int port = (Integer)map.get("Port");
+                    String uri = host.contains(":") ? "thrift://[" + host + "]:" + port : "thrift://" + host + ":" + port;
+                    URI tmpUri = new URI(uri);
+                    if (tmpUri.getScheme() == null) {
+                        throw new IllegalArgumentException("URI: " + uri
+                            + " does not have a scheme");
+                    }
+                    newMetastoreUris[i] = tmpUri;
+                }
+                return newMetastoreUris;
+            } else {
+                LOG.error("Metastore consul result is empty!!");
+            }
+        } catch (Exception ex) {
+            LOG.error("Get metastore consul result error!" + ex.getMessage());
+        }
+        finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+        return null;
+    }
+
+    private void initMetastoreUris() throws MetaException{
+        metastoreUris = null;
+
+        boolean useConsul = conf.getBoolean(METASTORE_USE_CONSUL, false);
+
+        if (useConsul) {
+            String consulName = conf.get(METASTORE_CONSUL_NAME_FIRST, "");
+            LOG.info("Try to connect to metastore through hive.metastore.consul.name.first: " + consulName);
+            URI[] res = getMetastoreIPfromConsul(consulName);
+            if (res != null && res.length > 0) {
+                this.metastoreUris = res;
+            }
+        }
+
+        //兜底
+        if (useConsul && metastoreUris == null) {
+            String consulName = conf.get(METASTORE_CONSUL_NAME, "");
+            LOG.info("Try to connect to metastore through hive.metastore.consul.name: " + consulName);
+            URI[] res = getMetastoreIPfromConsul(consulName);
+            if (res != null && res.length > 0) {
+                this.metastoreUris = res;
+            }
+        }
+
+        // 多机房容灾
+        if (useConsul && metastoreUris == null) {
+            String[] consulNames = conf.get(METASTORE_CONSUL_NAMES, "").split(",");
+            for (String consulName: consulNames) {
+                LOG.info("Try to connect to metastore through hive.metastore.consul.name: " + consulName.trim());
+                URI[] res = getMetastoreIPfromConsul(consulName.trim());
+                if (res != null && res.length > 0) {
+                    this.metastoreUris = res;
+                    break;
+                }
+            }
+        }
+
+        // when metastore consul is not use or result is wrong, metastoreUris is null
+        if (metastoreUris == null){
+            // user wants file store based configuration
+            if (conf.get(METASTORE_URIS) != null) {
+                resolveUris();
+                /*String[] metastoreUrisString = conf.get(METASTORE_URIS).split(",");
+                LOG.info("Try to connect to metastore through hive.metastore.uris: " + Arrays.toString(metastoreUrisString));
+                metastoreUris = new URI[metastoreUrisString.length];
+                try {
+                    int i = 0;
+                    for (String s : metastoreUrisString) {
+                        URI tmpUri = new URI(s);
+                        if (tmpUri.getScheme() == null) {
+                            throw new IllegalArgumentException("URI: " + s
+                                + " does not have a scheme");
+                        }
+                        metastoreUris[i++] = tmpUri;
+
+                    }
+                } catch (IllegalArgumentException e) {
+                    throw (e);
+                } catch (Exception e) {
+                    MetaStoreUtils.logAndThrowMetaException(e);
+                }*/
+            } else {
+                LOG.error("NOT getting uris from conf");
+                throw new MetaException("MetaStoreURIs not found in conf file");
+            }
+        }
+    }
+
   private void open() throws MetaException {
     isConnected = false;
     TTransportException tte = null;
@@ -676,7 +817,12 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
               throw new MetaException(e.toString());
             }
           } else {
+              try {
             transport = new TSocket(store.getHost(), store.getPort(), clientSocketTimeout);
+            } catch(TTransportException e) {
+                  tte = e;
+                  throw new MetaException(e.toString());
+              }
           }
 
           if (useSasl) {
@@ -714,7 +860,9 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
             }
           } else {
             if (useFramedTransport) {
-              transport = new TFramedTransport(transport);
+                // only support in libthrift 0.9.3
+                // but doris use libthrift 0.16
+              //transport = new TFramedTransport(transport);
             }
           }
 
@@ -741,6 +889,15 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
             }
           }
 
+            if (isConnected) {
+                try {
+                    this.userToken = GdprService.getGdprTokenFromENV();
+                    client.set_token(this.userToken);
+                }  catch (TException e) {
+                    LOG.warn("set_ugi() not successful, Likely cause: new client talking to old server. "
+                        + "Continuing without it.", e);
+                }
+            }
           if (isConnected && !useSasl && MetastoreConf.getBoolVar(conf, ConfVars.EXECUTE_SET_UGI)){
             // Call set_ugi, only in unsecure mode.
             try {
@@ -3056,7 +3213,7 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   public static IMetaStoreClient newSynchronizedClient(
       IMetaStoreClient client) {
     return (IMetaStoreClient) Proxy.newProxyInstance(
-      HiveMetaStoreClient.class.getClassLoader(),
+      DorisHiveMetaStoreClient.class.getClassLoader(),
       new Class [] { IMetaStoreClient.class },
       new SynchronizedHandler(client));
   }

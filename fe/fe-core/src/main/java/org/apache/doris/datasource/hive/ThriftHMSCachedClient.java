@@ -37,8 +37,8 @@ import org.apache.hadoop.hive.common.ValidTxnWriteIdList;
 import org.apache.hadoop.hive.common.ValidWriteIdList;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.metastore.DorisHiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.HiveMetaHookLoader;
-import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.LockComponentBuilder;
 import org.apache.hadoop.hive.metastore.LockRequestBuilder;
@@ -62,7 +62,7 @@ import org.apache.hadoop.hive.metastore.api.TableValidWriteIds;
 import org.apache.hadoop.hive.metastore.txn.TxnUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import shade.doris.hive.org.apache.thrift.TApplicationException;
+import org.apache.thrift.TApplicationException;
 
 import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
@@ -646,7 +646,7 @@ public class ThriftHMSCachedClient implements HMSCachedClient {
                         AWSCatalogMetastoreClient.class.getName());
             } else {
                 client = RetryingMetaStoreClient.getProxy(hiveConf, DUMMY_HOOK_LOADER,
-                        HiveMetaStoreClient.class.getName());
+                        DorisHiveMetaStoreClient.class.getName());
             }
         }
 

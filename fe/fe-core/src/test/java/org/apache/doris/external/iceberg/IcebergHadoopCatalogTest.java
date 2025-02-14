@@ -26,6 +26,7 @@ import org.apache.doris.fs.remote.dfs.DFSFileSystem;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.RemoteIterator;
@@ -54,7 +55,7 @@ public class IcebergHadoopCatalogTest {
         DFSFileSystem fs = (DFSFileSystem) FileSystemFactory.get("", StorageBackend.StorageType.HDFS, hadoopProps);
         nativeFs = fs.nativeFileSystem(pathStr);
 
-        RemoteIterator<FileStatus> it = nativeFs.listStatusIterator(new Path(pathStr));
+        RemoteIterator<LocatedFileStatus> it = nativeFs.listLocatedStatus(new Path(pathStr));
         while (it.hasNext()) {
             Path path = (it.next()).getPath();
             if (isNamespace(path)) {

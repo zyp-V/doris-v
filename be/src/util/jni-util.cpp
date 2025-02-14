@@ -212,7 +212,7 @@ Status JniUtil::GetJNIEnvSlowPath(JNIEnv** env) {
     if (rc != 0 || tls_env_ == nullptr) {
         return Status::InternalError("Unable to get JVM: {}", rc);
     }
-#else
+#elif defined(USE_HADOOP_HDFS)
     // the hadoop libhdfs will do all the stuff
     std::call_once(g_jvm_conf_once, SetEnvIfNecessary);
     tls_env_ = getJNIEnv();

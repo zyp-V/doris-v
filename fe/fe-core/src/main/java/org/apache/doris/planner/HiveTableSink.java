@@ -159,7 +159,12 @@ public class HiveTableSink extends BaseExternalTableDataSink {
 
     private String createTempPath(String location) {
         String user = ConnectContext.get().getUserIdentity().getQualifiedUser();
-        return LocationPath.getTempWritePath(location, "/tmp/.doris_staging/" + user);
+        String stagingDir = targetTable.getHadoopProperties().getOrDefault("staging_dir", "");
+        if (stagingDir.endsWith("/")) {
+            stagingDir = stagingDir.substring(0, stagingDir.length() - 1);
+        }
+        String prefix = stagingDir + "/tmp/.doris_staging/" + user;
+        return LocationPath.getTempWritePath(location, prefix);
     }
 
     private void setCompressType(THiveTableSink tSink, TFileFormatType formatType) {
