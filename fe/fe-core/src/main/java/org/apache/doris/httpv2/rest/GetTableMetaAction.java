@@ -22,6 +22,7 @@ import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.DistributionInfo;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.HashDistributionInfo;
+import org.apache.doris.catalog.ListPartitionInfo;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.PartitionInfo;
 import org.apache.doris.catalog.RandomDistributionInfo;
@@ -114,7 +115,7 @@ public class GetTableMetaAction extends RestBaseController {
         data.put("keysType", table.getKeysType().toSql());
 
         List<Map<String, Object>> schema = new ArrayList<>();
-        for (Column column : table.getFullSchema()) {
+        for (Column column : table.getBaseSchema()) {
             String colJson = GsonUtils.GSON.toJson(column);
             Map<String, Object> colMap = GsonUtils.GSON.fromJson(colJson, Map.class);
             colMap.put("type", column.getType().toSql());
@@ -157,6 +158,13 @@ public class GetTableMetaAction extends RestBaseController {
             List<String> partitionColumns = new ArrayList<>();
             RangePartitionInfo rangePartitionInfo = (RangePartitionInfo) defaultPartitionInfo;
             for (Column col : rangePartitionInfo.getPartitionColumns()) {
+                partitionColumns.add(col.getName());
+            }
+            partitionInfo.put("partitionColumns", partitionColumns);
+        } else if (defaultPartitionInfo instanceof ListPartitionInfo) {
+            List<String> partitionColumns = new ArrayList<>();
+            ListPartitionInfo listPartitionInfo = (ListPartitionInfo) defaultPartitionInfo;
+            for (Column col : listPartitionInfo.getPartitionColumns()) {
                 partitionColumns.add(col.getName());
             }
             partitionInfo.put("partitionColumns", partitionColumns);
