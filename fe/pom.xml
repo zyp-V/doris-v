@@ -380,7 +380,7 @@ under the License.
         <byted.rds.mysql.version>1.2.15</byted.rds.mysql.version>
         <mysql.jdbc.version>8.3.0</mysql.jdbc.version>
         <iceberg-hive-metastore.version>1.4.3</iceberg-hive-metastore.version>
-        <doris_bytedance_hadoop_shaded.version>1.0.0.16</doris_bytedance_hadoop_shaded.version>
+        <doris_bytedance_hadoop_shaded.version>1.0.0.17</doris_bytedance_hadoop_shaded.version>
     </properties>
     <profiles>
         <profile>
