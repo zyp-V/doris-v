@@ -600,6 +600,8 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String HIVE_ORC_USE_COLUMN_NAMES = "hive_orc_use_column_names";
 
+    public static final String ENABLE_HIVE_BUCKET_PRUNE = "enable_hive_bucket_prune";
+
     public static final String KEEP_CARRIAGE_RETURN = "keep_carriage_return";
 
     public static final String ENABLE_PUSHDOWN_STRING_MINMAX = "enable_pushdown_string_minmax";
@@ -2017,6 +2019,11 @@ public class SessionVariable implements Serializable, Writable {
                     "Access Parquet columns by name by default. Set this property to `false` to access columns "
                             + "by their ordinal position in the Hive table definition."})
     public boolean hiveOrcUseColumnNames = true;
+
+    @VariableMgr.VarAttr(name = ENABLE_HIVE_BUCKET_PRUNE,
+            description = {"是否开启hive外表的分桶裁剪，默认为true",
+                    "Whether to enable hive catalog table bucket prune"})
+    public boolean enableHiveBucketPrune = true;
 
     @VariableMgr.VarAttr(name = KEEP_CARRIAGE_RETURN,
             description = {"在同时处理\r和\r\n作为CSV的行分隔符时，是否保留\r",
@@ -3668,6 +3675,14 @@ public class SessionVariable implements Serializable, Writable {
 
     public void setEnableInvertedIndexQuery(boolean enableInvertedIndexQuery) {
         this.enableInvertedIndexQuery = enableInvertedIndexQuery;
+    }
+
+    public void setEnableHiveBucketPrune(boolean enableHiveBucketPrune) {
+        this.enableHiveBucketPrune = enableHiveBucketPrune;
+    }
+
+    public boolean getEnableHiveBucketPrune() {
+        return enableHiveBucketPrune;
     }
 
     public boolean isEnablePushDownCountOnIndex() {

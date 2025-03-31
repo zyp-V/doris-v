@@ -35,6 +35,7 @@ import org.apache.doris.datasource.FileSplit;
 import org.apache.doris.datasource.FileSplitter;
 import org.apache.doris.datasource.hive.HMSExternalCatalog;
 import org.apache.doris.datasource.hive.HMSExternalTable;
+import org.apache.doris.datasource.hive.HiveBucketUtil;
 import org.apache.doris.datasource.hive.HiveMetaStoreCache;
 import org.apache.doris.datasource.hive.HiveMetaStoreCache.FileCacheValue;
 import org.apache.doris.datasource.hive.HiveMetaStoreClientHelper;
@@ -58,6 +59,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import lombok.Setter;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.ValidWriteIdList;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Table;
@@ -70,15 +72,19 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class HiveScanNode extends FileQueryScanNode {
     private static final Logger LOG = LogManager.getLogger(HiveScanNode.class);
+    private static final Pattern BUCKET_PATTERN = Pattern.compile("part-(\\d{5})");
 
     protected final HMSExternalTable hmsTable;
     private HiveTransaction hiveTransaction = null;
@@ -267,6 +273,15 @@ public class HiveScanNode extends FileQueryScanNode {
         return numSplitsPerPartition.get() * prunedPartitions.size();
     }
 
+    private Optional<Integer> getBucketIdFromPath(Path filePath) {
+        Matcher matcher = BUCKET_PATTERN.matcher(filePath.getName());
+        if (matcher.find()) {
+            String numberStr = matcher.group(1);
+            return Optional.of(Integer.parseInt(numberStr));
+        }
+        return Optional.empty();
+    }
+
     private void getFileSplitByPartitions(HiveMetaStoreCache cache, List<HivePartition> partitions,
             List<Split> allFiles, String bindBrokerName, int numBackends) throws IOException, UserException {
         List<FileCacheValue> fileCaches;
@@ -311,10 +326,28 @@ public class HiveScanNode extends FileQueryScanNode {
             int parallelNum = sessionVariable.getParallelExecInstanceNum();
             needSplit = FileSplitter.needSplitForCountPushdown(parallelNum, numBackends, totalFileNum);
         }
+
+        Optional<Set<Integer>> bucketIdsOpt = Optional.empty();
+        try {
+            if (ConnectContext.get().getSessionVariable().getEnableHiveBucketPrune()) {
+                List<String> distributionColumnNames = hmsTable.getDistributionColumnList();
+                bucketIdsOpt = HiveBucketUtil.getPrunedBuckets(
+                    conjuncts, distributionColumnNames, hmsTable.getBucketNum(), Maps.newHashMap());
+            }
+        } catch (DdlException e) {
+            LOG.warn("hive table: {} bucket prune failed", hmsTable.getName(), e);
+        }
+
         for (HiveMetaStoreCache.FileCacheValue fileCacheValue : fileCaches) {
             if (fileCacheValue.getFiles() != null) {
                 boolean isSplittable = fileCacheValue.isSplittable();
                 for (HiveMetaStoreCache.HiveFileStatus status : fileCacheValue.getFiles()) {
+                    if (bucketIdsOpt.isPresent()) {
+                        Optional<Integer> bucketIdOpt = getBucketIdFromPath(status.getPath());
+                        if (bucketIdOpt.isPresent() && !bucketIdsOpt.get().contains(bucketIdOpt.get())) {
+                            continue;
+                        }
+                    }
                     allFiles.addAll(FileSplitter.splitFile(status.getPath(),
                             // set block size to Long.MAX_VALUE to avoid splitting the file.
                             getRealFileSplitSize(needSplit ? status.getBlockSize() : Long.MAX_VALUE),
