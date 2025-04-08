@@ -1199,6 +1199,10 @@ DEFINE_mInt32(publish_version_gap_logging_threshold, "200");
 // The secure path with user files, used in the `local` table function.
 DEFINE_mString(user_files_secure_path, "${DORIS_HOME}");
 
+// ignore complex type check in broker load  
+DEFINE_mBool(ignore_load_complex_type_check, "true");
+
+
 DEFINE_Int32(fe_expire_duration_seconds, "60");
 
 DEFINE_Int32(grace_shutdown_wait_seconds, "120");

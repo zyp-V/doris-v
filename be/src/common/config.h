@@ -1457,6 +1457,9 @@ DECLARE_mInt32(report_delete_bitmap_metrics_interval_s);
 
 DECLARE_mString(datamind_tcc_api_key);
 
+// ignore complex type check in broker load 
+DECLARE_mBool(ignore_load_complex_type_check);
+
 #ifdef BE_TEST
 // test s3
 DECLARE_String(test_s3_resource);

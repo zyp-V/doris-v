@@ -406,7 +406,7 @@ Status VFileScanner::_get_block_wrapped(RuntimeState* state, Block* block, bool*
  * This is a temporary method, and will be replaced by tvf.
  */
 Status VFileScanner::_check_output_block_types() {
-    if (_is_load) {
+    if (_is_load && !config::ignore_load_complex_type_check) {
         TFileFormatType::type format_type = _params->format_type;
         if (format_type == TFileFormatType::FORMAT_PARQUET ||
             format_type == TFileFormatType::FORMAT_ORC) {
