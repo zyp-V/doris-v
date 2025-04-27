@@ -626,6 +626,7 @@ DEFINE_Int32(min_buffer_size, "1024"); // 1024, The minimum read buffer size (in
 DEFINE_String(pprof_profile_dir, "${DORIS_HOME}/log");
 // for jeprofile in jemalloc
 DEFINE_mString(jeprofile_dir, "${DORIS_HOME}/log");
+DEFINE_mString(jvm_dump_dir, "${DORIS_HOME}/log");
 DEFINE_mBool(enable_je_purge_dirty_pages, "true");
 DEFINE_mString(je_dirty_pages_mem_limit_percent, "5%");
 

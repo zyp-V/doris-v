@@ -26,13 +26,17 @@ import org.apache.doris.thrift.TJvmMemoryPool;
 import org.apache.doris.thrift.TJvmThreadInfo;
 
 import com.google.common.base.Joiner;
+import com.sun.management.HotSpotDiagnosticMXBean;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TDeserializer;
 import org.apache.thrift.TException;
 import org.apache.thrift.TSerializer;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
@@ -52,6 +56,7 @@ import java.util.Map;
  */
 public class JniUtil {
     private static final TBinaryProtocol.Factory protocolFactory_ = new TBinaryProtocol.Factory();
+    private static final Logger log = LoggerFactory.getLogger(JniUtil.class);
 
     /**
      * Initializes the JvmPauseMonitor instance.
@@ -268,5 +273,39 @@ public class JniUtil {
             sb.append(entry.getKey() + ":" + entry.getValue() + "\n");
         }
         return sb.toString();
+    }
+
+    private static class HotSpotDiagnosticMXBeanHolder {
+
+        private static final String HOTSPOT_BEAN_NAME = "com.sun.management:type=HotSpotDiagnostic";
+
+        private static volatile HotSpotDiagnosticMXBean hotSpotDiagnostic;
+
+        public static HotSpotDiagnosticMXBean getHotSpotDiagnostic() {
+            if (hotSpotDiagnostic == null) {
+                synchronized (HotSpotDiagnosticMXBeanHolder.class) {
+                    if (hotSpotDiagnostic == null) {
+                        hotSpotDiagnostic = getHotSpotDiagnosticMXBean();
+                    }
+                }
+            }
+            return hotSpotDiagnostic;
+        }
+
+        private static HotSpotDiagnosticMXBean getHotSpotDiagnosticMXBean() {
+            try {
+                return ManagementFactory.newPlatformMXBeanProxy(
+                        ManagementFactory.getPlatformMBeanServer(),
+                        HOTSPOT_BEAN_NAME, HotSpotDiagnosticMXBean.class);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    public static boolean dumpHeap(String path) throws IOException {
+        HotSpotDiagnosticMXBean hotSpot = HotSpotDiagnosticMXBeanHolder.getHotSpotDiagnostic();
+        hotSpot.dumpHeap(path, false);
+        return true;
     }
 }

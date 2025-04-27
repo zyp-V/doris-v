@@ -664,6 +664,7 @@ DECLARE_Int32(min_buffer_size); // 1024, The minimum read buffer size (in bytes)
 DECLARE_String(pprof_profile_dir);
 // for jeprofile in jemalloc
 DECLARE_mString(jeprofile_dir);
+DECLARE_mString(jvm_dump_dir);
 // Purge all unused dirty pages for all arenas.
 DECLARE_mBool(enable_je_purge_dirty_pages);
 // Purge all unused Jemalloc dirty pages for all arenas when exceed je_dirty_pages_mem_limit and process exceed soft limit.
