@@ -72,6 +72,8 @@ public class AuditStreamLoader {
         conn.addRequestProperty("columns",
                 InternalSchema.AUDIT_SCHEMA.stream().map(c -> c.getName()).collect(
                         Collectors.joining(",")));
+        conn.addRequestProperty("column_separator", String.valueOf("|*$&$*|"));
+        conn.addRequestProperty("line_delimiter", String.valueOf("~*$&$*~"));
         conn.setDoOutput(true);
         conn.setDoInput(true);
         return conn;
@@ -84,6 +86,8 @@ public class AuditStreamLoader {
         sb.append("-H \"").append("Expect\":").append("\"100-continue\" \\\n  ");
         sb.append("-H \"").append("Content-Type\":").append("\"text/plain; charset=UTF-8\" \\\n  ");
         sb.append("-H \"").append("max_filter_ratio\":").append("\"1.0\" \\\n  ");
+        sb.append("-H \"").append("column_separator\":").append("|*$&$*|").append(" \\\n  ");
+        sb.append("-H \"").append("line_delimiter\":").append("~*$&$*~").append(" \\\n  ");
         sb.append("-H \"").append("columns\":")
                 .append("\"" + InternalSchema.AUDIT_SCHEMA.stream().map(c -> c.getName()).collect(
                         Collectors.joining(",")) + "\" \\\n  ");

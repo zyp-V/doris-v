@@ -309,7 +309,7 @@ public class InternalSchemaInitializer extends Thread {
         // partition
         PartitionDesc partitionDesc = new RangePartitionDesc(Lists.newArrayList("time"), Lists.newArrayList());
         // distribution
-        int bucketNum = 2;
+        int bucketNum = 10;
         DistributionDesc distributionDesc = new HashDistributionDesc(bucketNum, Lists.newArrayList("query_id"));
         Map<String, String> properties = new HashMap<String, String>() {
             {
@@ -368,6 +368,22 @@ public class InternalSchemaInitializer extends Thread {
         // 3. check audit table
         optionalStatsTbl = db.getTable(AuditLoader.AUDIT_LOG_TABLE);
         if (!optionalStatsTbl.isPresent()) {
+            return false;
+        }
+        Table auditTbl = optionalStatsTbl.get();
+        Optional<Column> optionalProfileColumn =
+                auditTbl.fullSchema.stream().filter(c -> c.getName().equals("profile")).findFirst();
+        if (!optionalProfileColumn.isPresent()) {
+            // the audit_log table is old format, so drop old one
+            try {
+                LOG.info("start to drop old audit_log table");
+                Env.getCurrentEnv().getInternalCatalog()
+                        .dropTable(new DropTableStmt(true, new TableName(null,
+                                StatisticConstants.DB_NAME, AuditLoaderPlugin.AUDIT_LOG_TABLE), true));
+                LOG.info("old audit_log table dropped");
+            } catch (Exception e) {
+                LOG.warn("Failed to drop outdated audit_log table", e);
+            }
             return false;
         }
         return true;

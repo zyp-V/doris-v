@@ -139,38 +139,42 @@ public class AuditLoader extends Plugin implements AuditPlugin {
 
     private void fillLogBuffer(AuditEvent event, StringBuilder logBuffer) {
         // should be same order as InternalSchema.AUDIT_SCHEMA
-        logBuffer.append(event.queryId).append("\t");
-        logBuffer.append(TimeUtils.longToTimeStringWithms(event.timestamp)).append("\t");
-        logBuffer.append(event.clientIp).append("\t");
-        logBuffer.append(event.user).append("\t");
-        logBuffer.append(event.ctl).append("\t");
-        logBuffer.append(event.db).append("\t");
-        logBuffer.append(event.state).append("\t");
-        logBuffer.append(event.errorCode).append("\t");
-        logBuffer.append(event.errorMessage).append("\t");
-        logBuffer.append(event.queryTime).append("\t");
-        logBuffer.append(event.scanBytes).append("\t");
-        logBuffer.append(event.scanRows).append("\t");
-        logBuffer.append(event.returnRows).append("\t");
+        logBuffer.append(event.queryId).append("|*$&$*|");
+        logBuffer.append(TimeUtils.longToTimeStringWithms(event.timestamp)).append("|*$&$*|");
+        logBuffer.append(event.clientIp).append("|*$&$*|");
+        logBuffer.append(event.user).append("|*$&$*|");
+        logBuffer.append(event.ctl).append("|*$&$*|");
+        logBuffer.append(event.db).append("|*$&$*|");
+        logBuffer.append(event.state).append("|*$&$*|");
+        logBuffer.append(event.errorCode).append("|*$&$*|");
+        logBuffer.append(event.errorMessage).append("|*$&$*|");
+        logBuffer.append(event.queryTime).append("|*$&$*|");
+        logBuffer.append(event.scanBytes).append("|*$&$*|");
+        logBuffer.append(event.scanRows).append("|*$&$*|");
+        logBuffer.append(event.returnRows).append("|*$&$*|");
         logBuffer.append(event.shuffleSendRows).append("\t");
         logBuffer.append(event.shuffleSendBytes).append("\t");
         logBuffer.append(event.scanBytesFromLocalStorage).append("\t");
         logBuffer.append(event.scanBytesFromRemoteStorage).append("\t");
-        logBuffer.append(event.stmtId).append("\t");
-        logBuffer.append(event.isQuery ? 1 : 0).append("\t");
+        logBuffer.append(event.stmtId).append("|*$&$*|");
+        logBuffer.append(event.isQuery ? 1 : 0).append("|*$&$*|");
         logBuffer.append(event.isNereids ? 1 : 0).append("\t");
-        logBuffer.append(event.feIp).append("\t");
-        logBuffer.append(event.cpuTimeMs).append("\t");
-        logBuffer.append(event.sqlHash).append("\t");
-        logBuffer.append(event.sqlDigest).append("\t");
-        logBuffer.append(event.peakMemoryBytes).append("\t");
-        logBuffer.append(event.workloadGroup).append("\t");
+        logBuffer.append(event.feIp).append("|*$&$*|");
+        logBuffer.append(event.cpuTimeMs).append("|*$&$*|");
+        logBuffer.append(event.sqlHash).append("|*$&$*|");
+        logBuffer.append(event.sqlDigest).append("|*$&$*|");
+        logBuffer.append(event.peakMemoryBytes).append("|*$&$*|");
+        logBuffer.append(event.workloadGroup).append("|*$&$*|");
         // already trim the query in org.apache.doris.qe.AuditLogHelper#logAuditLog
         String stmt = event.stmt;
         if (LOG.isDebugEnabled()) {
             LOG.debug("receive audit event with stmt: {}", stmt);
         }
-        logBuffer.append(stmt).append("\n");
+        logBuffer.append(stmt).append("|*$&$*|");
+        logBuffer.append(event.shuffleSendBytes).append("|*$&$*|");
+        logBuffer.append(event.shuffleSendRows).append("|*$&$*|");
+        logBuffer.append(event.logId).append("|*$&$*|");
+        logBuffer.append(event.profile).append("~*$&$*~");
     }
 
     // public for external call.

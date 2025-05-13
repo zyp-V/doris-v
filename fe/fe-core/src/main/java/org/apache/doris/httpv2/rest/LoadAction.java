@@ -118,8 +118,9 @@ public class LoadAction extends RestBaseController {
         }
 
         String authToken = request.getHeader("token");
+
         // if auth token (non-gdpr) is not null, check it first
-        if (!Strings.isNullOrEmpty(authToken) && !Config.enable_gdpr) {
+        if (!Strings.isNullOrEmpty(authToken)) {
             if (!checkClusterToken(authToken)) {
                 throw new UnauthorizedException("Invalid token: " + authToken);
             }
