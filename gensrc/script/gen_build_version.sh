@@ -33,6 +33,13 @@ build_version_minor=1
 build_version_patch=11
 build_version_rc_version="rc01"
 
+if [ -n "${BUILD_REPO_BRANCH}" ]; then
+    build_version_rc_version="${BUILD_REPO_BRANCH:0:50}"
+fi
+if [ -n "${BUILD_VERSION}" ]; then
+    build_version_rc_version="${build_version_rc_version}-${BUILD_VERSION}"
+fi
+
 build_version="${build_version_prefix}-${build_version_major}.${build_version_minor}.${build_version_patch}-${build_version_rc_version}"
 
 # This version is used to check FeMetaVersion is not changed during release
