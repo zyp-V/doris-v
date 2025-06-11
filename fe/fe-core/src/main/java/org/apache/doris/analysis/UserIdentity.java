@@ -64,6 +64,8 @@ public class UserIdentity implements Writable, GsonPostProcessable {
     public static final UserIdentity ADMIN;
     public static final UserIdentity UNKNOWN;
 
+    private String byteUserName;
+
     static {
         ROOT = new UserIdentity(Auth.ROOT_USER, "%");
         ROOT.setIsAnalyzed();
@@ -110,6 +112,14 @@ public class UserIdentity implements Writable, GsonPostProcessable {
     public String getQualifiedUser() {
         Preconditions.checkState(isAnalyzed);
         return user;
+    }
+
+    public String getByteUserName() {
+        return byteUserName;
+    }
+
+    public void setByteUserName(String byteUserName) {
+        this.byteUserName = byteUserName;
     }
 
     public String getHost() {

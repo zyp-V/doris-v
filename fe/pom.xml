@@ -365,7 +365,7 @@ under the License.
         <quartz.version>2.3.2</quartz.version>
         <aircompressor.version>0.27</aircompressor.version>
         <!-- paimon -->
-        <paimon.version>1.0.1</paimon.version>
+        <paimon.version>1.0.2-byted-SNAPSHOT</paimon.version>
         <disruptor.version>3.4.4</disruptor.version>
         <!-- arrow flight sql -->
         <arrow.vector.classifier>shade-format-flatbuffers</arrow.vector.classifier>
@@ -380,7 +380,7 @@ under the License.
         <byted.rds.mysql.version>1.2.15</byted.rds.mysql.version>
         <mysql.jdbc.version>8.3.0</mysql.jdbc.version>
         <iceberg-hive-metastore.version>1.4.3</iceberg-hive-metastore.version>
-        <doris_bytedance_hadoop_shaded.version>1.0.0.17</doris_bytedance_hadoop_shaded.version>
+        <doris_bytedance_hadoop_shaded.version>1.0.0.22</doris_bytedance_hadoop_shaded.version>
     </properties>
     <profiles>
         <profile>
@@ -603,12 +603,6 @@ under the License.
                     </exclusion>
                 </exclusions>
             </dependency>
-            <!--dependency>
-                <groupId>org.apache.doris</groupId>
-                <artifactId>hive-catalog-shade</artifactId>
-                <version>${doris.hive.catalog.shade.version}</version>
-            </dependency-->
-
             <dependency>
                 <groupId>org.apache.hive</groupId>
                 <artifactId>hive-serde</artifactId>

@@ -28,6 +28,7 @@ public class AuthenticateResponse {
     private boolean success;
     private UserIdentity userIdentity;
     private boolean isTemp = false;
+    private String byteUserName;
     private ImmutablePair<LegacyIdentity, String> gdprIdentityToken = null;
     private String qualifiedUser;
 
@@ -47,9 +48,26 @@ public class AuthenticateResponse {
         this.qualifiedUser = qualifiedUser;
     }
 
+    public AuthenticateResponse(boolean success, String byteUserName, UserIdentity userIdentity, String qualifiedUser) {
+        this.success = success;
+        this.byteUserName = byteUserName;
+        this.userIdentity = userIdentity;
+        this.qualifiedUser = qualifiedUser;
+    }
+
     public AuthenticateResponse(boolean success, UserIdentity userIdentity,
                                 ImmutablePair<LegacyIdentity, String> gdprIdentityToken, String qualifiedUser) {
         this.success = success;
+        this.userIdentity = userIdentity;
+        this.gdprIdentityToken = gdprIdentityToken;
+        this.isTemp = true;
+        this.qualifiedUser = qualifiedUser;
+    }
+
+    public AuthenticateResponse(boolean success, String byteUserName, UserIdentity userIdentity,
+                                ImmutablePair<LegacyIdentity, String> gdprIdentityToken, String qualifiedUser) {
+        this.success = success;
+        this.byteUserName = byteUserName;
         this.userIdentity = userIdentity;
         this.gdprIdentityToken = gdprIdentityToken;
         this.isTemp = true;
@@ -88,6 +106,10 @@ public class AuthenticateResponse {
 
     public LegacyIdentity getGdprIdentity() {
         return this.gdprIdentityToken == null ?  null : this.gdprIdentityToken.getLeft();
+    }
+
+    public String getByteUserName() {
+        return this.byteUserName == null ?  null : this.byteUserName;
     }
 
     public String getGdprToken() {

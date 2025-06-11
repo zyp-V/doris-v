@@ -33,7 +33,7 @@ import org.apache.doris.qe.OriginStatement;
 
 import com.google.common.collect.Maps;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.hive.metastore.DorisHiveMetaStoreClient;
+import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.CurrentNotificationEventId;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
@@ -224,7 +224,7 @@ public class MetastoreEventsProcessor extends MasterDaemon {
         } catch (MetastoreNotificationFetchException e) {
             // Need a fallback to handle this because this error state can not be recovered until restarting FE
             if (StringUtils.isNotEmpty(e.getMessage())
-                    && e.getMessage().contains(DorisHiveMetaStoreClient.REPL_EVENTS_MISSING_IN_METASTORE)) {
+                    && e.getMessage().contains(HiveMetaStoreClient.REPL_EVENTS_MISSING_IN_METASTORE)) {
                 refreshCatalogForMaster(hmsExternalCatalog);
                 // set lastSyncedEventId to currentEventId after refresh catalog successfully
                 updateLastSyncedEventId(hmsExternalCatalog, currentEventId);
@@ -275,7 +275,7 @@ public class MetastoreEventsProcessor extends MasterDaemon {
         } catch (MetastoreNotificationFetchException e) {
             // Need a fallback to handle this because this error state can not be recovered until restarting FE
             if (StringUtils.isNotEmpty(e.getMessage())
-                    && e.getMessage().contains(DorisHiveMetaStoreClient.REPL_EVENTS_MISSING_IN_METASTORE)) {
+                    && e.getMessage().contains(HiveMetaStoreClient.REPL_EVENTS_MISSING_IN_METASTORE)) {
                 refreshCatalogForSlave(hmsExternalCatalog);
                 // set masterLastSyncedEventId to lastSyncedEventId after refresh catalog successfully
                 updateLastSyncedEventId(hmsExternalCatalog, masterLastSyncedEventId);

@@ -22,6 +22,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.httpv2.entity.ActionStatus;
 import org.apache.doris.service.FrontendOptions;
 
+import com.google.common.base.Strings;
 import com.google.gson.Gson;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import org.slf4j.Logger;
@@ -50,22 +51,31 @@ public class GenerateAccountAction extends RestBaseController {
                     "Gdpr function is disabled", "");
         }
 
+        String account;
         String gdprToken = request.getParameter("token");
-        if (gdprToken == null) {
+        String byteUserName = request.getParameter("byteUserName");
+        if (Strings.isNullOrEmpty(gdprToken) && Strings.isNullOrEmpty(byteUserName)) {
             LOG.warn("failed to generate gdpr account, token is empty");
             return responseFormat(HttpResponseStatus.BAD_REQUEST.code(),
                     "Parameter token is empty", "");
+        } else if (!Strings.isNullOrEmpty(byteUserName)) {
+            try {
+                account = Env.getCurrentEnv().getGeminiService().genTempAccount(byteUserName,
+                    request.getRemoteHost());
+            } catch (Exception e) {
+                LOG.error("failed to generate gemini account", e);
+                return responseFormat(ActionStatus.INVALID_GEMINI_USER_NAME.ordinal(),
+                    "verify user_name error: " + e, "");
+            }
+        } else {
+            try {
+                account = Env.getCurrentEnv().getGdprService().genTempAccount(
+                    gdprToken, request.getRemoteHost());
+            } catch (Exception e) {
+                LOG.error("failed to generate gdpr account", e);
+                return responseFormat(ActionStatus.INVALID_GDPR_TOKEN.ordinal(), "verify token error: " + e, "");
+            }
         }
-
-        String account;
-        try {
-            account = Env.getCurrentEnv().getGdprService().genTempAccount(
-                gdprToken, request.getRemoteHost());
-        } catch (Exception e) {
-            LOG.error("failed to generate gdpr account", e);
-            return responseFormat(ActionStatus.INVALID_GDPR_TOKEN.ordinal(), "verify token error: " + e, "");
-        }
-
         return responseFormat(ActionStatus.OK.ordinal(), "", account);
     }
 

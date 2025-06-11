@@ -320,6 +320,8 @@ public class ConnectContext {
 
     protected LegacyIdentity gdprIdentity = null;
 
+    protected String byteUserName = "";
+
     public static ConnectContext get() {
         return threadLocalInfo.get();
     }
@@ -1208,6 +1210,13 @@ public class ConnectContext {
         this.gdprToken = gdprToken;
     }
 
+    public String getByteUserName() {
+        return byteUserName;
+    }
+
+    public void setByteUserName(String byteUserName) {
+        this.byteUserName = byteUserName;
+    }
 
     public void setWorkloadGroupName(String workloadGroupName) {
         this.workloadGroupName = workloadGroupName;

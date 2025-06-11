@@ -20,7 +20,9 @@ package org.apache.doris.datasource.paimon;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.datasource.property.constants.HMSProperties;
 import org.apache.doris.datasource.property.constants.PaimonProperties;
+import org.apache.doris.service.GdprService;
 
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -50,10 +52,49 @@ public class PaimonHMSExternalCatalog extends PaimonExternalCatalog {
     protected void setPaimonCatalogOptions(Map<String, String> properties, Map<String, String> options) {
         options.put(PaimonProperties.PAIMON_CATALOG_TYPE, getPaimonCatalogType(catalogType));
         options.put(PaimonProperties.HIVE_METASTORE_URIS, properties.get(HMSProperties.HIVE_METASTORE_URIS));
+        String region = properties.getOrDefault("region", "BOE");
+        options.put("hive-conf-dir", getHivePath(region));
+        options.put("hadoop-conf-dir", getHadoopConfDir(region));
+        String gdprToken = properties.get("token");
+        if (Strings.isNullOrEmpty(gdprToken)) {
+            gdprToken = GdprService.getGdprTokenFromENV();
+            LOG.info("get zti token: {}", gdprToken);
+        } else {
+            LOG.info("token from catalog: {}", gdprToken);
+        }
+        options.put("ipc.client.custom_token", gdprToken);
+        if (properties.containsKey("hadoop.security.authentication")) {
+            options.put("hadoop.security.authentication", properties.get("hadoop.security.authentication"));
+        }
+        options.put("fs.hdfs.impl.disable.cache", "true");
+        options.put("fs.file.impl.disable.cache", "true");
+        options.put("ipc.client.client-cache.enable", "false");
+        options.put("dfs.slowRead.bytesPerSec.threshold", "5242880");
+        options.put("dfs.client.hedged.read.enable", "true");
+        options.put(HMSProperties.HIVE_VERSION, "1.2.2");
+    }
+
+    private String getHivePath(String region) {
+        String confDir = HMSProperties.REGION_CONF_MAP.get(region.toUpperCase());
+        String hiveHome = Strings.isNullOrEmpty(HMSProperties.HIVE_HOME)
+                ? HMSProperties.DEFAULT_HIVE_HOME : HMSProperties.HIVE_HOME;
+        String hiveConfDir = String.format("%s/%s/", hiveHome, confDir);
+        return hiveConfDir;
+    }
+
+    private String getHadoopConfDir(String region) {
+        String hadoopHome = Strings.isNullOrEmpty(HMSProperties.HADOOP_HOME)
+                ? HMSProperties.DEFAULT_HADOOP_HOME : HMSProperties.HADOOP_HOME;
+        String hadoopConfDir =  String.format("%s/conf/", hadoopHome);
+        return hadoopConfDir;
     }
 
     @Override
     public void checkProperties() throws DdlException {
+        String metastoreType = catalogProperty.getOrDefault(HMSProperties.HIVE_METASTORE_TYPE, "");
+        if (HMSProperties.BYTEDANCE_TYPE.equalsIgnoreCase(metastoreType)) {
+            return;
+        }
         super.checkProperties();
         for (String requiredProperty : REQUIRED_PROPERTIES) {
             if (!catalogProperty.getProperties().containsKey(requiredProperty)) {

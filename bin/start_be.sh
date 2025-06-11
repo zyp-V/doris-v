@@ -209,7 +209,29 @@ export DORIS_CLASSPATH="-Djava.class.path=${DORIS_CLASSPATH}"
 
 # log ${DORIS_CLASSPATH}
 
-export LD_LIBRARY_PATH="${DORIS_HOME}/lib/hadoop_hdfs/native:${LD_LIBRARY_PATH}:${DORIS_HOME}/lib"
+# use /opt/tiger/yarn_deploy/hadoop to replace origin native
+YARN_DEPLOY_PATH=/opt/tiger/yarn_deploy/hadoop/lib/native
+
+if [ ! -d "$YARN_DEPLOY_PATH" ]; then
+    echo "$YARN_DEPLOY_PATH does not exist. should deploy yarn_deploy first!"
+    exit 1
+fi
+
+DORIS_HADOOP_NATIVE_PATH="${DORIS_HOME}/lib/hadoop_hdfs/native"
+# if DORIS_HADOOP_NATIVE_PATH exist and not a soft link, remove it first
+if [ -e "$DORIS_HADOOP_NATIVE_PATH" ] && [ ! -L "$DORIS_HADOOP_NATIVE_PATH" ]; then
+    if [ -z "${DORIS_HOME}" ]; then
+        echo "DORIS_HOME is empty"
+        exit 1
+    fi
+    echo "remove $DORIS_HADOOP_NATIVE_PATH"
+    rm -rf "$DORIS_HADOOP_NATIVE_PATH"
+    echo "soft link $YARN_DEPLOY_PATH to $DORIS_HADOOP_NATIVE_PATH"
+    ln -s $YARN_DEPLOY_PATH $DORIS_HADOOP_NATIVE_PATH
+fi
+
+#export LD_LIBRARY_PATH="${DORIS_HOME}/lib/hadoop_hdfs/native:${LD_LIBRARY_PATH}:${DORIS_HOME}/lib"
+export LD_LIBRARY_PATH="${DORIS_HOME}/lib:${LD_LIBRARY_PATH}"
 
 jdk_version() {
     local java_cmd="${1}"

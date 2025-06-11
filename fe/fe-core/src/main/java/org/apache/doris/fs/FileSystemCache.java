@@ -84,6 +84,9 @@ public class FileSystemCache {
             }
             Map<String, String> result = new HashMap<>();
             conf.iterator().forEachRemaining(e -> result.put(e.getKey(), e.getValue()));
+            if (properties.containsKey("token")) {
+                result.put("ipc.client.custom_token", properties.get("token"));
+            }
             return result;
         }
 

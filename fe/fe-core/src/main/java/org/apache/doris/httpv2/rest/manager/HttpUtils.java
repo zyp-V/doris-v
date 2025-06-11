@@ -85,7 +85,7 @@ public class HttpUtils {
         return doGet(url, headers, DEFAULT_TIME_OUT_MS);
     }
 
-    static String doPost(String url, Map<String, String> headers, Object body) throws IOException {
+    public static String doPost(String url, Map<String, String> headers, Object body) throws IOException {
         HttpPost httpPost = new HttpPost(url);
         if (Objects.nonNull(body)) {
             String jsonString = GsonUtils.GSON.toJson(body);
@@ -97,7 +97,7 @@ public class HttpUtils {
         return executeRequest(httpPost);
     }
 
-    private static void setRequestConfig(HttpRequestBase request, Map<String, String> headers, int timeoutMs) {
+    public static void setRequestConfig(HttpRequestBase request, Map<String, String> headers, int timeoutMs) {
         if (null != headers) {
             for (String key : headers.keySet()) {
                 request.setHeader(key, headers.get(key));
@@ -112,7 +112,7 @@ public class HttpUtils {
         request.setConfig(config);
     }
 
-    private static String executeRequest(HttpRequestBase request) throws IOException {
+    public static String executeRequest(HttpRequestBase request) throws IOException {
         CloseableHttpClient client = HttpClientBuilder.create().build();
         return client.execute(request, httpResponse -> EntityUtils.toString(httpResponse.getEntity()));
     }

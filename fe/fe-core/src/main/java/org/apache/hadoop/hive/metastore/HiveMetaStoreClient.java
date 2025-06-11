@@ -300,7 +300,7 @@ import javax.security.auth.login.LoginException;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class DorisHiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
+public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   /**
    * Capabilities of the current client. If this client talks to a MetaStore server in a manner
    * implying the usage of some expanded features that require client-side support that this client
@@ -344,22 +344,22 @@ public class DorisHiveMetaStoreClient implements IMetaStoreClient, AutoCloseable
 
   private final HiveVersion hiveVersion;
 
-  private static final Logger LOG = LogManager.getLogger(DorisHiveMetaStoreClient.class);
+  private static final Logger LOG = LogManager.getLogger(HiveMetaStoreClient.class);
 
   private String userToken = null;
 
   //copied from ErrorMsg.java
   public static final String REPL_EVENTS_MISSING_IN_METASTORE = "Notification events are missing in the meta store.";
 
-  public DorisHiveMetaStoreClient(Configuration conf) throws MetaException {
+  public HiveMetaStoreClient(Configuration conf) throws MetaException {
     this(conf, null, true);
   }
 
-  public DorisHiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader) throws MetaException {
+  public HiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader) throws MetaException {
     this(conf, hookLoader, true);
   }
 
-  public DorisHiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader, Boolean allowEmbedded)
+  public HiveMetaStoreClient(Configuration conf, HiveMetaHookLoader hookLoader, Boolean allowEmbedded)
     throws MetaException {
 
     this.hookLoader = hookLoader;
@@ -3213,7 +3213,7 @@ public class DorisHiveMetaStoreClient implements IMetaStoreClient, AutoCloseable
   public static IMetaStoreClient newSynchronizedClient(
       IMetaStoreClient client) {
     return (IMetaStoreClient) Proxy.newProxyInstance(
-      DorisHiveMetaStoreClient.class.getClassLoader(),
+      HiveMetaStoreClient.class.getClassLoader(),
       new Class [] { IMetaStoreClient.class },
       new SynchronizedHandler(client));
   }

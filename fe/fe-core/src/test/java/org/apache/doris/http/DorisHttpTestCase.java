@@ -39,6 +39,7 @@ import org.apache.doris.catalog.Tablet;
 import org.apache.doris.catalog.TabletInvertedIndex;
 import org.apache.doris.catalog.TabletMeta;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ExceptionChecker.ThrowingRunnable;
 import org.apache.doris.common.FeConstants;
@@ -394,6 +395,7 @@ public abstract class DorisHttpTestCase {
         };
         assignBackends();
         doSetUp();
+        Config.enable_gemini = false;
     }
 
     @After

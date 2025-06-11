@@ -21,6 +21,7 @@ import org.apache.doris.analysis.TableName;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.AuthorizationInfo;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.authorizer.ranger.bytehive.ByteHiveAccessController;
 import org.apache.doris.catalog.authorizer.ranger.doris.RangerCacheDorisAccessController;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.UserException;
@@ -28,6 +29,7 @@ import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.datasource.ExternalCatalog;
 import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.service.GeminiService;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
@@ -54,6 +56,7 @@ public class AccessControllerManager {
 
     private Auth auth;
     private CatalogAccessController defaultAccessController;
+    private CatalogAccessController byteHiveAccessController;
     private Map<String, CatalogAccessController> ctlToCtlAccessController = Maps.newConcurrentMap();
 
     public AccessControllerManager(Auth auth) {
@@ -63,6 +66,7 @@ public class AccessControllerManager {
         } else {
             defaultAccessController = new InternalAccessController(auth);
         }
+        byteHiveAccessController = new ByteHiveAccessController(auth);
         ctlToCtlAccessController.put(InternalCatalog.INTERNAL_CATALOG_NAME, defaultAccessController);
     }
 
@@ -86,7 +90,12 @@ public class AccessControllerManager {
         }
         catalog.initAccessController(false);
         if (!ctlToCtlAccessController.containsKey(catalog.getName())) {
-            ctlToCtlAccessController.put(catalog.getName(), defaultAccessController);
+            if (catalog.getType().equals(GeminiService.BYTE_HIVE_CATALOG_NAME)
+                    || catalog.getType().equals(GeminiService.BYTE_PAIMON_CATALOG_NAME)) {
+                ctlToCtlAccessController.put(catalog.getName(), byteHiveAccessController);
+            } else {
+                ctlToCtlAccessController.put(catalog.getName(), defaultAccessController);
+            }
         }
     }
 
@@ -202,11 +211,42 @@ public class AccessControllerManager {
     public boolean checkTblPriv(UserIdentity currentUser, String ctl, String db, String tbl, PrivPredicate wanted) {
         boolean hasGlobal = checkGlobalPriv(currentUser, wanted);
 
-        boolean checkResourceGdpr;
+        boolean checkResource;
         ConnectContext ctx = ConnectContext.get();
         LegacyIdentity identity = null;
+        String byteUserName = null;
         if (ctx != null) {
             identity = ctx.getGdprIdentity();
+            byteUserName = ctx.getByteUserName();
+        }
+        if (Config.enable_gemini
+                && StringUtils.isNotEmpty(byteUserName)
+                && !ctx.getConnectType().toString().equals("MYSQL")) {
+            try {
+                if (wanted.getPrivs().containsNodePriv()) {
+                    return false;
+                }
+                if (wanted.getPrivs().containsPrivs(
+                        Privilege.SELECT_PRIV,
+                        Privilege.LOAD_PRIV,
+                        Privilege.ALTER_PRIV,
+                        Privilege.CREATE_PRIV,
+                        Privilege.DROP_PRIV)) {  // Gdpr token only check permission of these
+                    if (StringUtils.isNotBlank(db)) {
+                        // qualifiedDb = [default_cluster:dbname | dbname]
+                        String[] clusterDb = db.split(":");
+                        db = clusterDb.length == 2 ? clusterDb[1] : clusterDb[0];
+                    }
+                    checkResource = Env.getCurrentEnv().getGeminiService()
+                        .checkResource(byteUserName, db, tbl, null, wanted, GeminiService.GEMINI_AUTH_DORIS_TYPE);
+                    if (checkResource) {
+                        return true;
+                    }
+                    return false;
+                }
+            } catch (Exception e) {
+                LOG.warn("Gemini check resource permission failed,", e);
+            }
         }
         if (Config.enable_gdpr && identity != null) {
             try {
@@ -231,9 +271,9 @@ public class AccessControllerManager {
                         String[] clusterDb = db.split(":");
                         db = clusterDb.length == 2 ? clusterDb[1] : clusterDb[0];
                     }
-                    checkResourceGdpr = Env.getCurrentEnv().getGdprService()
+                    checkResource = Env.getCurrentEnv().getGdprService()
                             .checkResource(identity, db, tbl, wanted);
-                    if (checkResourceGdpr) {
+                    if (checkResource) {
                         return true;
                     }
                 }
@@ -257,11 +297,13 @@ public class AccessControllerManager {
     public void checkColumnsPriv(UserIdentity currentUser, String
             ctl, String qualifiedDb, String tbl, Set<String> cols,
             PrivPredicate wanted) throws UserException {
-        boolean hasGlobal = checkGlobalPriv(currentUser, wanted);
+        boolean hasGlobal = false;
         CatalogAccessController accessController = getAccessControllerOrDefault(ctl);
+        if (!(accessController instanceof ByteHiveAccessController)) {
+            hasGlobal = checkGlobalPriv(currentUser, wanted);
+        }
         accessController.checkColsPriv(hasGlobal, currentUser, ctl, qualifiedDb,
                 tbl, cols, wanted);
-
     }
 
     // ==== Resource ====

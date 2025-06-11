@@ -184,6 +184,7 @@ import org.apache.doris.rpc.BackendServiceProxy;
 import org.apache.doris.rpc.RpcException;
 import org.apache.doris.service.ExecuteEnv;
 import org.apache.doris.service.FrontendOptions;
+import org.apache.doris.service.GeminiService;
 import org.apache.doris.statistics.ResultRow;
 import org.apache.doris.statistics.util.InternalQueryBuffer;
 import org.apache.doris.system.Backend;
@@ -601,6 +602,11 @@ public class StmtExecutor {
                             && !context.getSessionVariable().enableFallbackToOriginalPlanner
                             && !forceFallback) {
                         LOG.warn("Analyze failed. {}", context.getQueryIdentifier(), e);
+                        context.getState().setError(e.getMessage());
+                        return;
+                    }
+                    if (e.toString().contains(GeminiService.BYTE_HIVE_ERROR_PREFIX)) {
+                        LOG.warn("Gemini auth failed. {}", context.getQueryIdentifier(), e);
                         context.getState().setError(e.getMessage());
                         return;
                     }

@@ -2852,7 +2852,30 @@ public class Config extends ConfigBase {
         "Enable gdpr verify to access resource"})
     public static boolean enable_gdpr = true;
 
+
     /*---------------------- GDPR CONFIG END ------------------------*/
+
+    /*---------------------- GEMINI CONFIG START ------------------------*/
+
+
+    @ConfField(description = {
+        "开启gemini校验",
+        "Enable gemini verify to access resource"})
+    public static boolean enable_gemini = true;
+
+    @ConfField(description = {
+        "gemini url",
+        ""})
+    public static String gemini_url = "http://gemini.byted.org/";
+
+    @ConfField(description = {
+        "gemini token",
+        ""})
+    public static String gemini_doris_token = "YXBwX25hbWU6ZG9yaXM=";
+
+
+
+    /*---------------------- GEMINI CONFIG END ------------------------*/
 
     /*---------------------- PROFILE & AUDIT LOG CONFIG START ------------------------*/
     /**

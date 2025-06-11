@@ -168,7 +168,7 @@ public abstract class PaimonExternalCatalog extends ExternalCatalog {
     public Map<String, String> getPaimonOptionsMap() {
         Map<String, String> properties = catalogProperty.getHadoopProperties();
         Map<String, String> options = Maps.newHashMap();
-        options.put(PaimonProperties.WAREHOUSE, properties.get(PaimonProperties.WAREHOUSE));
+        //options.put(PaimonProperties.WAREHOUSE, properties.get(PaimonProperties.WAREHOUSE));
         setPaimonCatalogOptions(properties, options);
         setPaimonExtraOptions(properties, options);
         return options;

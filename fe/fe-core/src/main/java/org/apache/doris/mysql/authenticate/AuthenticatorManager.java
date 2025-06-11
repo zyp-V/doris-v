@@ -73,6 +73,9 @@ public class AuthenticatorManager {
             context.setGdprIdentity(response.getGdprIdentity());
             context.setGdprToken(response.getGdprToken());
         }
+        if (Config.enable_gemini) {
+            context.setByteUserName(response.getByteUserName());
+        }
         if (!response.isSuccess()) {
             MysqlProto.sendResponsePacket(context);
             return false;

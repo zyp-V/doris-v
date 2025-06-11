@@ -50,7 +50,7 @@ public class DefaultAuthenticator implements Authenticator {
         if (LOG.isDebugEnabled()) {
             LOG.debug("user:{} start to gdpr authenticate.", request.getUserName());
         }
-        if (Config.enable_gdpr) {
+        if (Config.enable_gdpr && !Config.enable_gemini) {
             try {
                 // if verify gdpr token succeed, return identity. Or throw UnauthorizedException if failed
                 ImmutablePair<LegacyIdentity, String> gdprIdentityToken = Env.getCurrentEnv().getGdprService()
@@ -62,9 +62,25 @@ public class DefaultAuthenticator implements Authenticator {
                 MetricRepo.COUNTER_MYSQL_GDPR_AUTH_FAILED.increase(1L);
             }
         }
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("user:{} start to default authenticate.", request.getDefaultUserName());
+        if (Config.enable_gdpr && Config.enable_gemini) {
+            try {
+                // if verify gdpr token succeed, return identity. Or throw UnauthorizedException if failed
+                ImmutablePair<LegacyIdentity, String> gdprIdentityToken = Env.getCurrentEnv().getGdprService()
+                        .verifyGdprAccount(request.getGdprAccountOrUserName());
+                String byteUserName = gdprIdentityToken.getLeft().User;
+                String gdprUser = gdprIdentityToken.getLeft().User.replace(".", "_");
+                return new AuthenticateResponse(true, byteUserName,
+                    UserIdentity.createAnalyzedUserIdentWithIp(gdprUser, "%"),
+                    gdprIdentityToken, gdprUser);
+            } catch (AuthenticationException e) {
+                MetricRepo.COUNTER_MYSQL_GDPR_AUTH_FAILED.increase(1L);
+            }
         }
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("user:{}, byteUser:{} start to default authenticate.",
+                    request.getDefaultUserName(), request.getByteUserName());
+        }
+
         Password password = request.getPassword();
         if (!(password instanceof NativePassword)) {
             return AuthenticateResponse.failedResponse;
@@ -79,7 +95,8 @@ public class DefaultAuthenticator implements Authenticator {
             ErrorReport.report(e.errorCode, e.msgs);
             return AuthenticateResponse.failedResponse;
         }
-        return new AuthenticateResponse(true, currentUserIdentity.get(0), request.getDefaultUserName());
+        return new AuthenticateResponse(true, request.getByteUserName(),
+            currentUserIdentity.get(0), request.getDefaultUserName());
     }
 
     @Override

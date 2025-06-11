@@ -70,6 +70,8 @@ jobs:
           - bvc clone -f jdk /opt/tiger/jdk # 安装java
           - bvc clone -f consul_deploy /opt/tiger/consul_deploy && pip install six # 安装consul
           - bvc clone -f dp/doris/doris_debian_dev --version ${VERSION} && mv doris_debian_dev doris_deploy
+          - bvc clone -f yarn_deploy /opt/tiger/yarn_deploy && /opt/tiger/yarn_deploy/hadoop/bin/hdfs dfs -ls
+          - bvc clone dp/hive_deploy /opt/tiger/hive_deploy -f
           - apt-get update && apt-get install -y --allow-unauthenticated  default-mysql-client # 安装mysql
       - &deploy_doris
         name: Deploy Doris

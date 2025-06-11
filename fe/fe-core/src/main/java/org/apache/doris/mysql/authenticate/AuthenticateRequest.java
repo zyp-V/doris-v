@@ -41,6 +41,19 @@ public class AuthenticateRequest {
         return splits[0];
     }
 
+    public String getByteUserName() {
+        String[] splits = this.userName.split(ClusterNamespace.CLUSTER_DELIMITER);
+        String byteUserName = "";
+        if (splits.length == 2) {
+            byteUserName = splits[0];
+        } else if (splits.length == 3) {
+            byteUserName = splits[0];
+        } else if (splits.length < 2 || splits.length > 3) {
+            byteUserName = "";
+        }
+        return byteUserName;
+    }
+
     public String getDefaultUserName() {
         String[] splits = this.userName.split(ClusterNamespace.CLUSTER_DELIMITER);
         String gdprAccountOrUserName = splits.length == 1 ? splits[0] : splits[1];

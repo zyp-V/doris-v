@@ -39,7 +39,7 @@ public class DropDbStmtTest {
     @Before
     public void setUp() {
         MockedAuth.mockedAccess(accessManager);
-        MockedAuth.mockedConnectContext(ctx, "root", "192.168.1.1");
+        MockedAuth.mockedConnectContext(ctx, "root", "%");
         analyzer = AccessTestUtil.fetchAdminAnalyzer(true);
     }
 

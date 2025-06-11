@@ -22,6 +22,8 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.catalog.CatalogContext;
 import org.apache.paimon.catalog.CatalogFactory;
@@ -32,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -41,6 +44,8 @@ public class PaimonTableCache {
     public static final long max_external_schema_cache_num = 50;
     // The expiration time of a cache object after last access of it.
     public static final long external_cache_expire_time_minutes_after_access = 100;
+    // region to Configuration
+    private static Optional<Configuration> configurationOpt = Optional.empty();
 
     private static LoadingCache<PaimonTableCacheKey, TableExt> tableCache = CacheBuilder.newBuilder()
             .maximumSize(max_external_schema_cache_num)
@@ -71,7 +76,30 @@ public class PaimonTableCache {
         paimonOptionParams.entrySet().stream().forEach(kv -> options.set(kv.getKey(), kv.getValue()));
         Configuration hadoopConf = new Configuration();
         hadoopOptionParams.entrySet().stream().forEach(kv -> hadoopConf.set(kv.getKey(), kv.getValue()));
-        CatalogContext context = CatalogContext.create(options, hadoopConf);
+        Configuration configuration;
+        if (configurationOpt.isPresent()) {
+            configuration = new Configuration(configurationOpt.get());
+        } else {
+            configuration = new Configuration();
+            String hadoopConfigPath = options.getString("hadoop-conf-dir", (String) null);
+            if (hadoopConfigPath != null) {
+                String coreSiteFile = String.format("%score-site.xml", hadoopConfigPath);
+                Path coreSitePath = new Path(coreSiteFile);
+                String hdfsSiteFile = String.format("%shdfs-site.xml", hadoopConfigPath);
+                Path hdfsSitePath = new Path(hdfsSiteFile);
+                configuration.addResource(coreSitePath);
+                configuration.addResource(hdfsSitePath);
+            }
+            String hiveConfigPath = options.getString("hive-conf-dir", (String) null);
+            if (hiveConfigPath != null) {
+                String hiveSiteFile = String.format("%shive-site.xml", hiveConfigPath);
+                Path hiveSitePath = new Path(hiveSiteFile);
+                configuration.addResource(hiveSitePath);
+            }
+            configurationOpt = Optional.of(new Configuration(configuration));
+        }
+        paimonOptionParams.entrySet().forEach(entry -> configuration.set(entry.getKey(), entry.getValue()));
+        CatalogContext context = CatalogContext.create(options, hadoopConf, configuration);
         return CatalogFactory.createCatalog(context);
     }
 
