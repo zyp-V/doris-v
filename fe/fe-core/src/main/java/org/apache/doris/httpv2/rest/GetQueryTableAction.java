@@ -29,6 +29,7 @@ import org.apache.doris.analysis.DescribeStmt;
 import org.apache.doris.analysis.DropDbStmt;
 import org.apache.doris.analysis.DropTableStmt;
 import org.apache.doris.analysis.Expr;
+import org.apache.doris.analysis.InsertOverwriteTableStmt;
 import org.apache.doris.analysis.InsertStmt;
 import org.apache.doris.analysis.QueryStmt;
 import org.apache.doris.analysis.SelectStmt;
@@ -194,7 +195,7 @@ public class GetQueryTableAction extends RestBaseController {
                 operator = Operator.SHOW;
             } else if (parsedStmt instanceof SelectStmt || parsedStmt instanceof SetOperationStmt) {
                 operator = Operator.SELECT;
-            } else if (parsedStmt instanceof InsertStmt) {
+            } else if (parsedStmt instanceof InsertStmt || parsedStmt instanceof InsertOverwriteTableStmt) {
                 operator = Operator.INSERT;
             } else if (parsedStmt instanceof AlterTableStmt) {
                 operator = Operator.ALTER;
@@ -410,6 +411,24 @@ public class GetQueryTableAction extends RestBaseController {
                 }
 
                 statementType = "InsertStmt";
+            }  else if (parsedStmt instanceof InsertOverwriteTableStmt) {
+                InsertOverwriteTableStmt insertStmt = (InsertOverwriteTableStmt) parsedStmt;
+                db = insertStmt.getDb();
+                table = insertStmt.getTbl();
+                db = Strings.isNullOrEmpty(db) ? defaultDb : getFullDb(db);
+                if (Strings.isNullOrEmpty(table)) {
+                    throw new SpecifiedException(RestApiStatusCode.ANALYZE_ERROR,
+                        "operator [insert] -> insert into table but table is null");
+                }
+                StatementBase parserStmt = this.parsedStmt;
+                StatementBase queryStmt = insertStmt.getQueryStmt();
+                try {
+                    setParsedStmt(queryStmt);
+                    handleSelect();
+                    setParsedStmt(parserStmt);
+                } catch (Exception e) {
+                    throw e;
+                }
             }
 
             completeName = db + "." + table;
