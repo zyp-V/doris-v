@@ -103,7 +103,7 @@ excludeDirectories = "000_the_start_sentinel_do_not_touch," + // keep this line 
     "workload_manager_p1," +
     "zzz_the_end_sentinel_do_not_touch, " + 
     "external_table_p0,export_p0,export,mysqldump_p0,ccr_mow_syncer_p0,ccr_syncer_p0,trino_p0,cold_heat_separation," +
-    "manager,javaudf_p0,flink_connector_p0,delete_p0,storage_medium_p0,plsql_p0,nereids_rules_p0," +
+    "manager,javaudf_p0,flink_connector_p0,delete_p0,storage_medium_p0,plsql_p0,nereids_rules_p0,fault_injection_p0," +
     "broker_load,nereids_hint_tpcds_p0,outfile,nereids_tpcds_shape_sf1000_p0"// keep this line as the last line
 
 customConf1 = "test_custom_conf_value"

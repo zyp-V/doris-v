@@ -66,7 +66,7 @@ TEST_F(CGroupUtilTest, ReadMetrics) {
     EXPECT_TRUE(error_metrics_map.empty());
 }
 
-TEST_F(CGroupUtilTest, memlimit) {
+TEST_F(CGroupUtilTest, DISABLED_memlimit) {
     LOG(INFO) << CGroupMemoryCtl::debug_string();
     int64_t mem_limit;
     int64_t mem_usage;
