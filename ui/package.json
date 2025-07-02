@@ -82,5 +82,8 @@
   },
   "resolutions": {
     "react-draggable": "4.4.6"
+  },
+  "overrides": {
+    "react-draggable": "4.4.5"
   }
 }
