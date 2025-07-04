@@ -18,13 +18,29 @@
 package org.apache.doris.httpv2.rest;
 
 import org.apache.doris.analysis.Analyzer;
+import org.apache.doris.analysis.BaseTableRef;
+import org.apache.doris.analysis.Expr;
+import org.apache.doris.analysis.InlineViewRef;
+import org.apache.doris.analysis.LateralViewRef;
 import org.apache.doris.analysis.QueryStmt;
+import org.apache.doris.analysis.SelectStmt;
+import org.apache.doris.analysis.SetOperationStmt;
+import org.apache.doris.analysis.SetOperationStmt.SetOperand;
+import org.apache.doris.analysis.SlotDescriptor;
+import org.apache.doris.analysis.SlotRef;
 import org.apache.doris.analysis.SqlParser;
 import org.apache.doris.analysis.SqlScanner;
 import org.apache.doris.analysis.StatementBase;
+import org.apache.doris.analysis.Subquery;
+import org.apache.doris.analysis.TableRef;
+import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.InlineView;
+import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.TableIf;
+import org.apache.doris.catalog.View;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.SqlParserUtils;
 import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.httpv2.entity.ResponseEntityBuilder;
@@ -54,8 +70,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.StringReader;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -212,6 +233,196 @@ public class StmtExecutionAction extends RestBaseController {
         } catch (Exception e) {
             return "Error:" + e.getMessage();
         }
+    }
+
+    @RequestMapping(path = "/api/query_schema_detail/{" + NS_KEY + "}/{" + DB_KEY + "}", method = {RequestMethod.POST})
+    public Object queryQuerySchemaDetail(@PathVariable(value = NS_KEY) String ns,
+            @PathVariable(value = DB_KEY) String dbName,
+            HttpServletRequest request, HttpServletResponse response,
+            @RequestBody String stmtBody) {
+        checkWithCookie(request, response, false);
+
+        if (ns.equalsIgnoreCase(SystemInfoService.DEFAULT_CLUSTER)) {
+            ns = InternalCatalog.INTERNAL_CATALOG_NAME;
+        }
+        Type type = new TypeToken<StmtRequestBody>() {
+        }.getType();
+        StmtRequestBody stmtRequestBody = new Gson().fromJson(stmtBody, type);
+        if (Strings.isNullOrEmpty(stmtRequestBody.stmt)) {
+            return ResponseEntityBuilder.okWithSpecifiedError(RestApiStatusCode.BAD_REQUEST,
+                    "Missing statement request body");
+        }
+        LOG.debug("sql: {}", stmtRequestBody.stmt);
+
+        ConnectContext.get().changeDefaultCatalog(ns);
+        if (!"_test".equalsIgnoreCase(dbName)) {
+            ConnectContext.get().setDatabase(getFullDbName(dbName));
+        }
+        return getQuerySchemaDetail(stmtRequestBody.stmt);
+    }
+
+    @NotNull
+    private Object getQuerySchemaDetail(String sql) {
+        SqlParser parser = new SqlParser(new SqlScanner(new StringReader(sql)));
+        StatementBase stmt = null;
+        Map<String, Object> result = new HashMap<>();
+        Map<String, Object> data = new HashMap<>();
+        result.put("data", data);
+        try {
+            stmt = SqlParserUtils.getStmt(parser, 0);
+            if (!(stmt instanceof QueryStmt)) {
+                return ResponseEntityBuilder.okWithSpecifiedError(RestApiStatusCode.NOT_SUPPORT_ERROR,
+                        "Only support query stmt");
+            }
+            QueryStmt queryStmt = (QueryStmt) stmt;
+            if (queryStmt.hasOutFileClause()) {
+                return ResponseEntityBuilder.okWithSpecifiedError(RestApiStatusCode.NOT_SUPPORT_ERROR,
+                        "Query stmt has outfile clause");
+            }
+            Analyzer analyzer = new Analyzer(Env.getCurrentEnv(), ConnectContext.get());
+            queryStmt.analyze(analyzer);
+            result.put("meta", getQuerySchemaColumns(queryStmt, false));
+            Set<String> tables = new HashSet<>();
+            data.put("details", getQuerySchemaDetail(queryStmt, tables));
+            data.put("tables", tables);
+            data.put("syntax_correct", "1");
+            data.put("syntax_message", "success");
+        } catch (UserException e) {
+            data.put("syntax_correct", "0");
+            data.put("syntax_message", e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntityBuilder.okWithSpecifiedError(RestApiStatusCode.INTERNAL_SERVER_ERROR, e.getMessage());
+        }
+        return ResponseEntityBuilder.ok(result);
+    }
+
+    private List<Map<String, Object>> getQuerySchemaDetail(QueryStmt queryStmt, Set<String> tables) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (queryStmt instanceof SelectStmt) {
+            SelectStmt selectStmt = (SelectStmt) queryStmt;
+            for (TableRef tableRef : selectStmt.getTableRefs()) {
+                result.addAll(getQuerySchemaTableRefDetail(queryStmt, tableRef, tables));
+            }
+            if (selectStmt.getWhereClause() != null) {
+                List<Subquery> subqueries = new ArrayList<>();
+                selectStmt.getWhereClause().collect(Subquery.class, subqueries);
+                for (Subquery subquery : subqueries) {
+                    getQuerySchemaDetail(subquery.getStatement(), tables);
+                }
+            }
+        } else if (queryStmt instanceof SetOperationStmt) {
+            SetOperationStmt setOperationStmt = (SetOperationStmt) queryStmt;
+            for (SetOperand setOperand : setOperationStmt.getOperands()) {
+                result.addAll(getQuerySchemaDetail(setOperand.getQueryStmt(), tables));
+            }
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> getQuerySchemaTableRefDetail(QueryStmt queryStmt, TableRef tableRef,
+            Set<String> tables) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (tableRef instanceof BaseTableRef) {
+            BaseTableRef table = (BaseTableRef) tableRef;
+            Map<String, Object> tableInfo = new HashMap<>();
+            if (table.getTable() instanceof OlapTable) {
+                OlapTable olapTable = (OlapTable) table.getTable();
+                tableInfo.put("table", wrapTableName(olapTable.getQualifiedName()));
+                tableInfo.put("columns", getQuerySchemaColumns(queryStmt, true));
+                result.add(tableInfo);
+                tables.add(wrapTableName(olapTable.getQualifiedName()));
+            }
+            getQuerySchemaFilter(queryStmt, tableInfo);
+        } else if (tableRef instanceof InlineViewRef) {
+            InlineViewRef viewRef = (InlineViewRef) tableRef;
+            if (viewRef.isLocalView()) {
+                result.addAll(getQuerySchemaDetail(viewRef.getQueryStmt(), tables));
+            } else {
+                View view = viewRef.getView();
+                Map<String, Object> tableInfo = new HashMap<>();
+                tableInfo.put("table", wrapTableName(view.getQualifiedName()));
+                tableInfo.put("columns", getQuerySchemaColumns(queryStmt, true));
+                result.add(tableInfo);
+                tables.add(wrapTableName(view.getQualifiedName()));
+                getQuerySchemaFilter(queryStmt, tableInfo);
+            }
+        } else if (tableRef instanceof LateralViewRef) {
+            LateralViewRef lateralViewRef = (LateralViewRef) tableRef;
+            result.addAll(getQuerySchemaTableRefDetail(queryStmt, lateralViewRef.getRelatedTableRef(), tables));
+        }
+        return result;
+    }
+
+    private void getQuerySchemaFilter(QueryStmt queryStmt, Map<String, Object> tableInfo) {
+        if (queryStmt instanceof SelectStmt) {
+            SelectStmt selectStmt = (SelectStmt) queryStmt;
+            if (selectStmt.getWhereClause() != null) {
+                List<SlotRef> slots = new ArrayList<>();
+                Set<String> filters = new HashSet<>();
+                tableInfo.put("filters", filters);
+                Expr.collectList(Collections.singletonList(selectStmt.getWhereClause()), SlotRef.class, slots);
+                for (SlotRef slot : slots) {
+                    filters.add(slot.getColumnName());
+                }
+            }
+        }
+    }
+
+    private List<Map<String, Object>> getQuerySchemaColumns(QueryStmt queryStmt, boolean allowAlias) {
+        List<Map<String, Object>> columns = new ArrayList<>();
+        for (int i = 0; i < queryStmt.getColLabels().size(); i++) {
+            String label = queryStmt.getColLabels().get(i);
+            Expr expr = queryStmt.getResultExprs().get(i);
+            Map<String, Object> column = new HashMap<>();
+            column.put("name", label);
+            column.put("type", expr.getType().toString());
+            SlotDescriptor slotDescriptor = findSrcSlot(expr);
+            if (slotDescriptor != null && (allowAlias || Objects.equals(slotDescriptor.getColumn().getName(), label))) {
+                TupleDescriptor tupleDescriptor = slotDescriptor.getParent();
+                TableIf table = tupleDescriptor.getTable();
+                if (table instanceof OlapTable) {
+                    column.put("table", wrapTableName(((OlapTable) table).getQualifiedName()));
+                } else if (table instanceof InlineView) {
+                    TableRef tableRef = tupleDescriptor.getRef();
+                    InlineViewRef viewRef = (InlineViewRef) tableRef;
+                    View view = viewRef.getView();
+                    column.put("table", wrapTableName((view.getQualifiedName())));
+                }
+            }
+            columns.add(column);
+        }
+        return columns;
+    }
+
+    private static String wrapTableName(String name) {
+        if (name == null || name.contains(":")) {
+            return name;
+        }
+        return SystemInfoService.DEFAULT_CLUSTER + ":" + name;
+    }
+
+    private static SlotDescriptor findSrcSlot(Expr expr) {
+        SlotRef slotRef = expr.unwrapSlotRef(false);
+        if (slotRef == null) {
+            return null;
+        }
+        SlotDescriptor slotDesc = slotRef.getDesc();
+        TableIf table = slotDesc.getParent().getTable();
+        if (table instanceof OlapTable) {
+            return slotDesc;
+        }
+        if (table instanceof InlineView && slotDesc.getParent().getRef() instanceof InlineViewRef) {
+            InlineViewRef viewRef = (InlineViewRef) slotDesc.getParent().getRef();
+            if (!viewRef.isLocalView()) {
+                return slotDesc;
+            }
+        }
+        if (slotDesc.getSourceExprs().size() == 1) {
+            return findSrcSlot(slotDesc.getSourceExprs().get(0));
+        }
+        // No known source expr, or there are several source exprs meaning the slot is
+        // has no single source table.
+        return null;
     }
 
     private static class StmtRequestBody {

@@ -206,6 +206,10 @@ public class LateralViewRef extends TableRef {
         return toSql();
     }
 
+    public TableRef getRelatedTableRef() {
+        return relatedTableRef;
+    }
+
     @Override
     public void reset() {
         isAnalyzed = false;
