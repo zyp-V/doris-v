@@ -1795,6 +1795,10 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true)
     public static boolean enable_pipeline_load = true;
 
+    // choose local broker first in broker load job load scan node
+    @ConfField(mutable = true, masterOnly = true)
+    public static boolean enable_local_broker_opt = true;
+
     /*---------------------- JOB CONFIG START------------------------*/
     /**
      * The number of threads used to dispatch timer job.

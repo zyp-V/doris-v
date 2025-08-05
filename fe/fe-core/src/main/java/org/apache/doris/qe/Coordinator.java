@@ -49,6 +49,7 @@ import org.apache.doris.planner.DataSink;
 import org.apache.doris.planner.DataStreamSink;
 import org.apache.doris.planner.ExceptNode;
 import org.apache.doris.planner.ExchangeNode;
+import org.apache.doris.planner.FileLoadScanNode;
 import org.apache.doris.planner.HashJoinNode;
 import org.apache.doris.planner.IntersectNode;
 import org.apache.doris.planner.MultiCastDataSink;
@@ -2588,7 +2589,25 @@ public class Coordinator implements CoordInterface {
                     new ArrayList<TScanRangeParams>());
             // add scan range
             TScanRangeParams scanRangeParams = new TScanRangeParams();
-            scanRangeParams.scan_range = scanRangeLocations.scan_range;
+            if (scanNode instanceof FileLoadScanNode && Config.enable_local_broker_opt) {
+                if (!scanRangeLocations.getScanRange().getExtScanRange().getFileScanRange()
+                        .getParams().getBrokerAddresses().isEmpty()) {
+                    scanRangeParams.scan_range = new TScanRange(scanRangeLocations.scan_range);
+                    List<TNetworkAddress> brokerList = scanRangeParams.getScanRange().getExtScanRange()
+                            .getFileScanRange().getParams().getBrokerAddresses();
+                    Optional<TNetworkAddress> localBroker = brokerList.stream()
+                            .filter(host -> backend.getHost().equals(host.getHostname())).findFirst();
+                    if (localBroker.isPresent()) {
+                        scanRangeParams.scan_range.getExtScanRange().getFileScanRange().getParams()
+                            .setBrokerAddresses(Lists.newArrayList(localBroker.get()));
+                    } else {
+                        // if there are no local broker do shuffle to balance load
+                        Collections.shuffle(brokerList);
+                    }
+                }
+            } else {
+                scanRangeParams.scan_range = scanRangeLocations.scan_range;
+            }
             // Volume is optional, so we need to set the value and the is-set bit
             scanRangeParams.setVolumeId(minLocation.volume_id);
             scanRangeParamsList.add(scanRangeParams);
