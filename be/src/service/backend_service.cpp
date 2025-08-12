@@ -43,6 +43,7 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"
+#include "gutil/strings/numbers.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/substitute.h"
 #include "http/http_client.h"
@@ -66,6 +67,7 @@
 #include "runtime/stream_load/stream_load_recorder.h"
 #include "util/arrow/row_batch.h"
 #include "util/defer_op.h"
+#include "util/network_util.h"
 #include "util/threadpool.h"
 #include "util/thrift_server.h"
 #include "util/uid_util.h"
@@ -175,16 +177,28 @@ void _ingest_binlog(IngestBinlogArg* arg) {
         return estimate_timeout;
     };
 
+    int remote_port = 0;
+    if (!SimpleAtoi(request.remote_port, &remote_port) || remote_port <= 0 ||
+        remote_port > 65535) {
+        auto error_msg = fmt::format("invalid remote_port: {}", request.remote_port);
+        LOG(WARNING) << error_msg;
+        set_tstatus(TStatusCode::ANALYSIS_ERROR, error_msg);
+        return;
+    }
+
     // Step 3: get binlog info
-    auto binlog_api_url = fmt::format("http://{}:{}/api/_binlog/_download", request.remote_host,
-                                      request.remote_port);
+    auto binlog_api_url = fmt::format("http://{}/api/_binlog/_download",
+                                      get_host_port(request.remote_host, remote_port));
     constexpr int max_retry = 3;
 
     auto get_binlog_info_url =
             fmt::format("{}?method={}&tablet_id={}&binlog_version={}", binlog_api_url,
                         "get_binlog_info", request.remote_tablet_id, request.binlog_version);
+
+    LOG(INFO) << "get binlog info from " << get_binlog_info_url;
     std::string binlog_info;
-    auto get_binlog_info_cb = [&get_binlog_info_url, &binlog_info](HttpClient* client) {
+    std::function<Status(HttpClient*)> get_binlog_info_cb = [&get_binlog_info_url,
+                                                             &binlog_info](HttpClient* client) -> Status {
         RETURN_IF_ERROR(client->init(get_binlog_info_url));
         client->set_timeout_ms(config::download_binlog_meta_timeout_ms);
         return client->execute(&binlog_info);
@@ -222,8 +236,10 @@ void _ingest_binlog(IngestBinlogArg* arg) {
     auto get_rowset_meta_url = fmt::format(
             "{}?method={}&tablet_id={}&rowset_id={}&binlog_version={}", binlog_api_url,
             "get_rowset_meta", request.remote_tablet_id, remote_rowset_id, request.binlog_version);
+    LOG(INFO) << "get rowset meta from " << get_rowset_meta_url;
     std::string rowset_meta_str;
-    auto get_rowset_meta_cb = [&get_rowset_meta_url, &rowset_meta_str](HttpClient* client) {
+    std::function<Status(HttpClient*)> get_rowset_meta_cb = [&get_rowset_meta_url,
+                                                             &rowset_meta_str](HttpClient* client) -> Status {
         RETURN_IF_ERROR(client->init(get_rowset_meta_url));
         client->set_timeout_ms(config::download_binlog_meta_timeout_ms);
         return client->execute(&rowset_meta_str);
@@ -271,8 +287,8 @@ void _ingest_binlog(IngestBinlogArg* arg) {
                 "{}?method={}&tablet_id={}&rowset_id={}&segment_index={}", binlog_api_url,
                 "get_segment_file", request.remote_tablet_id, remote_rowset_id, segment_index);
         uint64_t segment_file_size;
-        auto get_segment_file_size_cb = [&get_segment_file_size_url,
-                                         &segment_file_size](HttpClient* client) {
+        std::function<Status(HttpClient*)> get_segment_file_size_cb =
+                [&get_segment_file_size_url, &segment_file_size](HttpClient* client) -> Status {
             RETURN_IF_ERROR(client->init(get_segment_file_size_url));
             client->set_timeout_ms(config::download_binlog_meta_timeout_ms);
             RETURN_IF_ERROR(client->head());
@@ -396,9 +412,9 @@ void _ingest_binlog(IngestBinlogArg* arg) {
                         binlog_api_url, "get_segment_index_file", request.remote_tablet_id,
                         remote_rowset_id, segment_index, index_id);
                 uint64_t segment_index_file_size;
-                auto get_segment_index_file_size_cb =
+                std::function<Status(HttpClient*)> get_segment_index_file_size_cb =
                         [&get_segment_index_file_size_url,
-                         &segment_index_file_size](HttpClient* client) {
+                         &segment_index_file_size](HttpClient* client) -> Status {
                             RETURN_IF_ERROR(client->init(get_segment_index_file_size_url));
                             client->set_timeout_ms(config::download_binlog_meta_timeout_ms);
                             RETURN_IF_ERROR(client->head());
@@ -431,9 +447,9 @@ void _ingest_binlog(IngestBinlogArg* arg) {
                         binlog_api_url, "get_segment_index_file", request.remote_tablet_id,
                         remote_rowset_id, segment_index, -1);
                 uint64_t segment_index_file_size;
-                auto get_segment_index_file_size_cb =
+                std::function<Status(HttpClient*)> get_segment_index_file_size_cb =
                         [&get_segment_index_file_size_url,
-                         &segment_index_file_size](HttpClient* client) {
+                         &segment_index_file_size](HttpClient* client) -> Status {
                             RETURN_IF_ERROR(client->init(get_segment_index_file_size_url));
                             client->set_timeout_ms(config::download_binlog_meta_timeout_ms);
                             RETURN_IF_ERROR(client->head());

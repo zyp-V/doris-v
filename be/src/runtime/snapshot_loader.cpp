@@ -58,6 +58,7 @@
 #include "olap/tablet_manager.h"
 #include "runtime/client_cache.h"
 #include "runtime/exec_env.h"
+#include "util/network_util.h"
 #include "util/s3_uri.h"
 #include "util/s3_util.h"
 #include "util/thrift_rpc_helper.h"
@@ -495,12 +496,14 @@ Status SnapshotLoader::remote_http_download(
         };
         std::unordered_map<std::string, RemoteFileStat> remote_files;
         const auto& token = remote_tablet_snapshot.remote_token;
-        const auto& remote_be_addr = remote_tablet_snapshot.remote_be_addr;
-
         // HEAD http://172.16.0.14:6781/api/_tablet/_download?token=e804dd27-86da-4072-af58-70724075d2a4&file=/home/ubuntu/doris_master/output/be/storage/snapshot/20230410102306.9.180/
-        std::string base_url = fmt::format("http://{}:{}/api/_tablet/_download?token={}",
-                                           remote_be_addr.hostname, remote_be_addr.port, token);
+        std::string base_url = fmt::format("http://{}/api/_tablet/_download?token={}",
+                                           get_host_port(remote_tablet_snapshot.remote_be_addr.hostname,
+                                                         remote_tablet_snapshot.remote_be_addr.port),
+                                           token);
         std::string remote_url_prefix = fmt::format("{}&file={}", base_url, remote_path);
+
+        LOG(INFO) << "remote_url_prefix: " << remote_url_prefix;
 
         string file_list_str;
         auto list_files_cb = [&remote_url_prefix, &file_list_str](HttpClient* client) {

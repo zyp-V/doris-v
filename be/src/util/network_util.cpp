@@ -236,12 +236,13 @@ Status get_inet_interfaces(std::vector<std::string>* interfaces, bool include_ip
 
 std::string get_host_port(const std::string& host, int port) {
     std::stringstream ss;
-    if (host.find(':') == std::string::npos) {
-        ss << host << ":" << port;
+    if (host.find(':') != std::string::npos &&
+        !(host.size() >= 2 && host.front() == '[' && host.back() == ']')) {
+        ss << "[" << host << "]";
     } else {
-        ss << "[" << host << "]"
-           << ":" << port;
+        ss << host;
     }
+    ss << ":" << port;
     return ss.str();
 }
 
