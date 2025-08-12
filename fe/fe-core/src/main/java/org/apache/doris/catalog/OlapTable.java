@@ -1932,6 +1932,26 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
         // After that, some properties of fullSchema and nameToColumn may be not same as properties of base columns.
         // So, here we need to rebuild the fullSchema to ensure the correctness of the properties.
         rebuildFullSchema();
+
+        // for compatible with bytedance 1.2.8 version
+        if (Env.getCurrentEnvJournalVersion() >= FeMetaVersion.VERSION_117
+                && Env.getCurrentEnvJournalVersion() <= FeMetaVersion.VERSION_118) {
+            if (in.readBoolean()) {
+                Map<String, List<String>> columnGroupMappingFromJournal = new HashMap<>();
+                int columnGroupMappingCount = in.readInt();
+                for (int i = 0; i < columnGroupMappingCount; i++) {
+                    String columnGroupSequenceColumn = Text.readString(in);
+                    int columnInGroupCount = in.readInt();
+                    List<String> columnInGroup = new ArrayList<>();
+                    for (int j = 0; j < columnInGroupCount; j++) {
+                        columnInGroup.add(Text.readString(in));
+                    }
+                    columnGroupMappingFromJournal.put(columnGroupSequenceColumn, columnInGroup);
+                }
+            } else {
+                // skip
+            }
+        }
     }
 
     public OlapTable selectiveCopy(Collection<String> reservedPartitions, IndexExtState extState, boolean isForBackup) {
