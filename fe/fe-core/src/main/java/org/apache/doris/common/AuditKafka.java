@@ -17,7 +17,7 @@
 
 package org.apache.doris.common;
 
-import org.apache.doris.plugin.audit.AuditEvent;
+import org.apache.doris.plugin.AuditEvent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Queues;

@@ -19,13 +19,13 @@ package org.apache.doris.qe;
 
 import org.apache.doris.common.AuditKafka;
 import org.apache.doris.common.util.DigitalVersion;
+import org.apache.doris.plugin.AuditEvent;
+import org.apache.doris.plugin.AuditEvent.EventType;
 import org.apache.doris.plugin.AuditPlugin;
 import org.apache.doris.plugin.Plugin;
 import org.apache.doris.plugin.PluginInfo;
 import org.apache.doris.plugin.PluginInfo.PluginType;
 import org.apache.doris.plugin.PluginMgr;
-import org.apache.doris.plugin.audit.AuditEvent;
-import org.apache.doris.plugin.audit.AuditEvent.EventType;
 
 import com.google.common.base.Strings;
 import org.apache.logging.log4j.LogManager;

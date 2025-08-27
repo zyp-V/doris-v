@@ -27,6 +27,7 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.DdlException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.Util;
@@ -71,6 +72,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -343,7 +345,7 @@ public class HiveScanNode extends FileQueryScanNode {
                 boolean isSplittable = fileCacheValue.isSplittable();
                 for (HiveMetaStoreCache.HiveFileStatus status : fileCacheValue.getFiles()) {
                     if (bucketIdsOpt.isPresent()) {
-                        Optional<Integer> bucketIdOpt = getBucketIdFromPath(status.getPath());
+                        Optional<Integer> bucketIdOpt = getBucketIdFromPath(status.getPath().getPath());
                         if (bucketIdOpt.isPresent() && !bucketIdsOpt.get().contains(bucketIdOpt.get())) {
                             continue;
                         }

@@ -287,7 +287,7 @@ public abstract class ConnectProcessor {
                 } catch (DoNotFallbackException e) {
                     LOG.warn("nereids parse met not fallback error, ", e);
                     handleQueryException(new UserException(InternalErrorCode.INTERNAL_ERR, e.getMessage()),
-                            convertedStmt, null, null);
+                            convertedStmt, null, null, ctx.getSessionVariable().getLogId());
                     return;
                 } catch (Exception e) {
                     // TODO: We should catch all exception here until we support all query syntax.

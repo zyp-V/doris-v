@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.rules.analysis;
 
+import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.ErrorCode;
@@ -68,6 +69,7 @@ public class UserAuthentication {
         } else {
             if (catalog.getType().equals(GeminiService.BYTE_HIVE_CATALOG_NAME)
                     || catalog.getType().equals(GeminiService.BYTE_PAIMON_CATALOG_NAME)) {
+                UserIdentity userIdentity = connectContext.getCurrentUserIdentity();
                 userIdentity.setByteUserName(connectContext.getByteUserName());
             }
             accessManager.checkColumnsPriv(connectContext, ctlName, dbName, tableName, columns, PrivPredicate.SELECT);

@@ -304,7 +304,8 @@ public class MTMVTask extends AbstractTask {
         } finally {
             if (executor != null) {
                 AuditLogHelper.logAuditLog(ctx, getDummyStmt(refreshPartitionNames),
-                        executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true);
+                        executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                        ctx.getSessionVariable().getLogId());
             }
         }
     }

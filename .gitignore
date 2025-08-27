@@ -103,6 +103,7 @@ be/tags
 be/test/olap/test_data/tablet_meta_test.hdr
 be/.devcontainer/
 be/src/apache-orc/
+be/src/clucene/
 
 ## tools
 tools/ssb-tools/ssb-data/

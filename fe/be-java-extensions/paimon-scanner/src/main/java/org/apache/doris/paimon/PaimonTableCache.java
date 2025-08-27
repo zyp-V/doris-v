@@ -22,7 +22,6 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.catalog.CatalogContext;
@@ -74,13 +73,13 @@ public class PaimonTableCache {
             Map<String, String> hadoopOptionParams) {
         Options options = new Options();
         paimonOptionParams.entrySet().stream().forEach(kv -> options.set(kv.getKey(), kv.getValue()));
-        Configuration hadoopConf = new Configuration();
-        hadoopOptionParams.entrySet().stream().forEach(kv -> hadoopConf.set(kv.getKey(), kv.getValue()));
         Configuration configuration;
         if (configurationOpt.isPresent()) {
             configuration = new Configuration(configurationOpt.get());
+            hadoopOptionParams.entrySet().stream().forEach(kv -> configuration.set(kv.getKey(), kv.getValue()));
         } else {
             configuration = new Configuration();
+            hadoopOptionParams.entrySet().stream().forEach(kv -> configuration.set(kv.getKey(), kv.getValue()));
             String hadoopConfigPath = options.getString("hadoop-conf-dir", (String) null);
             if (hadoopConfigPath != null) {
                 String coreSiteFile = String.format("%score-site.xml", hadoopConfigPath);
@@ -99,7 +98,7 @@ public class PaimonTableCache {
             configurationOpt = Optional.of(new Configuration(configuration));
         }
         paimonOptionParams.entrySet().forEach(entry -> configuration.set(entry.getKey(), entry.getValue()));
-        CatalogContext context = CatalogContext.create(options, hadoopConf, configuration);
+        CatalogContext context = CatalogContext.create(options, configuration);
         return CatalogFactory.createCatalog(context);
     }
 

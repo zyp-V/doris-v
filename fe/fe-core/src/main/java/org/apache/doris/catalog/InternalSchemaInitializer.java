@@ -379,7 +379,7 @@ public class InternalSchemaInitializer extends Thread {
                 LOG.info("start to drop old audit_log table");
                 Env.getCurrentEnv().getInternalCatalog()
                         .dropTable(new DropTableStmt(true, new TableName(null,
-                                StatisticConstants.DB_NAME, AuditLoaderPlugin.AUDIT_LOG_TABLE), true));
+                                StatisticConstants.DB_NAME, AuditLoader.AUDIT_LOG_TABLE), true));
                 LOG.info("old audit_log table dropped");
             } catch (Exception e) {
                 LOG.warn("Failed to drop outdated audit_log table", e);

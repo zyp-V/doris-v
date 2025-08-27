@@ -17,6 +17,7 @@
 
 package org.apache.doris.service.arrowflight.sessions;
 
+import org.apache.doris.common.Config;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.ConnectContext.ConnectType;
 import org.apache.doris.qe.ConnectPoolMgr;
@@ -45,6 +46,13 @@ public class FlightSqlConnectPoolMgr extends ConnectPoolMgr {
             numberConnection.decrementAndGet();
             return numberConnection.get();
         }
+        // TODO(weihongkai.me): specify user or psm in gdpr token in order to control max_user_connections
+        if (Config.enable_gdpr) {
+            if (ctx.getGdprIdentity() != null) {
+                connectionMap.put(ctx.getConnectionId(), ctx);
+            }
+        }
+
         // not check user
         connectionMap.put(ctx.getConnectionId(), ctx);
         if (ctx.getConnectType().equals(ConnectType.ARROW_FLIGHT_SQL)) {

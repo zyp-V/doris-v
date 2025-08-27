@@ -279,7 +279,7 @@ public class Auth implements Writable {
     }
 
     // ==== Catalog ====
-    protected boolean checkCtlPriv(UserIdentity currentUser, String ctl, PrivPredicate wanted) {
+    public boolean checkCtlPriv(UserIdentity currentUser, String ctl, PrivPredicate wanted) {
         if (wanted.getPrivs().containsNodePriv()) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("should not check NODE priv in catalog level. user: {}, catalog: {}",
@@ -303,7 +303,7 @@ public class Auth implements Writable {
     }
 
     // ==== Database ====
-    protected boolean checkDbPriv(UserIdentity currentUser, String ctl, String db, PrivPredicate wanted) {
+    public boolean checkDbPriv(UserIdentity currentUser, String ctl, String db, PrivPredicate wanted) {
         if (wanted.getPrivs().containsNodePriv()) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("should not check NODE priv in Database level. user: {}, db: {}",
@@ -328,7 +328,7 @@ public class Auth implements Writable {
     }
 
     // ==== Table ====
-    protected boolean checkTblPriv(UserIdentity currentUser, String ctl, String db, String tbl, PrivPredicate wanted) {
+    public boolean checkTblPriv(UserIdentity currentUser, String ctl, String db, String tbl, PrivPredicate wanted) {
         if (wanted.getPrivs().containsNodePriv()) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("should check NODE priv in GLOBAL level. user: {}, db: {}, tbl: {}", currentUser, db, tbl);
@@ -377,7 +377,7 @@ public class Auth implements Writable {
     }
 
     // ==== Resource ====
-    protected boolean checkResourcePriv(UserIdentity currentUser, String resourceName, PrivPredicate wanted) {
+    public boolean checkResourcePriv(UserIdentity currentUser, String resourceName, PrivPredicate wanted) {
         readLock();
         try {
             Set<Role> roles = getRolesByUserWithLdap(currentUser);
@@ -394,7 +394,7 @@ public class Auth implements Writable {
     }
 
     // ==== Workload Group ====
-    protected boolean checkWorkloadGroupPriv(UserIdentity currentUser, String workloadGroupName, PrivPredicate wanted) {
+    public boolean checkWorkloadGroupPriv(UserIdentity currentUser, String workloadGroupName, PrivPredicate wanted) {
         readLock();
         try {
             // currently stream load not support ip based auth, so normal should not auth temporary
