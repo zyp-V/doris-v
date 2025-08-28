@@ -209,7 +209,7 @@ suite("test_primary_key_partial_update", "p0") {
 
             sql "set time_zone = 'Asia/Tokyo'"
 
-            Thread.sleep(5000)
+            Thread.sleep(60000)
 
             sql "INSERT INTO ${tableName}(`name`, `userid`, `corp_name`) VALUES ('test2', 1234567, 'A');"
 

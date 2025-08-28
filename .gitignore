@@ -92,6 +92,9 @@ fe/fe-core/src/main/antlr4/org/apache/doris/nereids/gen/
 fe/fe-common/src/main/java/org/apache/doris/thrift
 fe/fe-common/src/main/java/org/apache/parquet
 fe/fe-core/src/main/java/org/apache/parquet
+http_test_tmp/
+fe/fe-core/kafka_datasource_properties
+fe/fe-core/test_datasource_properties
 
 # BE
 be/build*/

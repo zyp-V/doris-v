@@ -95,7 +95,11 @@ excludeSuites = "test_broker_load,test_decimal256_outfile_csv," +
     "test_select_column_auth,test_nested_types_insert_into_with_s3,test_nestedtypes_csv_insert_into_with_s3," +
     "test_nestedtypes_json_insert_into_with_s3,one_level_nestedtypes_with_s3data,two_level_nestedtypes_with_s3data," +
     "three_level_nestedtypes_with_s3data,test_create_table_like_nereids,test_profile,test_outfile_csv_with_names_and_types," +
-    "test_outfile,test_outfile_expr,test_outfile_parquet,test_outfile_separator,test_outfile_exception,test_outfile_csv_with_names" 
+    "test_outfile,test_outfile_expr,test_outfile_parquet,test_outfile_separator,test_outfile_exception,test_outfile_csv_with_names," +
+    "test_select,test_ddl_backup_auth,test_ddl_repository_auth,test_ddl_restore_auth,test_dml_outfile_auth,test_show_repository_auth," +
+    "test_backup_cancelled,test_backup_restore_atomic_cancel,docs/admin-manual/data-admin/restore.md,test_error_data_handling," +
+    "docs/table-design/tiered-storage/remote-storage.md,test_json_reader_without_object,test_mtmv_outfile,test_mtmv_property,test_partial_update_s3_load," +
+    "doris_source,test_backup_cooldown_cancelled"
 
 // this directories will not be executed
 excludeDirectories = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line

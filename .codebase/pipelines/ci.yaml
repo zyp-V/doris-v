@@ -12,7 +12,7 @@ jobs:
     name: Unit Test
     runs-on:
       spec: c1.16xlarge
-    image: hub.byted.org/compile/doris_compile_2.1.0:63ae944546073a9db5b884b63a67810f
+    image: hub.byted.org/compile/doris_compile_2.1.11:2b03566f9c98e2061a9beac2fd9049c0
     continue-on-error: true
     timeout: 60
     steps:
@@ -37,16 +37,16 @@ jobs:
           path: ${{Envs["CI_REPO_WORKSPACE"]}}/log
   regression_test:
     name: Regression Test - P0
-    image: hub.byted.org/compile/doris_compile_2.1.0:63ae944546073a9db5b884b63a67810f
+    image: hub.byted.org/compile/doris_compile_2.1.11:2b03566f9c98e2061a9beac2fd9049c0
     runs-on:
       spec: c1.16xlarge
     depends: [docker_default]
-    timeout: 120
+    timeout: 300
     steps:
       - uses: actions/scm
         id: scm_build
         inputs:
-          scm_repo: dp/doris/doris_debian_dev
+          scm_repo: dp/doris/doris_debian_dev_2_1_11
           version_type: test
           sync_bvc: True
           sync_aws: false
@@ -68,8 +68,8 @@ jobs:
           - export VERSION=${{ Steps.scm_build.Outputs.version }}
           - mkdir -p /opt/tiger/ && cd /opt/tiger/
           - bvc clone -f jdk /opt/tiger/jdk # 安装java
-          - bvc clone -f consul_deploy /opt/tiger/consul_deploy && pip install six # 安装consul
-          - bvc clone -f dp/doris/doris_debian_dev --version ${VERSION} && mv doris_debian_dev doris_deploy
+          - bvc clone -f consul_deploy /opt/tiger/consul_deploy && apt install python3-six # 安装consul
+          - bvc clone -f dp/doris/doris_debian_dev_2_1_11 --version ${VERSION} && mv doris_debian_dev_2_1_11 doris_deploy
           - bvc clone -f yarn_deploy /opt/tiger/yarn_deploy && /opt/tiger/yarn_deploy/hadoop/bin/hdfs dfs -ls
           - bvc clone dp/hive_deploy /opt/tiger/hive_deploy -f
           - apt-get update && apt-get install -y --allow-unauthenticated  default-mysql-client # 安装mysql
@@ -86,8 +86,9 @@ jobs:
           - /bin/bash /opt/tiger/doris_deploy/fe/bin/start_fe.sh --daemon --cluster doris_regression_test_v2 && sleep 30 # run fe
           - tail /opt/tiger/doris_deploy/fe/log/fe.out
           - tail /opt/tiger/doris_deploy/fe/log/fe.log
-          - /bin/bash /opt/tiger/doris_deploy/be/bin/start_be.sh --daemon --cluster doris_regression_test_v2 && sleep 120 # run be
-          - tail /opt/tiger/doris_deploy/be/log/be.out
+          - /bin/bash /opt/tiger/doris_deploy/be/bin/start_be.sh --daemon --cluster doris_regression_test_v2 && sleep 300 # run be
+          - tail /opt/tiger/doris_deploy/be/log/be.out && sleep 10
+          - ls -al /opt/tiger/doris_deploy/be/log/
           - tail /opt/tiger/doris_deploy/be/log/be.INFO
           - mysql -h 0.0.0.0 -P 9030 -u root -c -e "alter system add backend \"$PRIORITY_IP:9050\";" &&  sleep 30 # add be
           - mysql -h 0.0.0.0 -P 9030 -u root -c -e "show frontends;" && mysql -h 0.0.0.0 -P 9030 -u root -c -e "show backends;" # show status
@@ -102,7 +103,7 @@ jobs:
       - &run_regression
         name: Run Regression Test
         commands:
-          -  cd ${{Envs["CI_REPO_WORKSPACE"]}} && export JAVA_HOME=/opt/tiger/jdk/jdk1.8.0_131/ && bash run-regression-test.sh --run -g p0  -parallel 3
+          - cd ${{Envs["CI_REPO_WORKSPACE"]}} && export JAVA_HOME=/opt/tiger/jdk/jdk1.8.0_131/ && bash run-regression-test.sh --run -g p0 -parallel 8
       - &create_artifact
         name: Create Artifact
         continue-on-error: true

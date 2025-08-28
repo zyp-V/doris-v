@@ -37,7 +37,7 @@ if (${MAKE_TEST} STREQUAL "OFF")
 
     # This permits libraries loaded by dlopen to link to the symbols in the program.
     set_target_properties(doris_be PROPERTIES ENABLE_EXPORTS 1)
-
+    target_link_options(doris_be PRIVATE -static-libstdc++ -static-libgcc)
     target_link_libraries(doris_be
         ${DORIS_LINK_LIBS}
     )

@@ -289,14 +289,8 @@ update_submodule() {
     set -e
     if [[ "${exit_code}" -ne 0 ]]; then
         set +e
-        # try to get submodule's current commit
-        submodule_commit=$(git ls-tree HEAD "${submodule_path}" | awk '{print $3}')
-        exit_code=$?
-        if [[ "${exit_code}" = "0" ]]; then
-            commit_specific_url=$(echo "${archive_url}" | sed "s/refs\/heads/${submodule_commit}/")
-        else
-            commit_specific_url="${archive_url}"
-        fi
+        # try to get submodule from archive url, github.com maybe 403
+        commit_specific_url="${archive_url}"
         set -e
         echo "Update ${submodule_name} submodule failed, start to download and extract ${commit_specific_url}"
 
@@ -516,8 +510,8 @@ FE_MODULES="$(
 
 # Clean and build Backend
 if [[ "${BUILD_BE}" -eq 1 ]]; then
-    update_submodule "be/src/apache-orc" "apache-orc" "https://github.com/apache/doris-thirdparty/archive/refs/heads/orc-for-doris-21.tar.gz"
-    update_submodule "be/src/clucene" "clucene" "https://github.com/apache/doris-thirdparty/archive/refs/heads/clucene-2.1.tar.gz"
+    update_submodule "be/src/apache-orc" "apache-orc" "https://luban-source.byted.org/repository/scm/dp.doris.doris_thirdparty_orc_1.0.0.1.tar.gz"
+    update_submodule "be/src/clucene" "clucene" "https://luban-source.byted.org/repository/scm/dp.doris.doris_thirdparty_clucene_1.0.0.1.tar.gz"
     if [[ -e "${DORIS_HOME}/gensrc/build/gen_cpp/version.h" ]]; then
         rm -f "${DORIS_HOME}/gensrc/build/gen_cpp/version.h"
     fi
@@ -564,6 +558,7 @@ if [[ "${BUILD_BE}" -eq 1 ]]; then
         -DEXTRA_CXX_FLAGS="${EXTRA_CXX_FLAGS}" \
         -DENABLE_CLANG_COVERAGE="${DENABLE_CLANG_COVERAGE}" \
         -DDORIS_JAVA_HOME="${JAVA_HOME}" \
+        -DCMAKE_EXE_LINKER_FLAGS='-static-libstdc++ -static-libgcc -Wl,--gc-sections' \
         "${DORIS_HOME}/be"
 
     if [[ "${OUTPUT_BE_BINARY}" -eq 1 ]]; then

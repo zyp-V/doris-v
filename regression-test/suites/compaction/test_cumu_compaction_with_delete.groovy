@@ -29,6 +29,7 @@ suite("test_cumu_compaction_with_delete", "nonConcurrent") {
         }
     }
     set_be_config.call("enable_sleep_between_delete_cumu_compaction", "false")
+    set_be_config.call("disable_auto_compaction", "false")
 
     def tableName = "test_cumu_compaction_with_delete1"
     def check_cumu_point = { cumu_point ->
@@ -130,5 +131,6 @@ suite("test_cumu_compaction_with_delete", "nonConcurrent") {
     } finally {
         try_sql("DROP TABLE IF EXISTS ${tableName} FORCE")
         set_be_config.call("enable_sleep_between_delete_cumu_compaction", "false")
+        set_be_config.call("disable_auto_compaction", "true")
     }
 }

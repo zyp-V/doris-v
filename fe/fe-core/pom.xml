@@ -85,6 +85,11 @@ under the License.
     </profiles>
     <dependencies>
         <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
+        </dependency>
+        <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>fe-common</artifactId>
             <version>${project.version}</version>
@@ -102,6 +107,11 @@ under the License.
                     <groupId>doris_bytedance_hadoop_shaded</groupId>
                 </exclusion>
             </exclusions>
+        </dependency>
+           <dependency>
+            <groupId>org.apache.doris</groupId>
+            <artifactId>doris_bytedance_iceberg_shaded</artifactId>
+            <version>${doris_bytedance_iceberg_shaded.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.doris</groupId>
@@ -131,6 +141,10 @@ under the License.
                 <exclusion>
                     <groupId>org.apache.hive</groupId>
                     <artifactId>hive-standalone-metastore</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.ben-manes.caffeine</groupId>
+                    <artifactId>caffeine</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -858,21 +872,6 @@ under the License.
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-hive-metastore</artifactId>
-            <version>${iceberg-hive-metastore.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.httpcomponents.client5</groupId>
-                    <artifactId>httpclient5</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.roaringbitmap</groupId>
-                    <artifactId>RoaringBitmap</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
             <groupId>org.apache.velocity</groupId>
             <artifactId>velocity-engine-core</artifactId>
         </dependency>
@@ -887,15 +886,6 @@ under the License.
                     <groupId>ch.qos.logback</groupId>
                 </exclusion>
             </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-aws</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.paimon</groupId>

@@ -133,7 +133,7 @@ public class RefreshDbTest extends TestWithFeService {
         // add drop priv to user1
         rootCtx.setThreadLocalInfo();
         GrantStmt grantStmt = (GrantStmt) parseAndAnalyzeStmt(
-                "grant drop_priv on test1.db1.* to 'user1'@'%';", rootCtx);
+                "grant ALL on test1.db1.* to 'user1'@'%';", rootCtx);
         auth.grant(grantStmt);
         ConnectContext.remove();
 

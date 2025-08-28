@@ -37,7 +37,7 @@ public class PaimonExternalCatalogTest {
             catalog.getPaimonTable("dbName", "tblName");
             Assert.fail();
         } catch (Exception e) {
-            Assert.assertTrue(e.getMessage().contains("Failed to get Paimon table"));
+            Assert.assertTrue(e.getMessage().contains("Paimon 'warehouse' path must be set"));
         }
     }
 }

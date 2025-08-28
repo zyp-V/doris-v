@@ -14,13 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 import org.junit.jupiter.api.Assertions;
-
 suite("docs/table-design/tiered-storage/remote-storage.md") {
-
     String suffix = UUID.randomUUID().toString().substring(0, 5)
-
     def clean = {
         multi_sql """
             DROP TABLE IF EXISTS create_table_use_created_policy;
@@ -31,14 +27,12 @@ suite("docs/table-design/tiered-storage/remote-storage.md") {
             DROP RESOURCE IF EXISTS 'remote_s3_${suffix}';
         """
     }
-
     try {
         clean()
         multi_sql """
             DROP TABLE IF EXISTS create_table_use_created_policy;
             DROP STORAGE POLICY IF EXISTS test_policy_${suffix};
             DROP RESOURCE IF EXISTS 'remote_s3_${suffix}';
-
             CREATE RESOURCE "remote_s3_${suffix}"
             PROPERTIES
             (
@@ -53,7 +47,6 @@ suite("docs/table-design/tiered-storage/remote-storage.md") {
                 "s3.connection.request.timeout" = "3000",
                 "s3.connection.timeout" = "1000"
             );
-
             CREATE STORAGE POLICY test_policy_${suffix}
             PROPERTIES(
                 "storage_resource" = "remote_s3_${suffix}",
@@ -74,12 +67,10 @@ suite("docs/table-design/tiered-storage/remote-storage.md") {
                 "replication_num" = "1"
             );
         """
-
         multi_sql """
             DROP TABLE IF EXISTS create_table_use_created_policy;
             DROP STORAGE POLICY IF EXISTS test_policy_${suffix};
             DROP RESOURCE IF EXISTS 'remote_hdfs_${suffix}';
-
             CREATE RESOURCE "remote_hdfs_${suffix}" PROPERTIES (
                 "type"="hdfs",
                 "fs.defaultFS"="127.0.0.1:8120",
@@ -91,12 +82,10 @@ suite("docs/table-design/tiered-storage/remote-storage.md") {
                 "dfs.namenode.rpc-address.my_ha.my_namenode2" = "127.0.0.1:10000",
                 "dfs.client.failover.proxy.provider.my_ha" = "org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider"
             );
-
             CREATE STORAGE POLICY test_policy_${suffix} PROPERTIES (
                     "storage_resource" = "remote_hdfs_${suffix}",
                     "cooldown_ttl" = "300"
             );
-
             CREATE TABLE IF NOT EXISTS create_table_use_created_policy (
                 k1 BIGINT,
                 k2 LARGEINT,
@@ -110,7 +99,6 @@ suite("docs/table-design/tiered-storage/remote-storage.md") {
                 "replication_num" = "1"
             );
         """
-
         multi_sql """
             DROP TABLE IF EXISTS create_table_not_have_policy;
             CREATE TABLE IF NOT EXISTS create_table_not_have_policy 

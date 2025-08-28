@@ -55,7 +55,7 @@ suite("test_index_change_with_full_compaction") {
         showConfigCommand.append(backendId_to_backendIP.get(backend_id))
         showConfigCommand.append(":")
         showConfigCommand.append(backendId_to_backendHttpPort.get(backend_id))
-        showConfigCommand.append("/api/show_config")
+        showConfigCommand.append("/api/show_config?conf_item=disable_auto_compaction")
         logger.info(showConfigCommand.toString())
         def process = showConfigCommand.toString().execute()
         int code = process.waitFor()
@@ -65,6 +65,7 @@ suite("test_index_change_with_full_compaction") {
         assertEquals(code, 0)
         def configList = parseJson(out.trim())
         assert configList instanceof List
+        assertEquals(configList.size(), 1)
 
         boolean disableAutoCompaction = true
         for (Object ele in (List) configList) {

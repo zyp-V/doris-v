@@ -13,8 +13,6 @@ query_time	bigint	Yes	false	\N	NONE
 scan_bytes	bigint	Yes	false	\N	NONE
 scan_rows	bigint	Yes	false	\N	NONE
 return_rows	bigint	Yes	false	\N	NONE
-shuffle_send_rows	bigint	Yes	false	\N	NONE
-shuffle_send_bytes	bigint	Yes	false	\N	NONE
 scan_bytes_from_local_storage	bigint	Yes	false	\N	NONE
 scan_bytes_from_remote_storage	bigint	Yes	false	\N	NONE
 stmt_id	bigint	Yes	false	\N	NONE
@@ -27,4 +25,8 @@ sql_digest	varchar(128)	Yes	false	\N	NONE
 peak_memory_bytes	bigint	Yes	false	\N	NONE
 workload_group	text	Yes	false	\N	NONE
 stmt	text	Yes	false	\N	NONE
+shuffle_send_bytes	bigint	Yes	false	\N	NONE
+shuffle_send_rows	bigint	Yes	false	\N	NONE
+log_id	text	Yes	false	\N	NONE
+profile	text	Yes	false	\N	NONE
 

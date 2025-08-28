@@ -17,9 +17,9 @@
 
 suite("test_correlated_filter_removed") {
     multi_sql """
-        drop table if exists table_6_undef_partitions2_keys3_properties4_distributed_by5;
+        drop table if exists test_correlated_filter_removed;
 
-        create table table_6_undef_partitions2_keys3_properties4_distributed_by5 (
+        create table test_correlated_filter_removed (
         col_int_undef_signed int/*agg_type_placeholder*/   ,
         col_varchar_10__undef_signed varchar(10)/*agg_type_placeholder*/   ,
         pk int/*agg_type_placeholder*/
@@ -27,7 +27,7 @@ suite("test_correlated_filter_removed") {
         distributed by hash(pk) buckets 10
         properties("replication_num" = "1");
 
-        insert into table_6_undef_partitions2_keys3_properties4_distributed_by5(pk,col_int_undef_signed,col_varchar_10__undef_signed) values (0,null,'think'),(1,null,''),(2,2,''),(3,null,'r'),(4,null,null),(5,8,'here');
+        insert into test_correlated_filter_removed(pk,col_int_undef_signed,col_varchar_10__undef_signed) values (0,null,'think'),(1,null,''),(2,2,''),(3,null,'r'),(4,null,null),(5,8,'here');
 
         drop table if exists table_100_undef_partitions2_keys3_properties4_distributed_by5;
 
@@ -44,7 +44,7 @@ suite("test_correlated_filter_removed") {
 
     sql """
         SELECT *
-        FROM table_6_undef_partitions2_keys3_properties4_distributed_by5 AS t1
+        FROM test_correlated_filter_removed AS t1
         WHERE t1.`pk` + 2 IN 
             (SELECT 1
             FROM table_100_undef_partitions2_keys3_properties4_distributed_by5 AS t2

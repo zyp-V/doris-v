@@ -16,8 +16,8 @@
 // under the License.
 
 suite("test_agg_schema_key_change_modify1","p0") {
-     def tbName1 = "test_agg_schema_key_change_modify1"
-     def tbName2 = "test_agg_schema_key_change_modify_1"
+     def tbName1 = "test_agg_schema_key_change_modify1_1"
+     def tbName2 = "test_agg_schema_key_change_modify_1_1"
      /**
       *  Test the agg model by modify a value type
       */

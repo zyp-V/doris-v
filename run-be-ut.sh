@@ -148,8 +148,7 @@ update_submodule() {
     if [[ "${exit_code}" -ne 0 ]]; then
         # try to get submodule's current commit
         submodule_commit=$(git ls-tree HEAD "${submodule_path}" | awk '{print $3}')
-
-        commit_specific_url=$(echo "${archive_url}" | sed "s/refs\/heads/${submodule_commit}/")
+        commit_specific_url="${archive_url}"
         echo "Update ${submodule_name} submodule failed, start to download and extract ${commit_specific_url}"
 
         mkdir -p "${DORIS_HOME}/${submodule_path}"
@@ -157,8 +156,8 @@ update_submodule() {
     fi
 }
 
-update_submodule "be/src/apache-orc" "apache-orc" "https://github.com/apache/doris-thirdparty/archive/refs/heads/orc.tar.gz"
-update_submodule "be/src/clucene" "clucene" "https://github.com/apache/doris-thirdparty/archive/refs/heads/clucene.tar.gz"
+update_submodule "be/src/apache-orc" "apache-orc" "https://luban-source.byted.org/repository/scm/dp.doris.doris_thirdparty_orc_1.0.0.1.tar.gz"
+update_submodule "be/src/clucene" "clucene" "https://luban-source.byted.org/repository/scm/dp.doris.doris_thirdparty_clucene_1.0.0.1.tar.gz"
 
 jdk_version() {
     local java_cmd="${1}"
