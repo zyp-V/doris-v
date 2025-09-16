@@ -50,6 +50,7 @@ public class FlightSqlConnectPoolMgr extends ConnectPoolMgr {
         if (Config.enable_gdpr) {
             if (ctx.getGdprIdentity() != null) {
                 connectionMap.put(ctx.getConnectionId(), ctx);
+                return -1;
             }
         }
 
