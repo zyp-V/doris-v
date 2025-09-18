@@ -27,7 +27,6 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
-import org.apache.doris.common.DdlException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.Util;
@@ -331,12 +330,12 @@ public class HiveScanNode extends FileQueryScanNode {
 
         Optional<Set<Integer>> bucketIdsOpt = Optional.empty();
         try {
-            if (ConnectContext.get().getSessionVariable().getEnableHiveBucketPrune()) {
+            if (sessionVariable.getEnableHiveBucketPrune()) {
                 List<String> distributionColumnNames = hmsTable.getDistributionColumnList();
                 bucketIdsOpt = HiveBucketUtil.getPrunedBuckets(
                     conjuncts, distributionColumnNames, hmsTable.getBucketNum(), Maps.newHashMap());
             }
-        } catch (DdlException e) {
+        } catch (Exception e) {
             LOG.warn("hive table: {} bucket prune failed", hmsTable.getName(), e);
         }
 
