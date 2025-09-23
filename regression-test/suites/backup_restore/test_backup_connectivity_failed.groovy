@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-suite("test_backup_restore", "connectivity_failed") {
+suite("test_backup_connectivity_failed", "connectivity_failed") {
     def name = "test_name"
     def bucket = "useless_bucket"
     def prefix = "useless_prefix"

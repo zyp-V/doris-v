@@ -108,11 +108,6 @@ under the License.
                 </exclusion>
             </exclusions>
         </dependency>
-           <dependency>
-            <groupId>org.apache.doris</groupId>
-            <artifactId>doris_bytedance_iceberg_shaded</artifactId>
-            <version>${doris_bytedance_iceberg_shaded.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.apache.doris</groupId>
             <artifactId>doris_bytedance_hadoop_shaded</artifactId>
@@ -872,6 +867,21 @@ under the License.
             </exclusions>
         </dependency>
         <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-hive-metastore</artifactId>
+            <version>${iceberg-hive-metastore.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.httpcomponents.client5</groupId>
+                    <artifactId>httpclient5</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.roaringbitmap</groupId>
+                    <artifactId>RoaringBitmap</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
             <groupId>org.apache.velocity</groupId>
             <artifactId>velocity-engine-core</artifactId>
         </dependency>
@@ -886,6 +896,19 @@ under the License.
                     <groupId>ch.qos.logback</groupId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-aws</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-aws-bundle</artifactId>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.paimon</groupId>

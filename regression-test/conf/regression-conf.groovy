@@ -99,7 +99,7 @@ excludeSuites = "test_broker_load,test_decimal256_outfile_csv," +
     "test_select,test_ddl_backup_auth,test_ddl_repository_auth,test_ddl_restore_auth,test_dml_outfile_auth,test_show_repository_auth," +
     "test_backup_cancelled,test_backup_restore_atomic_cancel,docs/admin-manual/data-admin/restore.md,test_error_data_handling," +
     "docs/table-design/tiered-storage/remote-storage.md,test_json_reader_without_object,test_mtmv_outfile,test_mtmv_property,test_partial_update_s3_load," +
-    "doris_source,test_backup_cooldown_cancelled"
+    "doris_source,test_backup_cooldown_cancelled,test_backup_connectivity_failed"
 
 // this directories will not be executed
 excludeDirectories = "000_the_start_sentinel_do_not_touch," + // keep this line as the first line

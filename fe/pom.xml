@@ -386,7 +386,6 @@ under the License.
         <iceberg-hive-metastore.version>1.6.1</iceberg-hive-metastore.version>
         <doris_bytedance_hadoop_shaded.version>1.0.0.22</doris_bytedance_hadoop_shaded.version>
         <caffeine.version>2.9.3</caffeine.version>
-        <doris_bytedance_iceberg_shaded.version>1.0.0.2</doris_bytedance_iceberg_shaded.version>
     </properties>
     <profiles>
         <profile>
@@ -1492,9 +1491,19 @@ under the License.
 
             <!-- https://mvnrepository.com/artifact/org.apache.iceberg/iceberg-core -->
             <dependency>
-                <groupId>org.apache.doris</groupId>
-                <artifactId>doris_bytedance_iceberg_shaded</artifactId>
-                <version>${doris_bytedance_iceberg_shaded.version}</version>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-core</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-aws</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-aws-bundle</artifactId>
+                <version>${iceberg.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.aliyun.odps</groupId>
