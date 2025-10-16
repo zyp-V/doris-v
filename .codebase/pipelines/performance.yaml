@@ -1,0 +1,127 @@
+# Author: @jiajingzhe.1350
+name: Performance Test
+trigger:
+  manual:
+jobs:
+  performance_regression_test:
+    name: Performance Regression Test
+    image: hub.byted.org/compile/doris_compile_2.1.11:940e0c5d7c0b6e109bf5d6c7a7c9da0b
+    runs-on:
+      spec: c1.16xlarge
+    timeout: 600
+    steps:
+      - uses: actions/scm
+        id: scm_build
+        inputs:
+          scm_repo: dp/doris/doris_debian_dev_2_1_11
+          version_type: test
+          sync_bvc: True
+          sync_aws: false
+          sync_oss: false
+      - &action_checkout
+        uses: actions/checkout
+        inputs:
+          depth: 1
+      - uses: actions/setup-consul
+      - &doas 
+        uses: actions/doas
+        commands:
+          - echo $SEC_TOKEN_STRING # 通过环境变量获取 GDPR token
+      - &before_test
+        name: Before Test
+        commands:
+          - export CI_JOB_TOKEN=${{CI_JOB_TOKEN}}
+          - apt-get update && apt-get install -y --allow-unauthenticated bvc  # 升级bvc版本
+          - export VERSION=${{ Steps.scm_build.Outputs.version }}
+          - mkdir -p /opt/tiger/ && cd /opt/tiger/
+          - bvc clone -f jdk /opt/tiger/jdk # 安装java
+          - bvc clone -f consul_deploy /opt/tiger/consul_deploy && apt install python3-six # 安装consul
+          - bvc clone -f dp/doris/doris_debian_dev_2_1_11 --version ${VERSION} && mv doris_debian_dev_2_1_11 doris_deploy
+          - bvc clone -f yarn_deploy /opt/tiger/yarn_deploy && /opt/tiger/yarn_deploy/hadoop/bin/hdfs dfs -ls
+          - bvc clone dp/hive_deploy /opt/tiger/hive_deploy -f
+          - apt-get update && apt-get install -y --allow-unauthenticated  default-mysql-client # 安装mysql
+      - &deploy_doris
+        name: Deploy Doris
+        commands:
+          - PRIORITY_IP=$(hostname -I | cut -d " " -f 1) && export PRIORITY_ADDRESS="${PRIORITY_IP}/32" 
+          - echo "\npriority_networks = ${PRIORITY_ADDRESS}"
+          - echo "\npriority_networks = ${PRIORITY_ADDRESS}" >> /opt/tiger/doris_deploy/fe/conf/fe.conf
+          - echo "\npriority_networks = ${PRIORITY_ADDRESS}" >> /home/code/regression-test/pipeline/p0/conf/be.conf
+          - mkdir -p /opt/tiger/doris_deploy/fe/conf/doris_regression_test_v2 && mkdir -p /opt/tiger/doris_deploy/be/conf/doris_regression_test_v2
+          - cp /home/code/regression-test/pipeline/p0/conf/be.conf /opt/tiger/doris_deploy/be/conf/doris_regression_test_v2/
+          - mv /opt/tiger/doris_deploy/fe/conf/fe.conf /opt/tiger/doris_deploy/fe/conf/doris_regression_test_v2/
+          - /bin/bash /opt/tiger/doris_deploy/fe/bin/start_fe.sh --daemon --cluster doris_regression_test_v2 && sleep 30 # run fe
+          - tail /opt/tiger/doris_deploy/fe/log/fe.out
+          - tail /opt/tiger/doris_deploy/fe/log/fe.log
+          - /bin/bash /opt/tiger/doris_deploy/be/bin/start_be.sh --daemon --cluster doris_regression_test_v2 && sleep 300 # run be
+          - tail /opt/tiger/doris_deploy/be/log/be.out && sleep 10
+          - ls -al /opt/tiger/doris_deploy/be/log/
+          - tail /opt/tiger/doris_deploy/be/log/be.INFO
+          - mysql -h 0.0.0.0 -P 9030 -u root -c -e "alter system add backend \"$PRIORITY_IP:9050\";" &&  sleep 30 # add be
+          - mysql -h 0.0.0.0 -P 9030 -u root -c -e "show frontends;" && mysql -h 0.0.0.0 -P 9030 -u root -c -e "show backends;" # show status
+          - mysql -h 0.0.0.0 -P 9030 -u root -c -e "SET PROPERTY FOR 'root' 'max_user_connections'='1000';"
+      - &download_resource
+        name: Download Rersource
+        commands:
+          - bvc clone -f dp/doris/performance_regression  /home/code/output/performance_regression --version 1.0.0.18
+          - apt-get update && apt-get install -y --allow-unauthenticated jq
+      - &run_tpcds
+        name: Run TPC-DS Test
+        continue-on-error: true
+        commands:
+          - cd /home/code/output/performance_regression/tpcds-tools && ls -al
+          - /bin/bash ./bin/gen-tpcds-data.sh -s 100
+          - /bin/bash ./bin/create-tpcds-tables.sh -s 100
+          - /bin/bash ./bin/load-tpcds-data.sh -c 16
+          - /bin/bash ./bin/run-tpcds-queries.sh -s 100
+          # - cd /home/code/output/performance_regression && python /home/code/output/performance_regression/check_result.py tpcds /home/code/output/performance_regression/tpcds-tools/
+      - &run_tpch
+        name: Run TPC-H Test
+        continue-on-error: true
+        commands:
+          - cd /home/code/output/performance_regression/tpch-tools && ls -al
+          - /bin/bash ./bin/gen-tpch-data.sh -s 100
+          - /bin/bash ./bin/create-tpch-tables.sh -s 100
+          - /bin/bash ./bin/load-tpch-data.sh -c 16
+          - /bin/bash ./bin/run-tpch-queries.sh -s 100
+          # - cd /home/code/output/performance_regression && python /home/code/output/performance_regression/check_result.py tpch /home/code/output/performance_regression/tpch-tools/
+      - &run_ssb
+        name: Run SSB Test
+        continue-on-error: true
+        commands:
+          - cd /home/code/output/performance_regression/ssb-tools && ls -al
+          - /bin/bash ./bin/gen-ssb-data.sh -s 100
+          - /bin/bash ./bin/create-ssb-tables.sh -s 100
+          - /bin/bash ./bin/load-ssb-data.sh -c 16
+          - /bin/bash ./bin/run-ssb-queries.sh
+          - /bin/bash ./bin/run-ssb-flat-queries.sh
+          # - cd /home/code/output/performance_regression && python /home/code/output/performance_regression/check_result.py ssb /home/code/output/performance_regression/ssb-tools/
+      - &run_clickbench
+        name: Run ClickBench Test
+        continue-on-error: true
+        commands:
+          - cd /home/code/output/performance_regression/clickbench-tools && ls -al
+          - apt-get update && apt-get install -y --allow-unauthenticated pigz
+          - pigz -d -f hits.tsv.gz
+          - /bin/bash ./create-clickbench-table.sh
+          - /bin/bash ./load-clickbench-data.sh
+          - /bin/bash ./run-clickbench-queries.sh
+          # - cd /home/code/output/performance_regression && python /home/code/output/performance_regression/check_result.py clickbench /home/code/output/performance_regression/clickbench-tools/
+      - &create_artifact
+        name: Create Artifact
+        continue-on-error: true
+        commands:
+          - mkdir -p /Artifacts/be && mkdir /Artifacts/fe
+          - cp -r /opt/tiger/doris_deploy/be/log/ /Artifacts/be/.
+          - cp -r /opt/tiger/doris_deploy/fe/log/ /Artifacts/fe/.
+          - cp ${{Envs["CI_REPO_WORKSPACE"]}}/output/performance_regression/tpcds-tools/result.csv tpcds_result.csv
+          - cp ${{Envs["CI_REPO_WORKSPACE"]}}/output/performance_regression/tpch-tools/result.csv tpch_result.csv
+          - cp ${{Envs["CI_REPO_WORKSPACE"]}}/output/performance_regression/ssb-tools/result.csv ssb_result.csv
+          - cp ${{Envs["CI_REPO_WORKSPACE"]}}/output/performance_regression/clickbench-tools/result.csv clickbench_result.csv
+      - &upload_artifact
+        name: Upload Artifact
+        uses: actions/upload-artifact
+        continue-on-error: true
+        inputs:
+          name: Artifacts
+          path: /Artifacts
