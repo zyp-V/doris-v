@@ -170,4 +170,11 @@ public class BatchInsertIntoTableCommand extends Command implements NoForward, E
             targetTableIf.readUnlock();
         }
     }
+
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(logicalQuery.toDigest());
+        return sb.toString();
+    }
 }

@@ -23,6 +23,7 @@ import org.apache.doris.nereids.types.BooleanType;
 import org.apache.doris.nereids.types.DataType;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Compound predicate expression.
@@ -66,4 +67,13 @@ public abstract class CompoundPredicate extends BinaryOperator {
 
     public abstract Class<? extends CompoundPredicate> flipType();
 
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(");
+        sb.append(children().stream().map(c -> c.toDigest())
+                .collect(Collectors.joining(" " + symbol + " ")));
+        sb.append(")");
+        return sb.toString();
+    }
 }

@@ -88,4 +88,9 @@ public class UnboundResultSink<CHILD_TYPE extends Plan> extends LogicalSink<CHIL
     public String toString() {
         return Utils.toSqlString("UnboundResultSink[" + id.asInt() + "]");
     }
+
+    @Override
+    public String toDigest() {
+        return child().toDigest();
+    }
 }

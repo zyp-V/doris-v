@@ -98,4 +98,10 @@ public class LogicalInlineTable extends LogicalLeaf implements BlockFuncDepsProp
     public int hashCode() {
         return Objects.hash(constantExprsList);
     }
+
+    @Override
+    public String toDigest() {
+        // TODO handle exprList?
+        return "VALUES ?";
+    }
 }

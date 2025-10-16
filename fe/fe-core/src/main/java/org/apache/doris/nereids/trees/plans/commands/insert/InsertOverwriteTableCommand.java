@@ -380,4 +380,16 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
     public <R, C> R accept(PlanVisitor<R, C> visitor, C context) {
         return visitor.visitInsertOverwriteTableCommand(this, context);
     }
+
+    @Override
+    public String toDigest() {
+        // if with cte, query will be print twice
+        StringBuilder sb = new StringBuilder();
+        sb.append("OVERWRITE TABLE "); // there is no way add overwrite flag in sink(logic query), so add it here
+        sb.append(logicalQuery.toDigest());
+        if (cte.isPresent()) {
+            sb.append(" (").append(cte.get().toDigest()).append(")");
+        }
+        return sb.toString();
+    }
 }

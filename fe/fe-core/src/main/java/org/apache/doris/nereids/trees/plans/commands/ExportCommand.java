@@ -59,6 +59,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * EXPORT statement, export data to dirs by broker.
@@ -373,5 +374,17 @@ public class ExportCommand extends Command implements ForwardWithSync {
     @Override
     public <R, C> R accept(PlanVisitor<R, C> visitor, C context) {
         return visitor.visitExportCommand(this, context);
+    }
+
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder("EXPORT TABLE ");
+        sb.append(nameParts.stream().collect(Collectors.joining(".")));
+        if (expr.isPresent()) {
+            sb.append(" WHERE ")
+                    .append(expr.get().toDigest());
+        }
+        sb.append(" TO ?");
+        return sb.toString();
     }
 }

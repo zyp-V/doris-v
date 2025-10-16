@@ -105,6 +105,17 @@ public class Cast extends Expression implements UnaryExpression {
     }
 
     @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("cast(")
+                .append(child().toDigest())
+                .append(" as ")
+                .append(targetType)
+                .append(")");
+        return sb.toString();
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (!super.equals(o)) {
             return false;

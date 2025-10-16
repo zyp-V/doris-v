@@ -60,6 +60,15 @@ public class Interval extends Expression implements LeafExpression, AlwaysNotNul
         return visitor.visitInterval(this, context);
     }
 
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("INTERVAL ");
+        sb.append(value().toDigest());
+        sb.append(" ").append(timeUnit);
+        return sb.toString();
+    }
+
     /**
      * Supported time unit.
      */

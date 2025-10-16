@@ -86,6 +86,16 @@ public class InSubquery extends SubqueryExpr {
         return this.compareExpr + " IN (INSUBQUERY) " + super.toString();
     }
 
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getCompareExpr().toDigest());
+        sb.append(isNot ? " NOT IN (" : " IN (");
+        sb.append(queryPlan.toDigest());
+        sb.append(')');
+        return sb.toString();
+    }
+
     public <R, C> R accept(ExpressionVisitor<R, C> visitor, C context) {
         return visitor.visitInSubquery(this, context);
     }

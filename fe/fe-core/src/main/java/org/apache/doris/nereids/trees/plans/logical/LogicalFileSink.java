@@ -120,4 +120,14 @@ public class LogicalFileSink<CHILD_TYPE extends Plan> extends LogicalSink<CHILD_
     public Map<String, String> getProperties() {
         return properties;
     }
+
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder(child().toDigest());
+        sb.append(" INTO OUTFILE '").append(" ? ").append(" FORMAT AS ").append(" ? ");
+        if (properties != null && !properties.isEmpty()) {
+            sb.append(" PROPERTIES(").append(" ? ").append(")");
+        }
+        return sb.toString();
+    }
 }

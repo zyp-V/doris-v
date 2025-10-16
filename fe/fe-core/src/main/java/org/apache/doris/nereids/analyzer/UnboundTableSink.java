@@ -34,6 +34,7 @@ import org.apache.doris.nereids.util.Utils;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
 import java.util.Objects;
@@ -175,5 +176,16 @@ public class UnboundTableSink<CHILD_TYPE extends Plan> extends UnboundLogicalSin
     @Override
     public List<Slot> computeOutput() {
         throw new UnboundException("output");
+    }
+
+    @Override
+    public String toDigest() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("INSERT INTO ").append(StringUtils.join(nameParts, "."));
+        if (colNames != null && colNames.size() > 0) {
+            sb.append(" (").append(StringUtils.join(colNames, ", ")).append(")");
+        }
+        sb.append(" ").append(child().toDigest());
+        return sb.toString();
     }
 }
