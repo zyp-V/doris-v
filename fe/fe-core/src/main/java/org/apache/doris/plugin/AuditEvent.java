@@ -133,6 +133,12 @@ public class AuditEvent {
     @JsonProperty("profile")
     @AuditField(value = "Profile")
     public String profile = "";
+    @JsonProperty("fingerprint")
+    @AuditField(value = "Fingerprint")
+    public String fingerprint = "";
+    @JsonProperty("is_insert")
+    @AuditField(value = "IsInsert")
+    public boolean isInsert = false;
 
     public long pushToAuditLogQueueTime;
 
@@ -299,6 +305,16 @@ public class AuditEvent {
 
         public AuditEventBuilder setCluster(String cluster) {
             auditEvent.cluster = cluster;
+            return this;
+        }
+
+        public AuditEventBuilder setFingerprint(String fingerprint) {
+            auditEvent.fingerprint = fingerprint;
+            return this;
+        }
+
+        public AuditEventBuilder setIsInsert(boolean isInsert) {
+            auditEvent.isInsert = isInsert;
             return this;
         }
 

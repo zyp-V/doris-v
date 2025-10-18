@@ -23,6 +23,7 @@ import org.apache.doris.analysis.OutFileClause;
 import org.apache.doris.analysis.Queriable;
 import org.apache.doris.analysis.RedirectStatus;
 import org.apache.doris.analysis.StatementBase;
+import org.apache.doris.common.Config;
 import org.apache.doris.mysql.FieldInfo;
 import org.apache.doris.nereids.StatementContext;
 import org.apache.doris.nereids.exceptions.AnalysisException;
@@ -49,10 +50,20 @@ public class LogicalPlanAdapter extends StatementBase implements Queriable {
     private ArrayList<String> colLabels;
     private List<FieldInfo> fieldInfos;
     private List<String> viewDdlSqls;
+    private String digest = "";
 
+    /**
+     * constructor
+     */
     public LogicalPlanAdapter(LogicalPlan logicalPlan, StatementContext statementContext) {
         this.logicalPlan = logicalPlan;
         this.statementContext = statementContext;
+        if (Config.enable_fingerprint_metrics && statementContext != null
+                && statementContext.getConnectContext() != null && !statementContext.getConnectContext().isProxy()) {
+            // generate digest when adaptor is constructed, or else planer will rewrite the plan
+            // may not accurate for prepare command and execute command
+            digest = logicalPlan == null ? "" : logicalPlan.toDigest();
+        }
     }
 
     @Override
@@ -138,7 +149,7 @@ public class LogicalPlanAdapter extends StatementBase implements Queriable {
 
     public String toDigest() {
         // TODO: generate real digest
-        return "";
+        return digest;
     }
 
     public static LogicalPlanAdapter of(Plan plan) {

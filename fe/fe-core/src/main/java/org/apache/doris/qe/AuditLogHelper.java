@@ -18,6 +18,7 @@
 package org.apache.doris.qe;
 
 import org.apache.doris.DorisFE;
+import org.apache.doris.analysis.InsertStmt;
 import org.apache.doris.analysis.NativeInsertStmt;
 import org.apache.doris.analysis.Queriable;
 import org.apache.doris.analysis.QueryStmt;
@@ -36,7 +37,10 @@ import org.apache.doris.nereids.analyzer.UnboundOneRowRelation;
 import org.apache.doris.nereids.analyzer.UnboundTableSink;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
 import org.apache.doris.nereids.trees.plans.Plan;
+import org.apache.doris.nereids.trees.plans.commands.Command;
+import org.apache.doris.nereids.trees.plans.commands.insert.BatchInsertIntoTableCommand;
 import org.apache.doris.nereids.trees.plans.commands.insert.InsertIntoTableCommand;
+import org.apache.doris.nereids.trees.plans.commands.insert.InsertOverwriteTableCommand;
 import org.apache.doris.nereids.trees.plans.logical.LogicalInlineTable;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
@@ -229,6 +233,34 @@ public class AuditLogHelper {
                 profileUrl.append("/");
                 profileUrl.append(ctx.queryId() == null ? "NaN" : DebugUtil.printId(ctx.queryId()));
                 auditEventBuilder.setProfile(profileUrl.toString());
+            }
+        }
+
+        if (Config.enable_fingerprint_metrics) {
+            // compatible with old parser
+            boolean isQuery = parsedStmt instanceof Queriable;
+            boolean isInsert = parsedStmt instanceof InsertStmt;
+            boolean isLogicalPlan = false;
+            if (parsedStmt instanceof LogicalPlanAdapter) {
+                isLogicalPlan = true;
+                LogicalPlan logicalPlan = ((LogicalPlanAdapter) parsedStmt).getLogicalPlan();
+                isQuery = !(logicalPlan instanceof Command);
+                isInsert = (logicalPlan instanceof InsertIntoTableCommand)
+                        || (logicalPlan instanceof BatchInsertIntoTableCommand)
+                        || (logicalPlan instanceof InsertOverwriteTableCommand);
+            }
+            if (isQuery || isInsert) {
+                String digest = "";
+                if (isLogicalPlan) {
+                    digest = ((LogicalPlanAdapter) parsedStmt).toDigest();
+                } else if (isQuery) {
+                    digest = ((Queriable) parsedStmt).toDigest();
+                } else {
+                    // do not compatible with old insert stmt
+                }
+                String sqlDigest = DigestUtils.md5Hex(digest);
+                auditEventBuilder.setFingerprint(sqlDigest);
+                auditEventBuilder.setIsInsert(isInsert);
             }
         }
 

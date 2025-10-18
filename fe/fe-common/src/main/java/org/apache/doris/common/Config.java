@@ -2919,6 +2919,9 @@ public class Config extends ConfigBase {
     @ConfField
     public static int audit_log_profile_tos_parallelism = 3;
 
+    @ConfField(mutable = true)
+    public static boolean enable_fingerprint_metrics = true;
+
     /*---------------------- PROFILE & AUDIT LOG CONFIG END ------------------------*/
 
 

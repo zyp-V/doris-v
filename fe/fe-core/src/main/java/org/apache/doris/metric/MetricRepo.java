@@ -44,11 +44,16 @@ import org.apache.doris.transaction.TransactionStatus;
 
 import com.codahale.metrics.Histogram;
 import com.codahale.metrics.MetricRegistry;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -84,6 +89,12 @@ public final class MetricRepo {
     public static AutoMappedMetric<LongCounterMetric> BE_COUNTER_QUERY_RPC_ALL;
     public static AutoMappedMetric<LongCounterMetric> BE_COUNTER_QUERY_RPC_FAILED;
     public static AutoMappedMetric<LongCounterMetric> BE_COUNTER_QUERY_RPC_SIZE;
+
+    public static Cache<String/*fingerprint*/, LongCounterMetric> COUNTER_QUERY_PER_FINGERPRINT_CACHE;
+    public static Cache<String/*fingerprint*/, Histogram> LATENCY_PER_FINGERPRINT_CACHE;
+    private static final MetricRegistry FINGERPRINT_METRIC_REGISTER = new MetricRegistry();
+    public static long cleanupTime;
+    public static final long expireMinutes = 5;
 
     public static LongCounterMetric COUNTER_CACHE_ADDED_SQL;
     public static LongCounterMetric COUNTER_CACHE_ADDED_PARTITION;
@@ -567,6 +578,32 @@ public final class MetricRepo {
         };
         DORIS_METRIC_REGISTER.addMetrics(GAUGE_INTERNAL_TABLE_NUM);
 
+        COUNTER_QUERY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
+                .expireAfterAccess(5, TimeUnit.MINUTES)
+                .removalListener(new RemovalListener<String, LongCounterMetric>() {
+                    public void onRemoval(RemovalNotification<String, LongCounterMetric> notification) {
+                        // e.g.
+                        // metric_name: fingerprint${type}
+                        // metric_key:  ${short_fingerprint}${type}
+                        // notice that ${type} start with '_'
+                        String key = notification.getKey();
+                        String fingerprint = key.startsWith("NaN") ? "NaN" : key.substring(0, 12);
+                        String type = key.startsWith("NaN") ? key.substring(3) : key.substring(12);
+                        DORIS_METRIC_REGISTER.removeMetricsByNameAndLabels("fingerprint" + type,
+                                Arrays.asList(new MetricLabel("fingerprint", fingerprint)));
+                    }
+                })
+                .build();
+        // If the cache expires, remove the fingerprint
+        LATENCY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
+                .expireAfterAccess(5, TimeUnit.MINUTES)
+                .removalListener(new RemovalListener<String, Histogram>() {
+                    public void onRemoval(RemovalNotification<String, Histogram> notification) {
+                        FINGERPRINT_METRIC_REGISTER.remove(notification.getKey());
+                    }
+                })
+                .build();
+
         // init system metrics
         initSystemMetrics();
 
@@ -753,6 +790,13 @@ public final class MetricRepo {
             visitor.visitHistogram(MetricVisitor.FE_PREFIX, entry.getKey(), entry.getValue());
         }
 
+        // latency histogram per fingerprint
+        SortedMap<String, Histogram> fingerprintHistograms = FINGERPRINT_METRIC_REGISTER.getHistograms();
+        for (Map.Entry<String, Histogram> entry : fingerprintHistograms.entrySet()) {
+            String name = "query_latency_ms_per_fingerprint.fingerprint=" + entry.getKey();
+            visitor.visitHistogram(MetricVisitor.FE_PREFIX, name, entry.getValue());
+        }
+
         // node info
         visitor.getNodeInfo();
 
@@ -786,5 +830,52 @@ public final class MetricRepo {
 
     private static long getLoadJobNum(EtlJobType jobType, JobState jobState) {
         return MetricRepo.loadJobNum.getOrDefault(Pair.of(jobType, jobState), 0L);
+    }
+
+    public static void addFingerprint(String fingerprint, String fingerprintMetricKey, long value,
+            String fingerprintMetricName, MetricUnit unit,
+            String fingerprintMetricComment) {
+        addFingerprint(fingerprint, fingerprintMetricKey, value, fingerprintMetricName,
+                unit, fingerprintMetricComment, false);
+    }
+
+    public static void addFingerprint(String fingerprint, String fingerprintMetricKey, long value,
+            String fingerprintMetricName, MetricUnit unit,
+            String fingerprintMetricComment, boolean overwrite) {
+        LongCounterMetric fingerprintMetric =
+                MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprintMetricKey);
+        if (fingerprintMetric == null) {
+            fingerprintMetric = new LongCounterMetric(fingerprintMetricName, unit,
+                    fingerprintMetricComment);
+            // add label
+            fingerprintMetric.addLabel(new MetricLabel("fingerprint", fingerprint));
+            // register
+            DORIS_METRIC_REGISTER.addMetrics(fingerprintMetric);
+            // save to map
+            COUNTER_QUERY_PER_FINGERPRINT_CACHE.put(fingerprintMetricKey, fingerprintMetric);
+        }
+        fingerprintMetric.increase(overwrite ? Math.max(value - fingerprintMetric.getValue(), 0) : value);
+        cleanUp();
+    }
+
+    public static void addFingerprintQueryLatency(String fingerprint, long elapseMs) {
+        Histogram fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprint);
+        if (fingerprintLatencyHistogram != null) {
+            fingerprintLatencyHistogram.update(elapseMs);
+        } else {
+            fingerprintLatencyHistogram = FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
+            fingerprintLatencyHistogram.update(elapseMs);
+            LATENCY_PER_FINGERPRINT_CACHE.put(fingerprint, fingerprintLatencyHistogram);
+        }
+        cleanUp();
+    }
+
+    private static void cleanUp() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime > cleanupTime + expireMinutes * 60 * 1000) {
+            cleanupTime = currentTime;
+            MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.cleanUp();
+            MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.cleanUp();
+        }
     }
 }
