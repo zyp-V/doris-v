@@ -617,6 +617,14 @@ class Config {
             config.actionParallel = 10
             log.info("Set actionParallel to 10 because not specify.".toString())
         }
+        if (config.otherConfigs.get("driverV8Url") == null) {
+            config.otherConfigs.put("driverV8Url", "https://maven.byted.org/repository/apache/mysql/mysql-connector-java/8.0.25/mysql-connector-java-8.0.25.jar")
+            log.info("Set driverV8Url to '${config.otherConfigs.get("driverV8Url")}' because not specify.".toString())
+        }
+        if (config.otherConfigs.get("driverV51Url") == null) {
+            config.otherConfigs.put("driverV51Url", "https://maven.byted.org/repository/apache/mysql/mysql-connector-java/5.1.49/mysql-connector-java-5.1.49.jar")
+            log.info("Set driverV51Url to '${config.otherConfigs.get("driverV51Url")}' because not specify.".toString())
+        }
     }
 
     static String configToString(Object obj) {

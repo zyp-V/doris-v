@@ -24,7 +24,7 @@ suite("test_jdbc_catalog_ddl", "p0,external,mysql,external_docker,external_docke
     String externalEnvIp = context.config.otherConfigs.get("externalEnvIp")
     String s3_endpoint = getS3Endpoint()
     String bucket = getS3BucketName()
-    String driver_url = "https://${bucket}.${s3_endpoint}/regression/jdbc_driver/mysql-connector-java-5.1.49.jar"
+    String driver_url = getMysqldriverV51Url()
     String mysql_port = context.config.otherConfigs.get("mysql_57_port");
 
     def wait_db_sync = { String ctl ->

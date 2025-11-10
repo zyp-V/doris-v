@@ -958,6 +958,17 @@ class Suite implements GroovyInterceptable {
         return s3Url
     }
 
+    String getMysqlDriverV8Url() {
+        String driverUrl = context.config.otherConfigs.get("driverV8Url");
+        return driverUrl
+    }
+
+    String getMysqldriverV51Url() {
+        String driverUrl = context.config.otherConfigs.get("driverV51Url");
+        return driverUrl
+    }
+
+
     synchronized AmazonS3 getS3Client() {
         if (s3Client == null) {
             def credentials = new BasicAWSCredentials(getS3AK(), getS3SK())

@@ -20,7 +20,7 @@ suite("test_mysql_jdbc_catalog", "p0,external,mysql,external_docker,external_doc
     String externalEnvIp = context.config.otherConfigs.get("externalEnvIp")
     String s3_endpoint = getS3Endpoint()
     String bucket = getS3BucketName()
-    String driver_url = "https://${bucket}.${s3_endpoint}/regression/jdbc_driver/mysql-connector-java-8.0.25.jar"
+    String driver_url = getMysqlDriverV8Url()
     // String driver_url = "mysql-connector-java-8.0.25.jar"
     if (enabled == null || !enabled.equalsIgnoreCase("true")) {
         return;
@@ -28,9 +28,9 @@ suite("test_mysql_jdbc_catalog", "p0,external,mysql,external_docker,external_doc
 
     for (String driver_class : ["com.mysql.cj.jdbc.Driver","com.mysql.jdbc.Driver" ]) {
         if (driver_class.equals("com.mysql.jdbc.Driver")) {
-            driver_url = "https://${bucket}.${s3_endpoint}/regression/jdbc_driver/mysql-connector-java-5.1.49.jar"
+            driver_url = getMysqldriverV51Url()
         } else  {
-            driver_url = "https://${bucket}.${s3_endpoint}/regression/jdbc_driver/mysql-connector-java-8.0.25.jar"
+            driver_url = getMysqlDriverV8Url()
         }
         String user = "test_jdbc_user";
         String pwd = '123456';

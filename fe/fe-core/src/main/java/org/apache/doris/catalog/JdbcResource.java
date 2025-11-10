@@ -280,7 +280,8 @@ public class JdbcResource extends Resource {
         if (!(driverUrl.startsWith("file://") || driverUrl.startsWith("http://")
                 || driverUrl.startsWith("https://") || driverUrl.matches("^[^:/]+\\.jar$"))) {
             throw new IllegalArgumentException("Invalid driver URL format. Supported formats are: "
-                    + "file://xxx.jar, http://xxx.jar, https://xxx.jar, or xxx.jar (without prefix).");
+                    + "file://xxx.jar, http://xxx.jar, https://xxx.jar, or xxx.jar (without prefix)."
+                    + "driverUrl: " + driverUrl);
         }
 
         try {
