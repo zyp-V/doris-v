@@ -40,6 +40,7 @@ import org.apache.doris.statistics.util.StatisticsUtil;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -138,6 +139,7 @@ public class VariableMgr {
     // So we use two additional fields provided to the checkpoint thread.
     private static SessionVariable defaultSessionVariableForCkpt;
     private static ImmutableMap<String, VarContext> ctxByVarNameForCkpt;
+    private static ImmutableSet<String> bytedanceLegacyNames;
 
     // Global read/write lock to protect access of globalSessionVariable.
     private static final ReadWriteLock rwlock = new ReentrantReadWriteLock();
@@ -151,6 +153,15 @@ public class VariableMgr {
         ImmutableSortedMap.Builder<String, VarContext> builder = getStringVarContextBuilder(defaultSessionVariable);
         ctxByVarName = builder.build();
         ctxByDisplayVarName = getDisplaySessionVars();
+        bytedanceLegacyNames = ImmutableSet.of("execute_group");
+    }
+
+    private static boolean isLegacySessionVariable(String name) {
+        if (bytedanceLegacyNames.contains(name)) {
+            LOG.warn("receive legacy variable: {}", name);
+            return true;
+        }
+        return false;
     }
 
     public static SessionVariable getDefaultSessionVariable() {
@@ -292,6 +303,9 @@ public class VariableMgr {
             throws DdlException {
         VarContext varCtx = getVarContext(setVar.getVariable());
         if (varCtx == null) {
+            if (isLegacySessionVariable(setVar.getVariable())) {
+                return;
+            }
             ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_SYSTEM_VARIABLE, setVar.getVariable(),
                     findSimilarSessionVarNames(setVar.getVariable()));
         }
@@ -313,6 +327,9 @@ public class VariableMgr {
             throws DdlException {
         VarContext varCtx = getVarContext(setVar.getVariable());
         if (varCtx == null) {
+            if (isLegacySessionVariable(setVar.getVariable())) {
+                return;
+            }
             ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_SYSTEM_VARIABLE, setVar.getVariable());
         }
         setVarInternal(sessionVariable, setVar, varCtx);

@@ -2995,7 +2995,7 @@ public class Config extends ConfigBase {
     public static int cloud_cold_read_percent = 10; // 10%
 
     @ConfField(mutable = true, masterOnly = true)
-    public static boolean enable_create_bitmap_index_as_inverted_index = true;
+    public static boolean enable_create_bitmap_index_as_inverted_index = false;
 
     // The original meta read lock is not enough to keep a snapshot of partition versions,
     // so the execution of `createScanRangeLocations` are delayed to `Coordinator::exec`,
@@ -3049,4 +3049,8 @@ public class Config extends ConfigBase {
             "For testing purposes, all queries are forcibly forwarded to the master to verify"
                     + "the behavior of forwarding queries."})
     public static boolean force_forward_all_queries = false;
+
+    @ConfField(mutable = true, description = {"unique表是否默认开启mow",
+            "Whether enable mow when create unique table"})
+    public static boolean enable_unique_key_merge_on_write = true;
 }

@@ -1526,7 +1526,8 @@ public class PropertyAnalyzer {
     // the user doesn't specify the property in `CreateTableStmt`/`CreateTableInfo`
     public static Map<String, String> enableUniqueKeyMergeOnWriteIfNotExists(Map<String, String> properties) {
         if (properties != null && properties.get(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE) == null) {
-            properties.put(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE, "true");
+            properties.put(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE,
+                    Boolean.toString(Config.enable_unique_key_merge_on_write));
         }
         return properties;
     }
