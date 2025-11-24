@@ -194,6 +194,22 @@ public class DatabaseTest {
     }
 
     @Test
+    public void createTableSetQualifiedNameTest() {
+        Assert.assertEquals("dbTest", db.getFullName());
+        Assert.assertEquals(dbId, db.getId());
+
+        List<Column> baseSchema = new LinkedList<Column>();
+        OlapTable table = new OlapTable(2000, "baseTable", baseSchema, KeysType.AGG_KEYS,
+                new SinglePartitionInfo(), new RandomDistributionInfo(10));
+
+        // create
+        Assert.assertTrue(db.registerTable(table));
+        Assert.assertEquals("dbTest", table.getQualifiedDbName());
+        Assert.assertEquals("dbTest.baseTable", table.getQualifiedName());
+        db.unregisterTable(table.getName());
+    }
+
+    @Test
     public void testSerialization() throws Exception {
         // 1. Write objects to file
         final Path path = Files.createTempFile("database", "tmp");
@@ -250,6 +266,11 @@ public class DatabaseTest {
         Database rDb2 = new Database();
         rDb2.readFields(dis);
         Assert.assertEquals(rDb2, db2);
+
+        Assert.assertEquals(
+                db2.getTable(table.getName()).get().getQualifiedName(),
+                rDb2.getTable(table.getName()).get().getQualifiedName()
+        );
 
         // 3. delete files
         dis.close();

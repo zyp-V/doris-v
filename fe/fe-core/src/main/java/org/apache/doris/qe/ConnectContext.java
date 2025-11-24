@@ -131,6 +131,7 @@ public class ConnectContext {
     protected volatile MysqlChannel mysqlChannel;
     // state
     protected volatile QueryState state;
+    protected volatile String minMaxPartitionNames;
     protected volatile long returnRows;
     // the protocol capability which server say it can support
     protected volatile MysqlCapability serverCapability;
@@ -776,6 +777,14 @@ public class ConnectContext {
 
     public void setState(QueryState state) {
         this.state = state;
+    }
+
+    public void setMinMaxPartitionNames(String minMaxPartitionNames) {
+        this.minMaxPartitionNames = minMaxPartitionNames;
+    }
+
+    public String getMinMaxPartitionNames() {
+        return minMaxPartitionNames;
     }
 
     public MysqlCapability getCapability() {

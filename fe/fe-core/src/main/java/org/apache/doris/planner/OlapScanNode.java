@@ -167,6 +167,8 @@ public class OlapScanNode extends ScanNode {
     private OlapTable olapTable = null;
     private long totalTabletsNum = 0;
     private long selectedIndexId = -1;
+    private String selectedMinPartitionName = "";
+    private String selectedMaxPartitionName = "";
     private Collection<Long> selectedPartitionIds = Lists.newArrayList();
     private long totalBytes = 0;
 
@@ -316,6 +318,14 @@ public class OlapScanNode extends ScanNode {
 
     public void setUseTopnOpt(boolean useTopnOpt) {
         this.useTopnOpt = useTopnOpt;
+    }
+
+    public String getSelectedMinPartitionName() {
+        return selectedMinPartitionName;
+    }
+
+    public String getSelectedMaxPartitionName() {
+        return selectedMaxPartitionName;
     }
 
     public Collection<Long> getSelectedPartitionIds() {
@@ -954,6 +964,17 @@ public class OlapScanNode extends ScanNode {
         }
         selectedPartitionIds = olapTable.selectNonEmptyPartitionIds(selectedPartitionIds);
         selectedPartitionNum = selectedPartitionIds.size();
+
+        if (Config.enable_audit_log_partition_level_stats) {
+            selectedMinPartitionName = selectedPartitionIds.stream()
+                .map(id -> olapTable.getPartition(id).getName())
+                .min(String::compareTo)
+                .orElseGet(() -> "p99999999");
+            selectedMaxPartitionName = selectedPartitionIds.stream()
+                .map(id -> olapTable.getPartition(id).getName())
+                .max(String::compareTo)
+                .orElseGet(() -> "p00000000");
+        }
 
         for (long id : selectedPartitionIds) {
             Partition partition = olapTable.getPartition(id);

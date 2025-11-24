@@ -288,6 +288,9 @@ public class AuditLogHelper {
                     auditEventBuilder.setSqlDigest(sqlDigest);
                 }
             }
+            if (Config.enable_audit_log_partition_level_stats) {
+                ctx.getAuditEventBuilder().setMinMaxPartitionNames(ctx.getMinMaxPartitionNames());
+            }
             auditEventBuilder.setIsQuery(true)
                     .setScanBytesFromLocalStorage(
                             statistics == null ? 0 : statistics.getScanBytesFromLocalStorage())

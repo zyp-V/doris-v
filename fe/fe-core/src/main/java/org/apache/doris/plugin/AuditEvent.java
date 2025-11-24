@@ -139,6 +139,9 @@ public class AuditEvent {
     @JsonProperty("is_insert")
     @AuditField(value = "IsInsert")
     public boolean isInsert = false;
+    @JsonProperty("min_max_partition_names")
+    @AuditField(value = "MinMaxPartitionNames")
+    public String minMaxPartitionNames = "";
 
     public long pushToAuditLogQueueTime;
 
@@ -318,6 +321,10 @@ public class AuditEvent {
             return this;
         }
 
+        public AuditEventBuilder setMinMaxPartitionNames(String minMaxPartitionNames) {
+            auditEvent.minMaxPartitionNames = minMaxPartitionNames;
+            return this;
+        }
 
         public AuditEvent build() {
             return this.auditEvent;

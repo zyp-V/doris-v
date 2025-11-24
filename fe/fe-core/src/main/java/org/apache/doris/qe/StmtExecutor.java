@@ -104,6 +104,7 @@ import org.apache.doris.common.FormatOptions;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.NereidsException;
 import org.apache.doris.common.NereidsSqlCacheManager;
+import org.apache.doris.common.Pair;
 import org.apache.doris.common.Status;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.Version;
@@ -209,6 +210,7 @@ import org.apache.doris.transaction.TransactionEntry;
 import org.apache.doris.transaction.TransactionState;
 import org.apache.doris.transaction.TransactionStatus;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
@@ -673,6 +675,41 @@ public class StmtExecutor {
         }
     }
 
+    public void collectPartitionStats() {
+        if (!Config.enable_audit_log_partition_level_stats || planner == null) {
+            return;
+        }
+
+        // tableQualifiedName -> min partition names
+        Map<String, Pair<String, String>> minMaxPartitionName = new HashMap<>();
+        for (ScanNode scanNode : planner.getScanNodes()) {
+            if (scanNode instanceof OlapScanNode) {
+                OlapScanNode olapScanNode = (OlapScanNode) scanNode;
+                String tableQualifiedName = olapScanNode.getOlapTable().getQualifiedName();
+                String currentMinPartitionName = olapScanNode.getSelectedMinPartitionName();
+                String currentMaxPartitionName = olapScanNode.getSelectedMaxPartitionName();
+                if (!minMaxPartitionName.containsKey(tableQualifiedName)) {
+                    minMaxPartitionName.put(tableQualifiedName,
+                            Pair.of(currentMinPartitionName, currentMaxPartitionName));
+                } else {
+                    if (currentMinPartitionName.compareTo(minMaxPartitionName.get(tableQualifiedName).first) < 0) {
+                        minMaxPartitionName.get(tableQualifiedName).first = currentMinPartitionName;
+                    }
+                    if (currentMaxPartitionName.compareTo(minMaxPartitionName.get(tableQualifiedName).second) > 0) {
+                        minMaxPartitionName.get(tableQualifiedName).second = currentMaxPartitionName;
+                    }
+                }
+            }
+        }
+        String tableWithMinMaxPartNames =
+                Joiner.on(",").join(minMaxPartitionName.entrySet()
+                .stream()
+                .map(e -> e.getKey() + "#" + e.getValue().first + "#" + e.getValue().second)
+                .collect(Collectors.toList())
+            );
+        context.setMinMaxPartitionNames(tableWithMinMaxPartNames);
+    }
+
     private void executeByNereids(TUniqueId queryId) throws Exception {
         if (LOG.isDebugEnabled()) {
             LOG.debug("Nereids start to execute query:\n {}", originStmt.originStmt);
@@ -976,6 +1013,7 @@ public class StmtExecutor {
                 return;
             }
 
+            collectPartitionStats();
             // sql/sqlHash block
             checkBlockRules();
             if (parsedStmt instanceof QueryStmt) {

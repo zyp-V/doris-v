@@ -1726,6 +1726,13 @@ public class Config extends ConfigBase {
     public static boolean allow_replica_on_same_host = false;
 
     /**
+     * If set to true, will log min & max partitions info of each query in audit log.
+     * See https://bytedance.larkoffice.com/wiki/BPyDw2yTXiLFOKkLnh0cRl9sniR
+     */
+    @ConfField(mutable = true)
+    public static boolean enable_audit_log_partition_level_stats = false;
+
+    /**
      *  The version count threshold used to judge whether replica compaction is too slow
      */
     @ConfField(mutable = true)
