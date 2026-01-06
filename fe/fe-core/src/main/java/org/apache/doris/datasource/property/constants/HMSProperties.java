@@ -65,6 +65,7 @@ public class HMSProperties {
             .put("BOEI18N", "conf_boei18n")
             .put("COMPASS", "conf_gcp_sentry")
             .put("NO", "conf_norway_sentry")
+            .put("PINNACLE", "conf_pinnacle_sentry")
             .build();
 
     public static boolean isBytedanceHive(Map<String, String> properties) {

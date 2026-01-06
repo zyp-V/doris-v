@@ -135,6 +135,7 @@ public class CatalogProperty implements Writable {
                 //hadoopProperties.remove("token");
             }
             hadoopProperties.put("ipc.client.custom_token", gdprToken);
+            hadoopProperties.put("ipc.client.client-cache.enable", "false");
             hadoopProperties.put("hadoop.security.authentication", "token");
         }
         return hadoopProperties;

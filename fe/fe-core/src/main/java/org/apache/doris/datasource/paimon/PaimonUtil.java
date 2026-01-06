@@ -108,7 +108,7 @@ public class PaimonUtil {
                             new DataField(4, "last_update_time", DataTypes.TIMESTAMP_MILLIS())));
     */
     public static PaimonPartition rowToPartition(InternalRow row) {
-        String partition = row.getString(0).toString();
+        String partition = row.getString(0).toString().replace("{", "").replace("}", "");
         long recordCount = row.getLong(1);
         long fileSizeInBytes = row.getLong(2);
         long fileCount = row.getLong(3);

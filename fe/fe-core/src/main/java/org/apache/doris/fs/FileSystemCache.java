@@ -86,6 +86,7 @@ public class FileSystemCache {
             conf.iterator().forEachRemaining(e -> result.put(e.getKey(), e.getValue()));
             if (properties.containsKey("token")) {
                 result.put("ipc.client.custom_token", properties.get("token"));
+                result.put("ipc.client.client-cache.enable", "false");
             }
             return result;
         }

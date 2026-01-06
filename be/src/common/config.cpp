@@ -1018,7 +1018,7 @@ DEFINE_mInt32(fragment_mgr_cancel_worker_interval_seconds, "1");
 
 // Node role tag for backend. Mix role is the default role, and computation role have no
 // any tablet.
-DEFINE_String(be_node_role, "mix");
+DEFINE_mString(be_node_role, "mix");
 
 // Hide webserver page for safety.
 // Hide the be config page for webserver.

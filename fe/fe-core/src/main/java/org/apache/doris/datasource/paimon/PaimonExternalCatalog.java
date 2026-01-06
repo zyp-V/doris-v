@@ -28,6 +28,7 @@ import org.apache.doris.datasource.property.PropertyConverter;
 import org.apache.doris.datasource.property.constants.HMSProperties;
 import org.apache.doris.datasource.property.constants.PaimonProperties;
 import org.apache.doris.fs.remote.dfs.DFSFileSystem;
+import org.apache.doris.service.GdprService;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
@@ -146,17 +147,191 @@ public abstract class PaimonExternalCatalog extends ExternalCatalog {
     }
 
     protected Catalog createCatalog() {
+        LOG.info("PaimonExternalCatalog[{}] createCatalog() enter", getName());
         try {
             return hadoopAuthenticator.doAs(() -> {
-                Options options = new Options();
-                Map<String, String> paimonOptionsMap = getPaimonOptionsMap();
-                for (Map.Entry<String, String> kv : paimonOptionsMap.entrySet()) {
-                    options.set(kv.getKey(), kv.getValue());
+                long t0 = System.currentTimeMillis();
+                Configuration conf = getConfiguration();
+                LOG.info("PaimonExternalCatalog[{}] createCatalog.doAs, conf@{}, fs.defaultFS={}",
+                        getName(), System.identityHashCode(conf), conf.get("fs.defaultFS"));
+
+                // 尽量关掉 HDFS 的 FS 缓存，避免旧 FS 粘住旧 token
+                try {
+                    conf.setBoolean("fs.hdfs.impl.disable.cache", true);
+                    conf.set(DFSFileSystem.PROP_ALLOW_FALLBACK_TO_SIMPLE_AUTH, "true");
+                    LOG.info("PaimonExternalCatalog[{}] set fs.hdfs.impl.disable.cache=true", getName());
+                } catch (Throwable t) {
+                    LOG.warn("PaimonExternalCatalog[{}] failed to set hdfs cache configs: {}",
+                            getName(), t.toString(), t);
                 }
-                CatalogContext context = CatalogContext.create(options, getConfiguration());
-                return createCatalogImpl(context);
+
+                // 1) 获取最新 token 的函数，加日志
+                java.util.function.Supplier<String> tokenSupplier = () -> {
+                    try {
+                        String tk = GdprService.getGdprTokenFromENV();
+                        LOG.debug("PaimonExternalCatalog[{}] tokenSupplier.get() -> {}",
+                                getName(), tk);
+                        return tk;
+                    } catch (Throwable t) {
+                        LOG.warn("PaimonExternalCatalog[{}] tokenSupplier exception: {}",
+                                getName(), t.toString(), t);
+                        return "";
+                    }
+                };
+
+                // 2) 记录当前 token
+                final java.util.concurrent.atomic.AtomicReference<String> lastTokenRef =
+                        new java.util.concurrent.atomic.AtomicReference<>(tokenSupplier.get());
+
+                // 3) 创建真实 Catalog 的函数，带日志
+                java.util.function.Supplier<Catalog> builder = () -> {
+                    long bt = System.currentTimeMillis();
+                    try {
+                        LOG.info("PaimonExternalCatalog[{}] builder.build() start, lastToken={}",
+                                getName(), lastTokenRef.get());
+
+                        Options options = new Options();
+                        Map<String, String> paimonOptionsMap = getPaimonOptionsMap();
+                        LOG.info("PaimonExternalCatalog[{}] getPaimonOptionsMap size={}",
+                                getName(), paimonOptionsMap.size());
+                        for (Map.Entry<String, String> kv : paimonOptionsMap.entrySet()) {
+                            options.set(kv.getKey(), kv.getValue());
+                        }
+
+                        // 将当前 token 写到 conf（重点在 conf，options 只是兜底）
+                        String tk = lastTokenRef.get();
+                        try {
+                            conf.set("ipc.client.custom_token", tk);
+                            LOG.info("PaimonExternalCatalog[{}] set conf.ipc.client.custom_token={}",
+                                    getName(), tk);
+                        } catch (Throwable e) {
+                            LOG.warn("PaimonExternalCatalog[{}] failed to set token into conf: {}",
+                                    getName(), e.toString(), e);
+                        }
+                        // 也写一份到 options（如果你们 Paimon 那边会从 options 读取）
+                        options.set("ipc.client.custom_token", tk);
+                        options.set("fs.hdfs.impl.disable.cache", "true");
+
+                        CatalogContext context = CatalogContext.create(options, conf);
+                        Catalog c = createCatalogImpl(context);
+                        LOG.info("PaimonExternalCatalog[{}] builder.build() success, impl={}, cost={}ms",
+                                getName(), c.getClass().getName(), (System.currentTimeMillis() - bt));
+                        return c;
+                    } catch (Throwable t) {
+                        LOG.error("PaimonExternalCatalog[{}] builder.build() failed: {}",
+                                getName(), t.toString(), t);
+                        throw new RuntimeException(t);
+                    }
+                };
+
+                // 先建一个真实的 Catalog 实例
+                final java.util.concurrent.atomic.AtomicReference<Catalog> delegate =
+                        new java.util.concurrent.atomic.AtomicReference<>(builder.get());
+
+                // 4) 判断 TOKEN_EXPIRED 的函数，加日志
+                java.util.function.Predicate<Throwable> isExpired = (ex) -> {
+                    Throwable t = ex;
+                    while (t != null) {
+                        String msg = t.getMessage();
+                        if (msg != null && msg.contains("TOKEN_EXPIRED")) {
+                            LOG.warn("PaimonExternalCatalog[{}] detected TOKEN_EXPIRED by message: {}",
+                                    getName(), msg);
+                            return true;
+                        }
+                        if ("org.byted.security.common.ZtiJwtException".equals(t.getClass().getName())) {
+                            LOG.warn("PaimonExternalCatalog[{}] detected TOKEN_EXPIRED by class: {}",
+                                    getName(), t.getClass().getName());
+                            return true;
+                        }
+                        t = t.getCause();
+                    }
+                    return false;
+                };
+
+                // 5) 代理逻辑
+                java.lang.reflect.InvocationHandler ih = (proxy, method, args) -> {
+                    String mName = method.getName();
+
+                    // 避免对 Object 的方法做复杂逻辑，简单转发
+                    if (method.getDeclaringClass() == Object.class) {
+                        if ("toString".equals(mName)) {
+                            return "PaimonCatalogProxy(" + getName() + ")@" + System.identityHashCode(proxy);
+                        }
+                        if ("hashCode".equals(mName)) {
+                            return System.identityHashCode(proxy);
+                        }
+                        if ("equals".equals(mName)) {
+                            return proxy == args[0];
+                        }
+                    }
+
+                    long start = System.currentTimeMillis();
+                    LOG.debug("PaimonExternalCatalog[{}] proxy.invoke begin, method={}, argsLen={}, lastToken={}",
+                            getName(), mName, (args == null ? 0 : args.length), lastTokenRef.get());
+                    try {
+                        // 5.1 尝试调用
+                        try {
+                            Object r = method.invoke(delegate.get(), args);
+                            LOG.debug("PaimonExternalCatalog[{}] proxy.invoke success, method={}, cost={}ms",
+                                    getName(), mName, (System.currentTimeMillis() - start));
+                            return r;
+                        } catch (java.lang.reflect.InvocationTargetException ite) {
+                            Throwable cause = ite.getCause();
+                            LOG.warn("PaimonExternalCatalog[{}] proxy.invoke got exception for method {}: {}",
+                                    getName(), mName, cause.toString(), cause);
+                            // 若是 TOKEN_EXPIRED，尝试刷新 token 重建一次，再重试
+                            if (isExpired.test(cause)) {
+                                String fresh = tokenSupplier.get();
+                                lastTokenRef.set(fresh);
+                                try {
+                                    conf.set("ipc.client.custom_token", fresh);
+                                    LOG.info("PaimonExternalCatalog[{}] TOKEN_EXPIRED -> refresh token={},"
+                                            + "rebuild catalog", getName(), fresh);
+                                } catch (Throwable e2) {
+                                    LOG.warn("PaimonExternalCatalog[{}] failed to set fresh token into conf: {}",
+                                            getName(), e2.toString(), e2);
+                                }
+                                delegate.set(builder.get());
+                                try {
+                                    Object r2 = method.invoke(delegate.get(), args);
+                                    LOG.info("PaimonExternalCatalog[{}] proxy.invoke retry success,"
+                                            + "method={}, cost={}ms",
+                                            getName(), mName, (System.currentTimeMillis() - start));
+                                    return r2;
+                                } catch (java.lang.reflect.InvocationTargetException ite2) {
+                                    Throwable cause2 = ite2.getCause();
+                                    LOG.error("PaimonExternalCatalog[{}] proxy.invoke retry failed, method={}, ex={}",
+                                            getName(), mName, cause2.toString(), cause2);
+                                    if (cause2 instanceof RuntimeException) {
+                                        throw (RuntimeException) cause2;
+                                    }
+                                    throw new RuntimeException(cause2);
+                                }
+                            }
+
+                            // 非 TOKEN_EXPIRED 的异常，直接抛出去
+                            if (cause instanceof RuntimeException) {
+                                throw (RuntimeException) cause;
+                            }
+                            throw new RuntimeException(cause);
+                        }
+                    } finally {
+                        LOG.debug("PaimonExternalCatalog[{}] proxy.invoke end, method={}, totalCost={}ms",
+                                getName(), mName, (System.currentTimeMillis() - start));
+                    }
+                };
+
+                Catalog proxy = (Catalog) java.lang.reflect.Proxy.newProxyInstance(
+                        Catalog.class.getClassLoader(),
+                        new Class<?>[] { Catalog.class },
+                        ih);
+
+                LOG.info("PaimonExternalCatalog[{}] createCatalog() success, proxy={}, totalCost={}ms",
+                        getName(), proxy.getClass().getName(), (System.currentTimeMillis() - t0));
+                return proxy;
             });
         } catch (IOException e) {
+            LOG.error("PaimonExternalCatalog[{}] createCatalog() failed: {}", getName(), e.toString(), e);
             throw new RuntimeException("Failed to create catalog, catalog name: " + getName(), e);
         }
     }

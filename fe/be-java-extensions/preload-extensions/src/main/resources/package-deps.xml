@@ -25,7 +25,9 @@ under the License.
         <format>jar</format>
     </formats>
     <includeBaseDirectory>false</includeBaseDirectory>
+
     <dependencySets>
+        <!-- 解包所有 runtime 依赖，但在“文件级”排除掉任何 Paimon 的类与元数据 -->
         <dependencySet>
             <outputDirectory>/</outputDirectory>
             <useProjectArtifact>false</useProjectArtifact>
@@ -33,7 +35,19 @@ under the License.
             <scope>runtime</scope>
             <unpackOptions>
                 <excludes>
+                    <!-- 关键：剔除所有 Paimon 类（无论来自哪个 shaded 依赖） -->
+                    <exclude>org/apache/paimon/**</exclude>
+                    <!-- 同时把它们的 maven 元数据也剔除，避免后续误判 -->
+                    <exclude>META-INF/maven/org.apache.paimon/**</exclude>
+                    <!-- 新增：彻底剔除“原版 Parquet”，避免抢类加载顺序 -->
+                    <exclude>org/apache/parquet/**</exclude>
+                    <exclude>META-INF/maven/org.apache.parquet/**</exclude>
+                    <!-- 常见冲突/无用文件 -->
                     <exclude>**/Log4j2Plugins.dat</exclude>
+                      <!-- 新增：关键！排除 Paimon 的 Factory 服务文件，避免“有条目无实现类” -->
+                    <exclude>META-INF/services/org.apache.paimon.factories.Factory</exclude>
+                    <!-- 建议顺手把其它 Paimon 相关服务文件也排掉（更稳妥） -->
+                    <exclude>META-INF/services/org.apache.paimon.*</exclude>
                 </excludes>
             </unpackOptions>
         </dependencySet>
@@ -44,5 +58,4 @@ under the License.
             <handlerName>metaInf-services</handlerName>
         </containerDescriptorHandler>
     </containerDescriptorHandlers>
-
 </assembly>

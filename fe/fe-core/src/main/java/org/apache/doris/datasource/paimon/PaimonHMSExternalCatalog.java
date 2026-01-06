@@ -53,7 +53,9 @@ public class PaimonHMSExternalCatalog extends PaimonExternalCatalog {
         options.put(PaimonProperties.PAIMON_CATALOG_TYPE, getPaimonCatalogType(catalogType));
         options.put(PaimonProperties.HIVE_METASTORE_URIS, properties.get(HMSProperties.HIVE_METASTORE_URIS));
         String region = properties.getOrDefault("region", "BOE");
-        options.put("hive-conf-dir", getHivePath(region));
+        String hiveConfDir = getHivePath(region);
+        LOG.info("hive-conf-dir: {}", hiveConfDir);
+        options.put("hive-conf-dir", hiveConfDir);
         options.put("hadoop-conf-dir", getHadoopConfDir(region));
         String gdprToken = properties.get("token");
         if (Strings.isNullOrEmpty(gdprToken)) {
@@ -63,6 +65,7 @@ public class PaimonHMSExternalCatalog extends PaimonExternalCatalog {
             LOG.info("token from catalog: {}", gdprToken);
         }
         options.put("ipc.client.custom_token", gdprToken);
+        options.put("ipc.client.client-cache.enable", "false");
         if (properties.containsKey("hadoop.security.authentication")) {
             options.put("hadoop.security.authentication", properties.get("hadoop.security.authentication"));
         }
@@ -71,6 +74,7 @@ public class PaimonHMSExternalCatalog extends PaimonExternalCatalog {
         options.put("ipc.client.client-cache.enable", "false");
         options.put("dfs.slowRead.bytesPerSec.threshold", "5242880");
         options.put("dfs.client.hedged.read.enable", "true");
+        options.put("hive-catalog.listTable.skip-exception", "true");
         options.put(HMSProperties.HIVE_VERSION, "1.2.2");
     }
 

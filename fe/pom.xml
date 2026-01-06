@@ -277,7 +277,6 @@ under the License.
         <log4j2.version>2.18.0</log4j2.version>
         <log4j-1.2.version>2.18.0</log4j-1.2.version>
         <slf4j.version>2.0.6</slf4j.version>
-        <metrics-core.version>4.0.2</metrics-core.version>
         <!--Netty 4.1.94 is not compatible with arrow flight.-->
         <!--Need to ensure that the version is the same as in arrow/java/pom.xml or compatible with it.-->
         <netty-all.version>4.1.110.Final</netty-all.version>
@@ -369,7 +368,7 @@ under the License.
         <quartz.version>2.3.2</quartz.version>
         <aircompressor.version>0.27</aircompressor.version>
         <!-- paimon -->
-        <paimon.version>1.1-byted-SNAPSHOT</paimon.version>
+        <paimon.version>1.1-byted-skip-exception-SNAPSHOT</paimon.version>
         <disruptor.version>3.4.4</disruptor.version>
         <!-- arrow flight sql -->
         <arrow.vector.classifier>shade-format-flatbuffers</arrow.vector.classifier>
@@ -386,6 +385,7 @@ under the License.
         <iceberg-hive-metastore.version>1.6.1</iceberg-hive-metastore.version>
         <doris_bytedance_hadoop_shaded.version>1.0.0.22</doris_bytedance_hadoop_shaded.version>
         <caffeine.version>2.9.3</caffeine.version>
+        <doris_bytedance_iceberg_shaded.version>1.0.0.2</doris_bytedance_iceberg_shaded.version>
     </properties>
     <profiles>
         <profile>
@@ -1118,12 +1118,6 @@ under the License.
                 <groupId>com.lmax</groupId>
                 <artifactId>disruptor</artifactId>
                 <version>${disruptor.version}</version>
-            </dependency>
-            <!-- https://mvnrepository.com/artifact/io.dropwizard.metrics/metrics-core -->
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-core</artifactId>
-                <version>${metrics-core.version}</version>
             </dependency>
             <!-- velocity-engine-core dependency-->
             <dependency>

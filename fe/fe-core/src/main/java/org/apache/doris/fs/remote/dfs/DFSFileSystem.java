@@ -29,6 +29,7 @@ import org.apache.doris.fs.operations.OpParams;
 import org.apache.doris.fs.remote.RemoteFSPhantomManager;
 import org.apache.doris.fs.remote.RemoteFile;
 import org.apache.doris.fs.remote.RemoteFileSystem;
+import org.apache.doris.service.GdprService;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
@@ -56,6 +57,11 @@ import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import javax.annotation.PreDestroy;
+
 
 public class DFSFileSystem extends RemoteFileSystem {
 
@@ -63,6 +69,7 @@ public class DFSFileSystem extends RemoteFileSystem {
     private static final Logger LOG = LogManager.getLogger(DFSFileSystem.class);
     private HDFSFileOperations operations = null;
     private HadoopAuthenticator authenticator = null;
+    private final ScheduledExecutorService refreshExec = Executors.newSingleThreadScheduledExecutor();
 
     public DFSFileSystem(Map<String, String> properties) {
         this(StorageBackend.StorageType.HDFS, properties);
@@ -92,15 +99,10 @@ public class DFSFileSystem extends RemoteFileSystem {
                     AuthenticationConfig authConfig = AuthenticationConfig.getKerberosConfig(conf);
                     authenticator = HadoopAuthenticator.getHadoopAuthenticator(authConfig);
                     try {
-                        dfsFileSystem = authenticator.doAs(() -> {
-                            try {
-                                return FileSystem.get(new Path(remotePath).toUri(), conf);
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
-                            }
-                        });
+                        dfsFileSystem = createFileSystem(authenticator, conf, remotePath, false);
                         operations = new HDFSFileOperations(dfsFileSystem);
                         RemoteFSPhantomManager.registerPhantomReference(this);
+                        startRefreshLoop(conf, remotePath);
                     } catch (Exception e) {
                         throw new UserException("Failed to get dfs FileSystem for " + e.getMessage(), e);
                     }
@@ -108,6 +110,106 @@ public class DFSFileSystem extends RemoteFileSystem {
             }
         }
         return dfsFileSystem;
+    }
+
+    private FileSystem createFileSystem(HadoopAuthenticator authenticator,
+                                        Configuration conf,
+                                        String remotePath,
+                                        boolean isRefresh) throws Exception {
+        return authenticator.doAs(() -> {
+            try {
+                String latestGdprToken = GdprService.getGdprTokenFromENV();
+                conf.set("ipc.client.custom_token", latestGdprToken);
+
+                LOG.info("{} DFSFileSystem for path {}. "
+                        + "latestGdprToken={}, conf.custom_token={}",
+                        isRefresh ? "Refresh" : "Initialize", remotePath,
+                        latestGdprToken, conf.get("ipc.client.custom_token"));
+                return FileSystem.get(new Path(remotePath).toUri(), conf);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private void startRefreshLoop(Configuration conf, String remotePath) {
+        refreshExec.scheduleWithFixedDelay(() -> {
+            try {
+                // 1) 触发 UGI 续期（如果你的 authenticator 自带定时续期，这里也可省略）
+                authenticator.doAs(() -> {
+                    try {
+                        org.apache.hadoop.security.UserGroupInformation ugi =
+                                org.apache.hadoop.security.UserGroupInformation.getLoginUser();
+                        if (ugi != null && ugi.isFromKeytab()) {
+                            LOG.info("refresh ugi from key tab once");
+                            ugi.checkTGTAndReloginFromKeytab();
+                        } else {
+                            LOG.info("refresh ugi from login null");
+                            org.apache.hadoop.security.UserGroupInformation.loginUserFromSubject(null);
+                        }
+                    } catch (IOException e) {
+                        LOG.error("startRefreshLoop error {}", e, e);
+                    }
+                    return null;
+                });
+
+                FileSystem current = dfsFileSystem;
+                if (current == null || !isFsHealthy(current)) {
+                    FileSystem newFs = createFileSystem(authenticator, conf, remotePath, true);
+                    HDFSFileOperations newOps = new HDFSFileOperations(newFs);
+                    FileSystem old = dfsFileSystem;
+                    dfsFileSystem = newFs;
+                    operations = newOps;
+                    closeQuietly(old);
+                    LOG.info("DFSFileSystem recovered/recreated for {}", remotePath);
+                } else {
+                    LOG.debug("DFSFileSystem healthy, no rebuild. path={}", remotePath);
+                }
+            } catch (Throwable t) {
+                LOG.warn("DFSFileSystem refresh loop tick failed: {}", t.toString(), t);
+            }
+        }, 1, 3600, TimeUnit.SECONDS);
+    }
+
+    private boolean isFsHealthy(FileSystem fs) {
+        try {
+            Path root = fsRootPath(fs);
+            fs.exists(root);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private Path fsRootPath(FileSystem fs) {
+        java.net.URI uri = fs.getUri();
+        String s = uri.toString();
+        if (!s.endsWith("/")) {
+            s = s + "/";
+        }
+        return new Path(s);
+    }
+
+    private void closeQuietly(FileSystem fs) {
+        if (fs != null) {
+            try {
+                fs.close();
+            } catch (IOException e) {
+                LOG.error("closeQuietly error {}", e, e);
+            }
+        }
+    }
+
+    @PreDestroy
+    public void destroy() {
+        refreshExec.shutdownNow();
+        if (dfsFileSystem != null) {
+            try {
+                dfsFileSystem.close();
+            } catch (IOException e) {
+                LOG.error("DFSFileSystem destroy failed: {}", e.toString(), e);
+            }
+        }
     }
 
     protected RemoteIterator<LocatedFileStatus> getLocatedFiles(boolean recursive,

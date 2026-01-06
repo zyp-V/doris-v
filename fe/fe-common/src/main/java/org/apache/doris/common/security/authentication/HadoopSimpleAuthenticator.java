@@ -17,31 +17,75 @@
 
 package org.apache.doris.common.security.authentication;
 
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.IOException;
+import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.annotation.PreDestroy;
+
 public class HadoopSimpleAuthenticator implements HadoopAuthenticator {
     private static final Logger LOG = LogManager.getLogger(HadoopSimpleAuthenticator.class);
-    private final UserGroupInformation ugi;
+
+    private final String proxyUser;
+    private final AtomicReference<UserGroupInformation> proxyRef = new AtomicReference<>();
+    private final ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
 
     public HadoopSimpleAuthenticator(SimpleAuthenticationConfig config) {
-        String hadoopUserName = config.getUsername();
-        if (hadoopUserName == null) {
-            hadoopUserName = "hadoop";
-            config.setUsername(hadoopUserName);
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("{} is unset, use default user: hadoop", AuthenticationConfig.HADOOP_USER_NAME);
-            }
-        }
-        ugi = UserGroupInformation.createRemoteUser(hadoopUserName);
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Login by proxy user, hadoop.username: {}", hadoopUserName);
+        this.proxyUser = Optional.ofNullable(config.getUsername()).orElse("hadoop");
+        initProxyFromLoginUser();
+        startTokenRefreshLoop();
+    }
+
+    private void initProxyFromLoginUser() {
+        try {
+            UserGroupInformation real = UserGroupInformation.getLoginUser();
+            proxyRef.set(UserGroupInformation.createProxyUser(proxyUser, real));
+            LOG.info("Init proxy UGI for {} with real user {}", proxyUser, real);
+        } catch (IOException e) {
+            throw new RuntimeException("Init UGI failed", e);
         }
     }
 
     @Override
     public UserGroupInformation getUGI() {
-        return ugi;
+        return proxyRef.get();
+    }
+
+    private void startTokenRefreshLoop() {
+        exec.scheduleWithFixedDelay(this::refreshHadoopProxy, 0, 60 * 60, TimeUnit.SECONDS);
+    }
+
+    private void refreshHadoopProxy() {
+        try {
+            if (UserGroupInformation.isLoginKeytabBased()) {
+                UserGroupInformation.getLoginUser().checkTGTAndReloginFromKeytab();
+            } else {
+                UserGroupInformation.loginUserFromSubject(null);
+            }
+
+            UserGroupInformation oldProxy = proxyRef.get();
+            UserGroupInformation real2 = UserGroupInformation.getLoginUser();
+            UserGroupInformation newProxy = UserGroupInformation.createProxyUser(proxyUser, real2);
+            proxyRef.set(newProxy);
+
+            if (oldProxy != null) {
+                FileSystem.closeAllForUGI(oldProxy);
+            }
+            LOG.info("Refreshed proxy UGI for {}, real={}", proxyUser, real2);
+        } catch (Throwable t) {
+            LOG.warn("UGI refresh failed: {}", t.toString(), t);
+        }
+    }
+
+    @PreDestroy
+    public void destroy() {
+        exec.shutdownNow();
     }
 }

@@ -2866,12 +2866,12 @@ public class Config extends ConfigBase {
     /*---------------------- GEMINI CONFIG START ------------------------*/
 
 
-    @ConfField(description = {
+    @ConfField(mutable = true, description = {
         "开启gemini校验",
         "Enable gemini verify to access resource"})
-    public static boolean enable_gemini = true;
+    public static boolean enable_gemini = false;
 
-    @ConfField(description = {
+    @ConfField(mutable = true, description = {
         "gemini url",
         ""})
     public static String gemini_url = "http://gemini.byted.org/";

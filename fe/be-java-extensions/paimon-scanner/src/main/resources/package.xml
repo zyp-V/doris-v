@@ -21,21 +21,95 @@ under the License.
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
     <id>jar-with-dependencies</id>
-    <formats>
-        <format>jar</format>
-    </formats>
+    <formats><format>jar</format></formats>
     <includeBaseDirectory>false</includeBaseDirectory>
+
     <dependencySets>
+
+        <!-- Set A：先解包“白名单”的 Paimon 工件（含 paimon-format & paimon-hive-catalog） -->
         <dependencySet>
             <outputDirectory>/</outputDirectory>
-            <useProjectArtifact>true</useProjectArtifact>
+            <useProjectArtifact>false</useProjectArtifact>
             <unpack>true</unpack>
-            <scope>runtime</scope>
+            <includes>
+                <include>org.apache.paimon:paimon-core</include>
+                <include>org.apache.paimon:paimon-common</include>
+                <include>org.apache.paimon:paimon-format</include>
+                <include>org.apache.paimon:paimon-codegen-loader</include>
+                <include>org.apache.paimon:paimon-hive-catalog</include>
+            </includes>
+            <unpackOptions>
+                <excludes>
+                    <!-- 常见冲突文件 -->
+                    <exclude>**/Log4j2Plugins.dat</exclude>
+                </excludes>
+            </unpackOptions>
+        </dependencySet>
+
+        <!-- Set A2：显式引入 Parquet 全家（用 Maven 解析出的“对的版本”） -->
+        <dependencySet>
+            <outputDirectory>/</outputDirectory>
+            <useProjectArtifact>false</useProjectArtifact>
+            <unpack>true</unpack>
+            <includes>
+                <include>org.apache.parquet:parquet-common</include>
+                <include>org.apache.parquet:parquet-encoding</include>
+                <include>org.apache.parquet:parquet-column</include>
+                <include>org.apache.parquet:parquet-hadoop</include>
+                <include>org.apache.parquet:parquet-format-structures</include>
+                <include>org.apache.parquet:parquet-format</include>
+            </includes>
             <unpackOptions>
                 <excludes>
                     <exclude>**/Log4j2Plugins.dat</exclude>
                 </excludes>
             </unpackOptions>
         </dependencySet>
+
+        <!-- Set B：解包 hive-catalog-shade，但排掉它内部携带的 Paimon & Parquet -->
+        <dependencySet>
+            <outputDirectory>/</outputDirectory>
+            <useProjectArtifact>false</useProjectArtifact>
+            <unpack>true</unpack>
+            <includes>
+                <include>org.apache.doris:hive-catalog-shade</include>
+            </includes>
+            <unpackOptions>
+                <excludes>
+                    <!-- 删掉 shaded 进来的 Paimon 整族 -->
+                    <exclude>org/apache/paimon/**</exclude>
+                    <exclude>META-INF/maven/org.apache.paimon/**</exclude>
+                    <!-- 关键：也排掉它带进来的原版 Parquet -->
+                    <exclude>org/apache/parquet/**</exclude>
+                </excludes>
+            </unpackOptions>
+        </dependencySet>
+
+        <!-- Set C：其余 runtime 依赖 + 本项目产物；统一排除所有非 Paimon 来源的 Parquet -->
+        <dependencySet>
+            <outputDirectory>/</outputDirectory>
+            <useProjectArtifact>true</useProjectArtifact>
+            <unpack>true</unpack>
+            <scope>runtime</scope>
+            <excludes>
+                <!-- 避免重复解包 Set A/B 已处理工件 -->
+                <exclude>org.apache.paimon:paimon-core</exclude>
+                <exclude>org.apache.paimon:paimon-common</exclude>
+                <exclude>org.apache.paimon:paimon-format</exclude>
+                <exclude>org.apache.paimon:paimon-codegen-loader</exclude>
+                <exclude>org.apache.paimon:paimon-hive-catalog</exclude>
+                <exclude>org.apache.doris:hive-catalog-shade</exclude>
+            </excludes>
+            <unpackOptions>
+                <excludes>
+                    <!-- 关键：把别家依赖里的 Parquet 一律排除 -->
+                    <exclude>org/apache/parquet/**</exclude>
+                    <!-- 常见冲突文件 -->
+                    <exclude>**/Log4j2Plugins.dat</exclude>
+                </excludes>
+            </unpackOptions>
+        </dependencySet>
+
     </dependencySets>
 </assembly>
+

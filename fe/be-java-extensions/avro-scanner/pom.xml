@@ -33,6 +33,7 @@ under the License.
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <hive-apache.version>3.1.2-22</hive-apache.version>
     </properties>
 
     <dependencies>
@@ -107,6 +108,31 @@ under the License.
             <artifactId>hive-catalog-shade</artifactId>
             <scope>provided</scope>
             <version>${doris.hive.catalog.shade.version}</version>
+        </dependency>
+
+        <!-- hive -->
+        <dependency>
+            <groupId>io.trino.hive</groupId>
+            <artifactId>hive-apache</artifactId>
+            <version>${hive-apache.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.thrift</groupId>
+                    <artifactId>libthrift</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.avro</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.airlift</groupId>
+                    <artifactId>aircompressor</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 

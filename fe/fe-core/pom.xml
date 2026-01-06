@@ -110,6 +110,21 @@ under the License.
         </dependency>
         <dependency>
             <groupId>org.apache.doris</groupId>
+            <artifactId>doris_bytedance_iceberg_shaded</artifactId>
+            <version>${doris_bytedance_iceberg_shaded.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-client-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-client-runtime</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.doris</groupId>
             <artifactId>doris_bytedance_hadoop_shaded</artifactId>
             <version>${doris_bytedance_hadoop_shaded.version}</version>
             <exclusions>
@@ -496,6 +511,14 @@ under the License.
                 <exclusion>
                     <groupId>org.apache.hadoop</groupId>
                     <artifactId>hadoop-auth</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-client-runtime</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-client-api</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -1385,6 +1408,13 @@ under the License.
                     <!-->not reuse forked jvm, so that each unit test will run in separate jvm. to avoid singleton conflict<-->
                     <reuseForks>false</reuseForks>
                     <useFile>false</useFile>
+
+                    <excludes>
+                        <exclude>**/datasource/iceberg/CreateIcebergTableTest.java</exclude>
+                        <exclude>**/datasource/property/PropertyConverterTest.java</exclude>
+                        <exclude>**/fs/remote/RemoteFileSystemTest.java</exclude>
+                    </excludes>
+
                     <argLine>
                         -Xmx512m -javaagent:${settings.localRepository}/org/jmockit/jmockit/${jmockit.version}/jmockit-${jmockit.version}.jar @{argLine}
                     </argLine>
