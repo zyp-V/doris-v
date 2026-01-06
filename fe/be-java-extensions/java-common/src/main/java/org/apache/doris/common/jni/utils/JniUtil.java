@@ -27,6 +27,7 @@ import org.apache.doris.thrift.TJvmThreadInfo;
 
 import com.google.common.base.Joiner;
 import com.sun.management.HotSpotDiagnosticMXBean;
+import org.apache.log4j.PropertyConfigurator;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TDeserializer;
 import org.apache.thrift.TException;
@@ -36,6 +37,7 @@ import org.apache.thrift.protocol.TProtocolFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -50,6 +52,11 @@ import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.FileHandler;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.SimpleFormatter;
 
 /**
  * Utility class with methods intended for JNI clients
@@ -57,6 +64,64 @@ import java.util.Map;
 public class JniUtil {
     private static final TBinaryProtocol.Factory protocolFactory_ = new TBinaryProtocol.Factory();
     private static final Logger log = LoggerFactory.getLogger(JniUtil.class);
+
+    static {
+        String logPath = System.getProperty("logPath");
+        // Fallback to DORIS_HOME if logPath is not set
+        if (logPath == null || logPath.isEmpty()) {
+            String dorisHome = System.getenv("DORIS_HOME");
+            if (dorisHome != null) {
+                logPath = dorisHome + "/log/jni.log";
+            }
+        }
+        System.out.println("JniUtil: inferred logPath = " + logPath);
+
+        // 1. Configure java.util.logging (JUL)
+        try {
+            java.util.logging.Logger rootLogger = java.util.logging.Logger.getLogger("");
+            Handler[] handlers = rootLogger.getHandlers();
+            for (Handler handler : handlers) {
+                if (handler instanceof ConsoleHandler) {
+                    rootLogger.removeHandler(handler);
+                }
+            }
+
+            if (logPath != null && !logPath.isEmpty()) {
+                String julLogPath = logPath + ".jul";
+                // 50MB limit, 2 files, append mode
+                FileHandler fileHandler = new FileHandler(julLogPath, 50 * 1024 * 1024, 2, true);
+                fileHandler.setFormatter(new SimpleFormatter());
+                rootLogger.addHandler(fileHandler);
+                System.out.println("JniUtil: JUL logs redirected to " + julLogPath);
+            }
+            // Silence the noisy security component causing NoClassDefFoundError
+            java.util.logging.Logger.getLogger("org.byted.security").setLevel(Level.OFF);
+        } catch (Exception e) {
+            System.err.println("JniUtil: Failed to configure java.util.logging: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        // 2. Configure Log4j
+        // Manually load configuration from DORIS_HOME/conf/be_jni_log4j.properties
+        try {
+            String dorisHome = System.getenv("DORIS_HOME");
+            if (dorisHome != null) {
+                String log4jConfigPath = dorisHome + "/conf/be_jni_log4j.properties";
+                File log4jConfigFile = new File(log4jConfigPath);
+                if (log4jConfigFile.exists()) {
+                    PropertyConfigurator.configure(log4jConfigPath);
+                    System.out.println("JniUtil: Log4j configured using " + log4jConfigPath);
+                } else {
+                    System.err.println("JniUtil: Log4j configuration file not found at: " + log4jConfigPath);
+                }
+            } else {
+                System.err.println("JniUtil: DORIS_HOME env var not set, skipping Log4j config");
+            }
+        } catch (Exception e) {
+            System.err.println("JniUtil: Failed to configure Log4j: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Initializes the JvmPauseMonitor instance.

@@ -805,6 +805,8 @@ install(FILES
 
 install(FILES
     ${BASE_DIR}/../conf/be.conf
+    ${BASE_DIR}/../conf/be_jni_log4j.properties
+    ${BASE_DIR}/../conf/logback.xml
     ${BASE_DIR}/../conf/odbcinst.ini
     ${BASE_DIR}/../conf/asan_suppr.conf
     ${BASE_DIR}/../conf/lsan_suppr.conf
