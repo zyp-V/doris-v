@@ -756,6 +756,19 @@ public class OlapScanNode extends ScanNode {
             if (ConnectContext.get().getGdprIdentity() == null) {
                 allowedTags = ConnectContext.get().getResourceTags();
                 needCheckTags = ConnectContext.get().isResourceTagsSet();
+            } else {
+                // gdpr user
+                if (Env.getCurrentSystemInfo().isSetServiceTags() && ConnectContext.get().isResourceTagsSet()) {
+                    Set<Tag> tags = ConnectContext.get().getResourceTags();
+                    if (tags.size() == 1
+                            && (tags.contains(Tag.INVALID_TAG) || tags.contains(Tag.DEFAULT_BACKEND_TAG))) {
+                        // invalid tag or default tag is set as default for user without setting properties
+                        // skip it
+                    } else {
+                        allowedTags = tags;
+                        needCheckTags = true;
+                    }
+                }
             }
             useFixReplica = ConnectContext.get().getSessionVariable().useFixReplica;
             // if use_fix_replica is set to true, set skip_missing_version to false

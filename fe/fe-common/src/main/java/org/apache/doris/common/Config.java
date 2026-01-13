@@ -3060,4 +3060,11 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true, description = {"unique表是否默认开启mow",
             "Whether enable mow when create unique table"})
     public static boolean enable_unique_key_merge_on_write = true;
+
+    @ConfField(mutable = true, description = {"默认serving请求be tag",
+            "Default be tag for serving operations"})
+    public static String[] service_tag_location = {};
+
+    @ConfField(mutable = true, description = {"be tags列表过期时间", "expire time for be tags"})
+    public static int be_tag_expire_time_in_seconds = 60;
 }

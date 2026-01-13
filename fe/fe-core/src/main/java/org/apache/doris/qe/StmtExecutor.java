@@ -558,6 +558,51 @@ public class StmtExecutor {
         return false;
     }
 
+    public void setResourceTagsForGdpr(StatementBase statementBase) {
+        if (context == null || context.getGdprIdentity() == null) {
+            return;
+        }
+        if (!Env.getCurrentSystemInfo().isSetServiceTags()) {
+            if (context.isResourceTagsSet()) {
+                // set tags to empty means not check tags
+                context.setResourceTags(Sets.newHashSet());
+            }
+            return;
+        }
+        if (statementBase instanceof LogicalPlanAdapter) {
+            LogicalPlanAdapter adapter = (LogicalPlanAdapter) statementBase;
+            LogicalPlan logicalPlan = adapter.getLogicalPlan();
+            if (logicalPlan instanceof InsertIntoTableCommand
+                    || logicalPlan instanceof InsertOverwriteTableCommand) {
+                // insert or insert select
+                context.setResourceTags(Env.getCurrentSystemInfo().getETLTags());
+            } else if (adapter.hasOutFileClause()) {
+                // export or select into outfile
+                context.setResourceTags(Env.getCurrentSystemInfo().getETLTags());
+            } else if ((logicalPlan instanceof CreateTableCommand)
+                    && ((CreateTableCommand) logicalPlan).isCtasCommand()) {
+                context.setResourceTags(Env.getCurrentSystemInfo().getETLTags());
+            } else {
+                // TODO need prepare command & execute command?
+                context.setResourceTags(Env.getCurrentSystemInfo().getServiceTags());
+            }
+        } else {
+            // old parser
+            if (statementBase instanceof InsertStmt) {
+                context.setResourceTags(Env.getCurrentSystemInfo().getETLTags());
+            } else if (statementBase instanceof QueryStmt) {
+                if (((QueryStmt) statementBase).hasOutFileClause()) {
+                    context.setResourceTags(Env.getCurrentSystemInfo().getETLTags());
+                } else {
+                    context.setResourceTags(Env.getCurrentSystemInfo().getServiceTags());
+                }
+            } else {
+                // all other operations didn't set resource tags
+                context.setResourceTags(Sets.newHashSet());
+            }
+        }
+    }
+
     public void execute(TUniqueId queryId) throws Exception {
         SessionVariable sessionVariable = context.getSessionVariable();
         if (context.getConnectType() == ConnectType.ARROW_FLIGHT_SQL) {
@@ -722,6 +767,7 @@ public class StmtExecutor {
         context.setStmtId(STMT_ID_GENERATOR.incrementAndGet());
 
         parseByNereids();
+        setResourceTagsForGdpr(parsedStmt);
         Preconditions.checkState(parsedStmt instanceof LogicalPlanAdapter,
                 "Nereids only process LogicalPlanAdapter, but parsedStmt is " + parsedStmt.getClass().getName());
         context.getState().setNereids(true);
@@ -946,6 +992,7 @@ public class StmtExecutor {
         try {
             // parsedStmt maybe null here, we parse it. Or the predicate will not work.
             parseByLegacy();
+            setResourceTagsForGdpr(parsedStmt);
             // set isQuery here because when fallback from Nereids, parsedStmt is null, so the above set will be skipped
             if (parsedStmt instanceof QueryStmt) {
                 context.getState().setIsQuery(true);

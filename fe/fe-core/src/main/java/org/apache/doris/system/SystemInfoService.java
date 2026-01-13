@@ -28,6 +28,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.Pair;
+import org.apache.doris.common.SimpleValueCache;
 import org.apache.doris.common.Status;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.CountingDataOutputStream;
@@ -79,6 +80,18 @@ public class SystemInfoService {
     private volatile ImmutableMap<Long, AtomicLong> idToReportVersionRef = ImmutableMap.of();
 
     private volatile ImmutableMap<Long, DiskInfo> pathHashToDiskInfoRef = ImmutableMap.of();
+
+    private SimpleValueCache<Set<Tag>> cachedBeTags = new SimpleValueCache<Set<Tag>>() {
+        @Override
+        public long getExpireAfterWriteMilliSeconds() {
+            return Config.be_tag_expire_time_in_seconds * 1000;
+        }
+
+        @Override
+        public Set<Tag> load() {
+            return getTags();
+        }
+    };
 
     public static class HostInfo implements Comparable<HostInfo> {
         public String host;
@@ -987,6 +1000,51 @@ public class SystemInfoService {
                                 + entry.getValue());
             }
         }
+    }
+
+    public Set<Tag> getCachedBeTags() {
+        return Sets.newHashSet(cachedBeTags.get());
+    }
+
+    public boolean isSetServiceTags() {
+        if (Config.service_tag_location == null || Config.service_tag_location.length == 0) {
+            return false;
+        }
+        if (Config.service_tag_location.length == 1 && Strings.isNullOrEmpty(Config.service_tag_location[0])) {
+            return false;
+        }
+        return true;
+    }
+
+    public Set<Tag> getETLTags() {
+        Set<Tag> etlTags = getCachedBeTags();
+        for (String tag : Config.service_tag_location) {
+            try {
+                etlTags.remove(Tag.create(Tag.TYPE_LOCATION, tag));
+            } catch (AnalysisException e) {
+                // ignore
+            }
+        }
+        return etlTags;
+    }
+
+    public Set<Tag> getServiceTags() {
+        if (!isSetServiceTags()) {
+            return getCachedBeTags();
+        }
+        Set<Tag> tags = Sets.newHashSet();
+        for (String tag : Config.service_tag_location) {
+            try {
+                tags.add(Tag.create(Tag.TYPE_LOCATION, tag));
+            } catch (AnalysisException e) {
+                // ignore
+            }
+        }
+        if (tags.isEmpty()) {
+            // fallback to all be tags
+            tags = getCachedBeTags();
+        }
+        return tags;
     }
 
     public Set<Tag> getTags() {

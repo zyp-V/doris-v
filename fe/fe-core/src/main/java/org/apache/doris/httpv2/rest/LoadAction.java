@@ -389,6 +389,9 @@ public class LoadAction extends RestBaseController {
         Set<Tag> userTags = Sets.newHashSet();
         if (ConnectContext.get().getGdprIdentity() == null) { // gdpr users do not have to specify resource tag
             userTags = Env.getCurrentEnv().getAuth().getResourceTags(qualifiedUser);
+        } else if (Env.getCurrentSystemInfo().isSetServiceTags()) {
+            Set<Tag> etlTags = Env.getCurrentSystemInfo().getETLTags();
+            userTags.addAll(etlTags);
         }
         policy = new BeSelectionPolicy.Builder()
                 .addTags(userTags)
