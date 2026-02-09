@@ -2869,7 +2869,7 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true, description = {
         "开启gemini校验",
         "Enable gemini verify to access resource"})
-    public static boolean enable_gemini = false;
+    public static boolean enable_gemini = true;
 
     @ConfField(mutable = true, description = {
         "gemini url",
