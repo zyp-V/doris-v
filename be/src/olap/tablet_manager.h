@@ -262,6 +262,9 @@ private:
     std::shared_mutex _shutdown_tablets_lock;
     // the delete tablets. notice only allow function `start_trash_sweep` can erase tablets in _shutdown_tablets
     std::list<TabletSharedPtr> _shutdown_tablets;
+    // Protected by `_shutdown_tablets_lock`. Records the first time each shutdown tablet
+    // was observed by `start_trash_sweep`, used to drive `force_sweep_shutdown_tablet`.
+    std::unordered_map<int64_t, int64_t> shutdown_tablet_sweep_check_timeout;
     std::mutex _gc_tablets_lock;
 
     std::mutex _tablet_stat_cache_mutex;

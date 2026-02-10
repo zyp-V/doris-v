@@ -1138,11 +1138,29 @@ Status TabletManager::start_trash_sweep() {
         std::lock_guard<std::shared_mutex> wrdlock(_shutdown_tablets_lock);
         while (last_it != _shutdown_tablets.end() && batch_tablets.size() < limit) {
             // it means current tablet is referenced by other thread
-            if (last_it->use_count() > 1) {
+            auto tablet_id = (*last_it)->tablet_id();
+            int64_t elapsed_seconds  = 0;
+            if (shutdown_tablet_sweep_check_timeout.count(tablet_id)) {
+                elapsed_seconds = MonotonicSeconds() - shutdown_tablet_sweep_check_timeout[tablet_id];
+            } else {
+                shutdown_tablet_sweep_check_timeout[tablet_id] = MonotonicSeconds();
+            }
+            auto skip_check_ref_count = false;
+            if (last_it->use_count() > 1 && config::force_sweep_shutdown_tablet
+                && elapsed_seconds >= config::force_sweep_shutdown_tablet_interval_sec) {
+                skip_check_ref_count = true;
+                LOG(WARNING) << "force sweep shutdown tablet, tablet_id=" << tablet_id
+                             << ", use_count=" << last_it->use_count()
+                             << ", elapsed_seconds=" << elapsed_seconds
+                             << ", tablet_path=" << (*last_it)->tablet_path();
+            }
+            if (last_it->use_count() > 1 && !skip_check_ref_count) {
+                VLOG_PROGRESS << "tablet:" << tablet_id << " use count:" << last_it->use_count() << " skip delete";
                 last_it++;
             } else {
                 batch_tablets.push_back(*last_it);
                 last_it = _shutdown_tablets.erase(last_it);
+                shutdown_tablet_sweep_check_timeout.erase(tablet_id);
             }
         }
 
@@ -1376,6 +1394,7 @@ void TabletManager::try_delete_unused_tablet_path(DataDir* data_dir, TTabletId t
     TabletMetaSharedPtr tablet_meta(new TabletMeta());
     Status check_st = TabletMetaManager::get_meta(data_dir, tablet_id, schema_hash, tablet_meta);
     if (check_st.ok() && tablet_meta->shard_id() == shard_id) {
+        VLOG_PROGRESS << "tablet:" << tablet_id << " state:" << tablet_meta->tablet_state() << " still in meta, skip delete";
         return;
     }
 

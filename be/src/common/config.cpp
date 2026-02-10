@@ -372,6 +372,9 @@ DEFINE_Int32(max_garbage_sweep_interval, "3600");
 DEFINE_Int32(min_garbage_sweep_interval, "180");
 DEFINE_mInt32(garbage_sweep_batch_size, "100");
 DEFINE_mInt32(snapshot_expire_time_sec, "172800");
+// force sweep shutdown tablet
+DEFINE_mBool(force_sweep_shutdown_tablet, "false");
+DEFINE_mInt64(force_sweep_shutdown_tablet_interval_sec, "7200");
 // It is only a recommended value. When the disk space is insufficient,
 // the file storage period under trash dose not have to comply with this parameter.
 DEFINE_mInt32(trash_file_expire_time_sec, "86400");
