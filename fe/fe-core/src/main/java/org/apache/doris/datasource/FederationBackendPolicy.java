@@ -155,7 +155,8 @@ public class FederationBackendPolicy {
 
     public void init(List<String> preLocations) throws UserException {
         Set<Tag> tags = Sets.newHashSet();
-        if (ConnectContext.get() != null && ConnectContext.get().getCurrentUserIdentity() != null) {
+        if (ConnectContext.get() != null && ConnectContext.get().getGdprIdentity() == null
+                && ConnectContext.get().getCurrentUserIdentity() != null) {
             String qualifiedUser = ConnectContext.get().getCurrentUserIdentity().getQualifiedUser();
             // Some request from stream load(eg, mysql load) may not set user info in ConnectContext
             // just ignore it.
@@ -165,6 +166,9 @@ public class FederationBackendPolicy {
                     throw new UserException("No valid resource tag for user: " + qualifiedUser);
                 }
             }
+        } else if (ConnectContext.get() != null && ConnectContext.get().getGdprIdentity() != null) {
+            // gdpr user
+            // TODO support read write isolation?
         } else {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("user info in ExternalFileScanNode should not be null, add log to observer");

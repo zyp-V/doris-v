@@ -272,6 +272,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
+import org.byted.security.common.LegacyIdentity;
 
 import java.io.IOException;
 import java.security.SecureRandom;
@@ -2001,6 +2002,21 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         ctx.setCurrentUserIdentity(UserIdentity.createAnalyzedUserIdentWithIp(request.getUser(), "%"));
         ctx.setQualifiedUser(request.getUser());
         ctx.setBackendId(request.getBackendId());
+        if (Config.enable_gdpr && !Strings.isNullOrEmpty(request.getGdprToken())) {
+            try {
+                LegacyIdentity identity = null;
+                identity = Env.getCurrentEnv().getGdprService().verifyGdprToken(request.getGdprToken(),
+                        request.getUserIp());
+                ctx.setGdprIdentity(identity);
+                String user = identity.User.replace(".", "_");
+                ctx.setQualifiedUser(user);
+                ctx.setCurrentUserIdentity(UserIdentity.createAnalyzedUserIdentWithIp(user, "%"));
+            } catch (AuthenticationException e) {
+                status.setStatusCode(TStatusCode.ANALYSIS_ERROR);
+                status.addToErrorMsgs(e.getMessage());
+                return result;
+            }
+        }
         ctx.setThreadLocalInfo();
 
         try {
