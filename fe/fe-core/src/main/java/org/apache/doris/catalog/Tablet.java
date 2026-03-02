@@ -470,7 +470,7 @@ public class Tablet extends MetaObject implements Writable {
 
     public static Tablet read(DataInput in) throws IOException {
         // for compactible with bytedance 1.2.8 version
-        if (Env.getCurrentEnvJournalVersion() > FeMetaVersion.VERSION_118) {
+        if (Env.getCurrentEnvJournalVersion() > FeMetaVersion.VERSION_119) {
             String json = Text.readString(in);
             return GsonUtils.GSON.fromJson(json, Tablet.class);
         }

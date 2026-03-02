@@ -1935,7 +1935,7 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
 
         // for compatible with bytedance 1.2.8 version
         if (Env.getCurrentEnvJournalVersion() >= FeMetaVersion.VERSION_117
-                && Env.getCurrentEnvJournalVersion() <= FeMetaVersion.VERSION_118) {
+                && Env.getCurrentEnvJournalVersion() <= FeMetaVersion.VERSION_119) {
             if (in.readBoolean()) {
                 Map<String, List<String>> columnGroupMappingFromJournal = new HashMap<>();
                 int columnGroupMappingCount = in.readInt();
@@ -1950,6 +1950,14 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
                 }
             } else {
                 // skip
+            }
+
+            if (in.readBoolean()) {
+                throw new RuntimeException("Does not support columnMetricsMapping");
+            }
+
+            if (in.readBoolean()) {
+                throw new RuntimeException("Does not support metrics table property");
             }
         }
     }

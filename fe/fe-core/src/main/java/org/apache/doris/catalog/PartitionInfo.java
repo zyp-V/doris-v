@@ -495,7 +495,7 @@ public class PartitionInfo implements Writable {
             idToInMemory.put(partitionId, in.readBoolean());
             // for compatible with bytedance 1.2.8 version
             if (Env.getCurrentEnvJournalVersion() >= FeMetaVersion.VERSION_115
-                    && Env.getCurrentEnvJournalVersion() <= FeMetaVersion.VERSION_118) {
+                    && Env.getCurrentEnvJournalVersion() <= FeMetaVersion.VERSION_119) {
                 boolean mutable = in.readBoolean();
                 idToDataProperty.get(partitionId).setMutable(mutable);
             }
