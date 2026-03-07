@@ -21,8 +21,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.util.MasterDaemon;
-import org.apache.doris.metric.Metric;
-import org.apache.doris.metric.MetricRepo;
+import org.apache.doris.metric.FingerprintMetric;
 import org.apache.doris.plugin.AuditEvent;
 import org.apache.doris.thrift.TQueryStatistics;
 import org.apache.doris.thrift.TReportWorkloadRuntimeStatusParams;
@@ -95,7 +94,7 @@ public class WorkloadRuntimeStatusMgr extends MasterDaemon {
                 } else {
                     succLogCount++;
                 }
-                reportFingerprint(auditEvent, queryStats);
+                FingerprintMetric.reportFingerprint(auditEvent, queryStats);
             }
             if (missedLogCount > 0) {
                 LOG.warn("discard audit event because of log queue is full, discard num : {}, succ num : {}",
@@ -107,58 +106,6 @@ public class WorkloadRuntimeStatusMgr extends MasterDaemon {
 
         // 3 clear beToQueryStatsMap when be report timeout
         clearReportTimeoutBeStatistics();
-    }
-
-    private void reportFingerprint(AuditEvent auditEvent, TQueryStatistics queryStats) {
-        if (queryStats == null || (auditEvent.fingerprint == null || auditEvent.fingerprint.isEmpty())) {
-            return;
-        }
-        long scanRows = queryStats.scan_rows;
-        long scanBytes = queryStats.scan_bytes;
-        long memoryUsageBytes = queryStats.max_peak_memory_bytes;
-        long cpuTimeMS = queryStats.cpu_ms;
-        long sendBytes = queryStats.shuffle_send_bytes;
-        long sendRows = queryStats.shuffle_send_rows;
-
-        String countMetricName = "_count";
-        String scanBytesMetricName = "_scanbytes";
-        String scanRowsMetricName = "_scanrows";
-        String memoryMetricName = "_memory";
-        String cpuTimeMetricName = "_cpu_time";
-        String shuffleSendBytes = "_shuffle_send_bytes";
-        String shuffleSendRows = "_shuffle_send_rows";
-        if (auditEvent.isInsert) {
-            countMetricName = "_insert_count";
-            scanBytesMetricName = "_insert_scanbytes";
-            scanRowsMetricName = "_insert_scanrows";
-            memoryMetricName = "_insert_memory";
-            cpuTimeMetricName = "_insert_cpu_time";
-            shuffleSendBytes = "_insert_shuffle_send_bytes";
-            shuffleSendRows = "_insert_shuffle_send_rows";
-        }
-        String shortFingerprint = auditEvent.fingerprint.substring(0, 12);
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + countMetricName, 1L,
-                "fingerprint" + countMetricName, Metric.MetricUnit.REQUESTS,
-                "query count for every fingerprint");
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + scanBytesMetricName, scanBytes,
-                "fingerprint" + scanBytesMetricName, Metric.MetricUnit.BYTES,
-                "scanbytes for every fingerprint");
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + scanRowsMetricName, scanRows,
-                "fingerprint" + scanRowsMetricName, Metric.MetricUnit.BYTES,
-                "scanrows for every fingerprint");
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + memoryMetricName, memoryUsageBytes,
-                "fingerprint" + memoryMetricName, Metric.MetricUnit.BYTES,
-                "peak memory usage for fingerprint");
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + cpuTimeMetricName, cpuTimeMS,
-                "fingerprint" + cpuTimeMetricName, Metric.MetricUnit.MICROSECONDS,
-                "cpu time for fingerprint");
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + shuffleSendBytes,
-                sendBytes, "fingerprint" + shuffleSendBytes,
-                Metric.MetricUnit.BYTES, "shuffle send bytes per fingerprint");
-        MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + shuffleSendRows,
-                sendRows, "fingerprint" + shuffleSendRows,
-                Metric.MetricUnit.BYTES, "shuffle send rows per fingerprint");
-        MetricRepo.addFingerprintQueryLatency(shortFingerprint, auditEvent.queryTime);
     }
 
     public void submitFinishQueryToAudit(AuditEvent event) {

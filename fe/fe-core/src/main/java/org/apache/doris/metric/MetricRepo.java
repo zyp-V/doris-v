@@ -580,6 +580,7 @@ public final class MetricRepo {
 
         COUNTER_QUERY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
                 .expireAfterAccess(5, TimeUnit.MINUTES)
+                .concurrencyLevel(Config.max_mysql_service_task_threads_num)
                 .removalListener(new RemovalListener<String, LongCounterMetric>() {
                     public void onRemoval(RemovalNotification<String, LongCounterMetric> notification) {
                         // e.g.
@@ -597,6 +598,7 @@ public final class MetricRepo {
         // If the cache expires, remove the fingerprint
         LATENCY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
                 .expireAfterAccess(5, TimeUnit.MINUTES)
+                .concurrencyLevel(Config.max_mysql_service_task_threads_num)
                 .removalListener(new RemovalListener<String, Histogram>() {
                     public void onRemoval(RemovalNotification<String, Histogram> notification) {
                         FINGERPRINT_METRIC_REGISTER.remove(notification.getKey());
@@ -844,15 +846,24 @@ public final class MetricRepo {
             String fingerprintMetricComment, boolean overwrite) {
         LongCounterMetric fingerprintMetric =
                 MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprintMetricKey);
+        // Previously only WorkloadRuntimeStatusMgr call this function,
+        // but now for point query, each mysql nio thread will call this function
+        // so use double-check lock to ensure the correct addition of metrics
         if (fingerprintMetric == null) {
-            fingerprintMetric = new LongCounterMetric(fingerprintMetricName, unit,
-                    fingerprintMetricComment);
-            // add label
-            fingerprintMetric.addLabel(new MetricLabel("fingerprint", fingerprint));
-            // register
-            DORIS_METRIC_REGISTER.addMetrics(fingerprintMetric);
-            // save to map
-            COUNTER_QUERY_PER_FINGERPRINT_CACHE.put(fingerprintMetricKey, fingerprintMetric);
+            synchronized (MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE) {
+                fingerprintMetric =
+                        MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprintMetricKey);
+                if (fingerprintMetric == null) {
+                    fingerprintMetric = new LongCounterMetric(fingerprintMetricName, unit,
+                            fingerprintMetricComment);
+                    // add label
+                    fingerprintMetric.addLabel(new MetricLabel("fingerprint", fingerprint));
+                    // register
+                    DORIS_METRIC_REGISTER.addMetrics(fingerprintMetric);
+                    // save to map
+                    COUNTER_QUERY_PER_FINGERPRINT_CACHE.put(fingerprintMetricKey, fingerprintMetric);
+                }
+            }
         }
         fingerprintMetric.increase(overwrite ? Math.max(value - fingerprintMetric.getValue(), 0) : value);
         cleanUp();
@@ -860,13 +871,16 @@ public final class MetricRepo {
 
     public static void addFingerprintQueryLatency(String fingerprint, long elapseMs) {
         Histogram fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprint);
-        if (fingerprintLatencyHistogram != null) {
-            fingerprintLatencyHistogram.update(elapseMs);
-        } else {
-            fingerprintLatencyHistogram = FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
-            fingerprintLatencyHistogram.update(elapseMs);
-            LATENCY_PER_FINGERPRINT_CACHE.put(fingerprint, fingerprintLatencyHistogram);
+        if (fingerprintLatencyHistogram == null) {
+            synchronized (MetricRepo.LATENCY_PER_FINGERPRINT_CACHE) {
+                fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprint);
+                if (fingerprintLatencyHistogram == null) {
+                    fingerprintLatencyHistogram = FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
+                    LATENCY_PER_FINGERPRINT_CACHE.put(fingerprint, fingerprintLatencyHistogram);
+                }
+            }
         }
+        fingerprintLatencyHistogram.update(elapseMs);
         cleanUp();
     }
 

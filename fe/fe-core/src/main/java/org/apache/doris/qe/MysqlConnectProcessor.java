@@ -166,10 +166,8 @@ public class MysqlConnectProcessor extends ConnectProcessor {
             ctx.getState().setError(ErrorCode.ERR_UNKNOWN_ERROR,
                     e.getClass().getSimpleName() + ", msg: " + e.getMessage());
         }
-        if (ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
-            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
-                    executor.getLogId());
-        }
+        auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                executor.getLogId());
     }
 
     private String getHexStr(ByteBuffer packetBuf) {
@@ -258,10 +256,8 @@ public class MysqlConnectProcessor extends ConnectProcessor {
             ctx.getState().setError(ErrorCode.ERR_UNKNOWN_ERROR,
                     e.getClass().getSimpleName() + ", msg: " + e.getMessage());
         }
-        if (ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
-            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
-                    executor.getLogId());
-        }
+        auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                executor.getLogId());
     }
 
     // process COM_EXECUTE, parse binary row data

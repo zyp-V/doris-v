@@ -31,6 +31,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.datasource.InternalCatalog;
+import org.apache.doris.metric.FingerprintMetric;
 import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mysql.MysqlCommand;
 import org.apache.doris.nereids.analyzer.UnboundOneRowRelation;
@@ -323,6 +324,16 @@ public class AuditLogHelper {
             auditEventBuilder.setState(String.valueOf(MysqlStateType.OK));
         }
         AuditEvent event = auditEventBuilder.build();
+        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE
+                && Config.enable_fingerprint_metrics
+                && ctx.getStatementContext() != null
+                && ctx.getStatementContext().isShortCircuitQuery()) {
+            FingerprintMetric.reportPointQueryFingerprint(event);
+        }
+        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE
+                && !ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
+            return;
+        }
         Env.getCurrentEnv().getWorkloadRuntimeStatusMgr().submitFinishQueryToAudit(event);
         if (LOG.isDebugEnabled()) {
             LOG.debug("submit audit event: {}", event.queryId);
