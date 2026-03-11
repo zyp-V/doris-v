@@ -102,6 +102,8 @@ public class WorkloadRuntimeStatusMgr extends MasterDaemon {
             }
         } catch (Throwable t) {
             LOG.warn("exception happens when handleAuditEvent, ", t);
+        } finally {
+            FingerprintMetric.cleanUp();
         }
 
         // 3 clear beToQueryStatsMap when be report timeout

@@ -81,4 +81,8 @@ public class FingerprintMetric {
                 "query count for every fingerprint");
         MetricRepo.addFingerprintQueryLatency(shortFingerprint, auditEvent.queryTime);
     }
+
+    public static void cleanUp() {
+        MetricRepo.cleanUpFingerprint();
+    }
 }

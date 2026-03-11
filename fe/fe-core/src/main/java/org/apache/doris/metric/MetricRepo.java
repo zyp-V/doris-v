@@ -58,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -850,41 +851,53 @@ public final class MetricRepo {
         // but now for point query, each mysql nio thread will call this function
         // so use double-check lock to ensure the correct addition of metrics
         if (fingerprintMetric == null) {
-            synchronized (MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE) {
-                fingerprintMetric =
-                        MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprintMetricKey);
-                if (fingerprintMetric == null) {
-                    fingerprintMetric = new LongCounterMetric(fingerprintMetricName, unit,
-                            fingerprintMetricComment);
-                    // add label
-                    fingerprintMetric.addLabel(new MetricLabel("fingerprint", fingerprint));
-                    // register
-                    DORIS_METRIC_REGISTER.addMetrics(fingerprintMetric);
-                    // save to map
-                    COUNTER_QUERY_PER_FINGERPRINT_CACHE.put(fingerprintMetricKey, fingerprintMetric);
-                }
+            try {
+                fingerprintMetric = MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.get(fingerprintMetricKey,
+                        new Callable<LongCounterMetric>() {
+                            @Override
+                            public LongCounterMetric call() throws Exception {
+                                LongCounterMetric result = new LongCounterMetric(fingerprintMetricName, unit,
+                                        fingerprintMetricComment);
+                                // add label
+                                result.addLabel(new MetricLabel("fingerprint", fingerprint));
+                                // register
+                                DORIS_METRIC_REGISTER.addMetrics(result);
+                                return result;
+                            }
+                        });
+            } catch (Exception e) {
+                // should never happen
+                LOG.warn("add fingerprint metrics error:" + fingerprintMetricKey, e);
+                return;
             }
         }
         fingerprintMetric.increase(overwrite ? Math.max(value - fingerprintMetric.getValue(), 0) : value);
-        cleanUp();
     }
 
     public static void addFingerprintQueryLatency(String fingerprint, long elapseMs) {
         Histogram fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprint);
         if (fingerprintLatencyHistogram == null) {
-            synchronized (MetricRepo.LATENCY_PER_FINGERPRINT_CACHE) {
-                fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprint);
-                if (fingerprintLatencyHistogram == null) {
-                    fingerprintLatencyHistogram = FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
-                    LATENCY_PER_FINGERPRINT_CACHE.put(fingerprint, fingerprintLatencyHistogram);
-                }
+            try {
+                fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.get(fingerprint,
+                        new Callable<Histogram>() {
+                            @Override
+                            public Histogram call() throws Exception {
+                                return FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
+                            }
+                        });
+            } catch (Exception e) {
+                // should never happen
+                LOG.warn("add fingerprint latency metrics error:" + fingerprint, e);
+                return;
             }
         }
         fingerprintLatencyHistogram.update(elapseMs);
-        cleanUp();
     }
 
-    private static void cleanUp() {
+    public static void cleanUpFingerprint() {
+        if (!isInit) {
+            return;
+        }
         long currentTime = System.currentTimeMillis();
         if (currentTime > cleanupTime + expireMinutes * 60 * 1000) {
             cleanupTime = currentTime;
