@@ -324,11 +324,34 @@ public class AuditLogHelper {
             auditEventBuilder.setState(String.valueOf(MysqlStateType.OK));
         }
         AuditEvent event = auditEventBuilder.build();
-        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE
-                && Config.enable_fingerprint_metrics
-                && ctx.getStatementContext() != null
-                && ctx.getStatementContext().isShortCircuitQuery()) {
-            FingerprintMetric.reportPointQueryFingerprint(event);
+        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE) {
+            if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
+                if (Config.enable_fingerprint_metrics) {
+                    // execute command use special metric registry
+                    // because if users do not use prepare/execute, the fingerprint will be the same
+                    // we should distinguish these calls
+                    FingerprintMetric.reportExecuteCommandFingerprint(event);
+                }
+                boolean ok = ((ctx.getState().getStateType() == MysqlStateType.OK)
+                        || (ctx.getState().getStateType() == MysqlStateType.EOF));
+                if (ok) {
+                    MetricRepo.EXECUTE_CMD_REQUEST_OK.increase(1L);
+                } else {
+                    MetricRepo.EXECUTE_CMD_REQUEST_ERR.increase(1L);
+                }
+            }
+        }
+        if (ctx.getCommand() == MysqlCommand.COM_STMT_PREPARE) {
+            if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
+                boolean ok = (ctx.getState().getErrorCode() == null)
+                        || (ctx.getState().getStateType() == MysqlStateType.OK)
+                        || (ctx.getState().getStateType() == MysqlStateType.EOF);
+                if (ok) {
+                    MetricRepo.PREPARE_CMD_REQUEST_OK.increase(1L);
+                } else {
+                    MetricRepo.PREPARE_CMD_REQUEST_ERR.increase(1L);
+                }
+            }
         }
         if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE
                 && !ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {

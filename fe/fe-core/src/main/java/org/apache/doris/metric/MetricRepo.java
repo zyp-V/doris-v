@@ -93,9 +93,15 @@ public final class MetricRepo {
 
     public static Cache<String/*fingerprint*/, LongCounterMetric> COUNTER_QUERY_PER_FINGERPRINT_CACHE;
     public static Cache<String/*fingerprint*/, Histogram> LATENCY_PER_FINGERPRINT_CACHE;
+    public static Cache<String/*fingerprint*/, Histogram> EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE;
     private static final MetricRegistry FINGERPRINT_METRIC_REGISTER = new MetricRegistry();
+    private static final MetricRegistry EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER = new MetricRegistry();
     public static long cleanupTime;
     public static final long expireMinutes = 5;
+    public static LongCounterMetric PREPARE_CMD_REQUEST_OK;
+    public static LongCounterMetric PREPARE_CMD_REQUEST_ERR;
+    public static LongCounterMetric EXECUTE_CMD_REQUEST_OK;
+    public static LongCounterMetric EXECUTE_CMD_REQUEST_ERR;
 
     public static LongCounterMetric COUNTER_CACHE_ADDED_SQL;
     public static LongCounterMetric COUNTER_CACHE_ADDED_PARTITION;
@@ -606,6 +612,34 @@ public final class MetricRepo {
                     }
                 })
                 .build();
+        EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
+                .expireAfterAccess(5, TimeUnit.MINUTES)
+                .concurrencyLevel(Config.max_mysql_service_task_threads_num)
+                .removalListener(new RemovalListener<String, Histogram>() {
+                    @Override
+                    public void onRemoval(RemovalNotification<String, Histogram> notification) {
+                        EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER.remove(notification.getKey());
+                    }
+                })
+                .build();
+
+        PREPARE_CMD_REQUEST_OK = new LongCounterMetric("command_request", MetricUnit.REQUESTS, "prepare cmd ok");
+        PREPARE_CMD_REQUEST_OK.addLabel(new MetricLabel("type", "ok"))
+                .addLabel(new MetricLabel("command", "prepare"));
+        DORIS_METRIC_REGISTER.addMetrics(PREPARE_CMD_REQUEST_OK);
+        PREPARE_CMD_REQUEST_ERR = new LongCounterMetric("command_request", MetricUnit.REQUESTS, "prepare cmd error");
+        PREPARE_CMD_REQUEST_ERR.addLabel(new MetricLabel("type", "error"))
+                .addLabel(new MetricLabel("command", "prepare"));
+        DORIS_METRIC_REGISTER.addMetrics(PREPARE_CMD_REQUEST_ERR);
+
+        EXECUTE_CMD_REQUEST_OK = new LongCounterMetric("command_request", MetricUnit.REQUESTS, "execute cmd ok");
+        EXECUTE_CMD_REQUEST_OK.addLabel(new MetricLabel("type", "ok"))
+                .addLabel(new MetricLabel("command", "execute"));
+        DORIS_METRIC_REGISTER.addMetrics(EXECUTE_CMD_REQUEST_OK);
+        EXECUTE_CMD_REQUEST_ERR = new LongCounterMetric("command_request", MetricUnit.REQUESTS, "execute cmd error");
+        EXECUTE_CMD_REQUEST_ERR.addLabel(new MetricLabel("type", "error"))
+                .addLabel(new MetricLabel("command", "execute"));
+        DORIS_METRIC_REGISTER.addMetrics(EXECUTE_CMD_REQUEST_ERR);
 
         // init system metrics
         initSystemMetrics();
@@ -800,6 +834,13 @@ public final class MetricRepo {
             visitor.visitHistogram(MetricVisitor.FE_PREFIX, name, entry.getValue());
         }
 
+        // latency histogram for execute cmd fingerprint
+        Map<String, Histogram> executeFingerprintHistograms = EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER.getHistograms();
+        for (Map.Entry<String, Histogram> entry : executeFingerprintHistograms.entrySet()) {
+            String name = "execute_latency_ms_per_fingerprint.fingerprint=" + entry.getKey();
+            visitor.visitHistogram(MetricVisitor.FE_PREFIX, name, entry.getValue());
+        }
+
         // node info
         visitor.getNodeInfo();
 
@@ -894,6 +935,26 @@ public final class MetricRepo {
         fingerprintLatencyHistogram.update(elapseMs);
     }
 
+    public static void addExecuteCommandFingerprintQueryLatency(String fingerprint, long elapseMs) {
+        Histogram latencyHistogram = MetricRepo.EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE.getIfPresent(fingerprint);
+        if (latencyHistogram == null) {
+            try {
+                latencyHistogram = MetricRepo.EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE.get(fingerprint,
+                        new Callable<Histogram>() {
+                            @Override
+                            public Histogram call() throws Exception {
+                                return EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
+                            }
+                        });
+            } catch (Exception e) {
+                // should never happen
+                LOG.warn("add execute command fingerprint latency metrics error:" + fingerprint, e);
+                return;
+            }
+        }
+        latencyHistogram.update(elapseMs);
+    }
+
     public static void cleanUpFingerprint() {
         if (!isInit) {
             return;
@@ -903,6 +964,7 @@ public final class MetricRepo {
             cleanupTime = currentTime;
             MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.cleanUp();
             MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.cleanUp();
+            MetricRepo.EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE.cleanUp();
         }
     }
 }
