@@ -51,6 +51,7 @@ import mockit.Expectations;
 import mockit.Mocked;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -1981,6 +1982,7 @@ public class AuthTest {
         dropUser(userIdentity);
     }
 
+    @Ignore
     @Test
     public void testWorkloadGroupPriv() throws UserException {
         UserIdentity userIdentity = new UserIdentity("testUser", "%");

@@ -372,6 +372,7 @@ protected:
     RuntimeProfile::Counter* _scanner_wait_worker_timer = nullptr;
     // Num of newly created free blocks when running query
     RuntimeProfile::Counter* _newly_create_free_blocks_num = nullptr;
+    RuntimeProfile::Counter* _scanner_memory_back_pressure_cnt = nullptr;
     // Max num of scanner thread
     RuntimeProfile::Counter* _max_scanner_thread_num = nullptr;
 
@@ -381,6 +382,8 @@ protected:
 
     RuntimeProfile::Counter* _scan_rows = nullptr;
     RuntimeProfile::Counter* _scan_bytes = nullptr;
+
+    RuntimeProfile::Counter* _scanner_cached_block_latency_timer = nullptr;
 
     std::unordered_map<std::string, int> _colname_to_slot_id;
 

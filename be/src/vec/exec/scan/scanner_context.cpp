@@ -31,6 +31,7 @@
 #include "runtime/descriptors.h"
 #include "runtime/exec_env.h"
 #include "runtime/runtime_state.h"
+#include "util/time.h"
 #include "util/uid_util.h"
 #include "vec/core/block.h"
 #include "vec/exec/scan/scanner_scheduler.h"
@@ -97,16 +98,20 @@ Status ScannerContext::init() {
         _scanner_profile = _parent->_scanner_profile;
         _scanner_sched_counter = _parent->_scanner_sched_counter;
         _newly_create_free_blocks_num = _parent->_newly_create_free_blocks_num;
+        _scan_task_memory_back_pressure_cnt = _parent->_scanner_memory_back_pressure_cnt;
         _scanner_wait_batch_timer = _parent->_scanner_wait_batch_timer;
         _scanner_ctx_sched_time = _parent->_scanner_ctx_sched_time;
         _scale_up_scanners_counter = _parent->_scale_up_scanners_counter;
+        _scan_task_cached_block_latency_timer = _parent->_scanner_cached_block_latency_timer;
     } else {
         _scanner_profile = _local_state->_scanner_profile;
         _scanner_sched_counter = _local_state->_scanner_sched_counter;
         _newly_create_free_blocks_num = _local_state->_newly_create_free_blocks_num;
+        _scan_task_memory_back_pressure_cnt = _local_state->_scanner_memory_back_pressure_cnt;
         _scanner_wait_batch_timer = _local_state->_scanner_wait_batch_timer;
         _scanner_ctx_sched_time = _local_state->_scanner_ctx_sched_time;
         _scale_up_scanners_counter = _local_state->_scale_up_scanners_counter;
+        _scan_task_cached_block_latency_timer = _local_state->_scanner_cached_block_latency_timer;
     }
 
 #ifndef BE_TEST
@@ -272,10 +277,11 @@ vectorized::BlockUPtr ScannerContext::get_free_block(bool force) {
         return block;
     }
     if (_block_memory_usage < _max_bytes_in_queue || force) {
+        _newly_create_free_blocks_num->update(1);
         return vectorized::Block::create_unique(_output_tuple_desc->slots(), _batch_size,
                                                 true /*ignore invalid slots*/);
-        _newly_create_free_blocks_num->update(1);
     }
+    _scan_task_memory_back_pressure_cnt->update(1);
     return nullptr;
 }
 
@@ -367,6 +373,7 @@ Status ScannerContext::get_block_from_queue(RuntimeState* state, vectorized::Blo
         if (!scan_task->cached_blocks.empty()) {
             vectorized::BlockUPtr current_block = std::move(scan_task->cached_blocks.front());
             scan_task->cached_blocks.pop_front();
+            _scan_task_cached_block_latency_timer->update(GetCurrentTimeNanos());
             size_t block_size = current_block->allocated_bytes();
             if (_estimated_block_size > block_size) {
                 _estimated_block_size = block_size;

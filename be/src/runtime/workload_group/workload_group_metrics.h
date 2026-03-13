@@ -27,6 +27,7 @@
 namespace doris {
 
 class WorkloadGroup;
+class ThreadPool;
 
 template <typename T>
 class AtomicCounter;
@@ -35,9 +36,14 @@ using IntCounter = AtomicCounter<int64_t>;
 template <typename T>
 class AtomicGauge;
 using IntGuage = AtomicGauge<int64_t>;
+using UIntGauge = AtomicGauge<uint64_t>;
 
 class MetricEntity;
 struct MetricPrototype;
+
+namespace vectorized {
+class SimplifiedScanScheduler;
+}
 
 class WorkloadGroupMetrics {
 public:
@@ -63,6 +69,15 @@ public:
 
     int64_t get_memory_used();
 
+    std::shared_ptr<MetricEntity> get_entity() { return _entity; }
+
+    UIntGauge* workload_group_local_scan_thread_pool_queue_size = nullptr;
+    UIntGauge* workload_group_local_scan_thread_pool_thread_num = nullptr;
+    UIntGauge* workload_group_remote_scan_thread_pool_queue_size = nullptr;
+    UIntGauge* workload_group_remote_scan_thread_pool_thread_num = nullptr;
+    UIntGauge* workload_group_memtable_flush_thread_pool_queue_size = nullptr;
+    UIntGauge* workload_group_memtable_flush_thread_pool_active_thread_num = nullptr;
+
 private:
     IntCounter* workload_group_cpu_time_sec {nullptr};           // used for metric
     IntGuage* workload_group_mem_used_bytes {nullptr};           // used for metric
@@ -70,7 +85,6 @@ private:
     IntCounter* workload_group_total_local_scan_bytes {nullptr}; // used for metric
     std::unordered_multimap<std::string, IntCounter*>
             _local_scan_bytes_counter_map; // used for metric
-
     std::atomic<uint64_t> _cpu_time_nanos {0};
     std::atomic<uint64_t> _last_cpu_time_nanos {0};
     std::atomic<uint64_t> _per_sec_cpu_time_nanos {0}; // used for system table

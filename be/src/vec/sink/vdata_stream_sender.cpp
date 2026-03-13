@@ -910,8 +910,10 @@ Status BlockSerializer<Parent>::next_serialized_block(Block* block, PBlock* dest
             RETURN_IF_ERROR(_mutable_block->merge(*block));
         }
     }
-
-    if (_mutable_block->rows() >= _batch_size || eos) {
+    bool hit_mem_limit =
+            (config::sender_serialized_block_size_limit > 0 &&
+             _mutable_block->allocated_bytes() >= config::sender_serialized_block_size_limit);
+    if (_mutable_block->rows() >= _batch_size || eos || hit_mem_limit) {
         if (!_is_local) {
             RETURN_IF_ERROR(serialize_block(dest, num_receivers));
         }

@@ -287,6 +287,10 @@ public class Auth implements Writable {
             }
             return false;
         }
+        if (Config.enable_gdpr && ConnectContext.get() != null && ConnectContext.get().getGdprIdentity() != null) {
+            // disable catalog check when using gdpr
+            return true;
+        }
         readLock();
         try {
             Set<Role> roles = getRolesByUserWithLdap(currentUser);
@@ -400,6 +404,11 @@ public class Auth implements Writable {
             // currently stream load not support ip based auth, so normal should not auth temporary
             // need remove later
             if (WorkloadGroupMgr.DEFAULT_GROUP_NAME.equals(workloadGroupName)) {
+                return true;
+            }
+
+            if (Config.enable_gdpr && ConnectContext.get() != null && ConnectContext.get().getGdprIdentity() != null) {
+                // disable workload group check when using gdpr
                 return true;
             }
 

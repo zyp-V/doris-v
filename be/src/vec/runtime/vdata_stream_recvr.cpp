@@ -359,7 +359,7 @@ VDataStreamRecvr::VDataStreamRecvr(VDataStreamMgr* stream_mgr, RuntimeState* sta
     }
     _sender_queues.reserve(num_queues);
     int num_sender_per_queue = is_merging ? 1 : num_senders;
-    _sender_queue_mem_limit = std::max(20480, config::exchg_node_buffer_size_bytes / num_queues);
+    _sender_queue_mem_limit = std::max(20480L, config::exchg_node_buffer_size_bytes / num_queues);
     for (int i = 0; i < num_queues; ++i) {
         SenderQueue* queue = nullptr;
         if (_enable_pipeline) {

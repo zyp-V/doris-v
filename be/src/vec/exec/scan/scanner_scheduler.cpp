@@ -45,6 +45,7 @@
 #include "util/runtime_profile.h"
 #include "util/thread.h"
 #include "util/threadpool.h"
+#include "util/time.h"
 #include "util/work_thread_pool.hpp"
 #include "vec/core/block.h"
 #include "vec/exec/scan/new_olap_scanner.h" // IWYU pragma: keep
@@ -52,6 +53,7 @@
 #include "vec/exec/scan/vscan_node.h"
 #include "vec/exec/scan/vscanner.h"
 #include "vfile_scanner.h"
+
 
 namespace doris::vectorized {
 
@@ -309,6 +311,7 @@ void ScannerScheduler::_scanner_scan(std::shared_ptr<ScannerContext> ctx,
         } else {
             ctx->inc_block_usage(free_block->allocated_bytes());
             scan_task->cached_blocks.push_back(std::move(free_block));
+            ctx->_scan_task_cached_block_latency_timer->update(-GetCurrentTimeNanos());
         }
 
         if (limit > 0 && limit < ctx->batch_size()) {

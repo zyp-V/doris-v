@@ -369,8 +369,11 @@ DECLARE_mInt32(doris_max_scan_key_num);
 // if exceed, no conditions will be pushed down for that column.
 DECLARE_mInt32(max_pushdown_conditions_per_column);
 // (Advanced) Maximum size of per-query receive-side buffer
-DECLARE_mInt32(exchg_node_buffer_size_bytes);
+DECLARE_mInt64(exchg_node_buffer_size_bytes);
 DECLARE_mInt32(exchg_buffer_queue_capacity_factor);
+
+// (Advanced) Maximum size of per-query send-side buffer
+DECLARE_mInt64(sender_serialized_block_size_limit);
 
 DECLARE_mInt64(column_dictionary_key_ratio_threshold);
 DECLARE_mInt64(column_dictionary_key_size_threshold);

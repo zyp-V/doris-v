@@ -26,6 +26,7 @@ import org.apache.doris.common.Pair;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.load.DppConfig;
+import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.resource.Tag;
 
 import com.google.common.collect.Maps;
@@ -131,10 +132,14 @@ public class UserPropertyMgr implements Writable {
     public Set<Tag> getResourceTags(String qualifiedUser) {
         UserProperty existProperty = propertyMap.get(qualifiedUser);
         existProperty = getLdapPropertyIfNull(qualifiedUser, existProperty);
-        if (existProperty == null) {
+        boolean useGdpr = false;
+        if (Config.enable_gdpr && ConnectContext.get() != null &&  ConnectContext.get().getGdprIdentity() != null) {
+            useGdpr = true;
+        }
+        if (existProperty == null && ! useGdpr) {
             return UserProperty.INVALID_RESOURCE_TAGS;
         }
-        Set<Tag> tags = existProperty.getCopiedResourceTags();
+        Set<Tag> tags = useGdpr ? Sets.newHashSet() : existProperty.getCopiedResourceTags();
         // only root and admin can return empty tag.
         // empty tag means user can access all backends.
         // for normal user, if tag is empty and not set force_olap_table_replication_allocation, use default tag.

@@ -178,6 +178,7 @@ public:
     ThreadPoolToken* thread_token = nullptr;
 
     bool _should_reset_thread_name = true;
+    RuntimeProfile::Counter* _scan_task_cached_block_latency_timer = nullptr;
 
 protected:
     ScannerContext(RuntimeState* state_, const TupleDescriptor* output_tuple_desc,
@@ -230,9 +231,11 @@ protected:
     std::shared_ptr<RuntimeProfile> _scanner_profile;
     RuntimeProfile::Counter* _scanner_sched_counter = nullptr;
     RuntimeProfile::Counter* _newly_create_free_blocks_num = nullptr;
+    RuntimeProfile::Counter* _scan_task_memory_back_pressure_cnt = nullptr;
     RuntimeProfile::Counter* _scanner_wait_batch_timer = nullptr;
     RuntimeProfile::Counter* _scanner_ctx_sched_time = nullptr;
     RuntimeProfile::Counter* _scale_up_scanners_counter = nullptr;
+    
     QueryThreadContext _query_thread_context;
     bool _ignore_data_distribution = false;
     bool _is_file_scan_operator;

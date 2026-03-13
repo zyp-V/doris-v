@@ -50,6 +50,20 @@ const static bool ENABLE_MEMORY_OVERCOMMIT_DEFAULT_VALUE = true;
 const static int SPILL_LOW_WATERMARK_DEFAULT_VALUE = 50;
 const static int SPILL_HIGH_WATERMARK_DEFAULT_VALUE = 80;
 
+
+DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_local_scan_thread_pool_queue_size,
+                                   MetricUnit::NOUNIT);
+DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_local_scan_thread_pool_thread_num,
+                                   MetricUnit::NOUNIT);
+DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_remote_scan_thread_pool_queue_size,
+                                   MetricUnit::NOUNIT);
+DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_remote_scan_thread_pool_thread_num,
+                                   MetricUnit::NOUNIT);
+DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_memtable_flush_thread_pool_queue_size,
+                                   MetricUnit::NOUNIT);
+DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_memtable_flush_thread_pool_active_thread_num,
+                                   MetricUnit::NOUNIT);
+
 WorkloadGroup::WorkloadGroup(const WorkloadGroupInfo& wg_info) : WorkloadGroup(wg_info, true) {}
 
 WorkloadGroup::WorkloadGroup(const WorkloadGroupInfo& tg_info, bool need_create_query_thread_pool)
@@ -478,6 +492,13 @@ void WorkloadGroup::upsert_thread_pool_no_lock(WorkloadGroupInfo* wg_info,
                                            config::doris_scanner_thread_pool_queue_size);
         if (ret.ok()) {
             _scan_task_sched = std::move(scan_scheduler);
+            REGISTER_ENTITY_HOOK_METRIC(_wg_metrics->get_entity(), _wg_metrics,
+                                        workload_group_local_scan_thread_pool_queue_size,
+                                        [this]() { return _scan_task_sched->get_queue_size(); });
+            REGISTER_ENTITY_HOOK_METRIC(_wg_metrics->get_entity(), _wg_metrics,
+                                        workload_group_local_scan_thread_pool_thread_num, [this]() {
+                                            return _scan_task_sched->get_active_threads();
+                                        });
         } else {
             LOG(INFO) << "[upsert wg thread pool] scan scheduler start failed, gid=" << wg_id;
         }
@@ -497,6 +518,14 @@ void WorkloadGroup::upsert_thread_pool_no_lock(WorkloadGroupInfo* wg_info,
                                                   remote_scan_thread_queue_size);
         if (ret.ok()) {
             _remote_scan_task_sched = std::move(remote_scan_scheduler);
+            REGISTER_ENTITY_HOOK_METRIC(
+                    _wg_metrics->get_entity(), _wg_metrics,
+                    workload_group_remote_scan_thread_pool_queue_size,
+                    [this]() { return _remote_scan_task_sched->get_queue_size(); });
+            REGISTER_ENTITY_HOOK_METRIC(
+                    _wg_metrics->get_entity(), _wg_metrics,
+                    workload_group_remote_scan_thread_pool_thread_num,
+                    [this]() { return _remote_scan_task_sched->get_active_threads(); });
         } else {
             LOG(INFO) << "[upsert wg thread pool] remote scan scheduler start failed, gid="
                       << wg_id;
@@ -525,6 +554,10 @@ void WorkloadGroup::upsert_thread_pool_no_lock(WorkloadGroupInfo* wg_info,
                           << wg_id;
             } else {
                 _memtable_flush_pool = std::move(thread_pool);
+                REGISTER_ENTITY_HOOK_METRIC(_wg_metrics->get_entity(), _wg_metrics, workload_group_memtable_flush_thread_pool_queue_size,
+                                     [this](){ return _memtable_flush_pool->get_queue_size();});
+                REGISTER_ENTITY_HOOK_METRIC(_wg_metrics->get_entity(), _wg_metrics, workload_group_memtable_flush_thread_pool_active_thread_num,
+                                     [this](){ return _memtable_flush_pool->num_active_threads();});
                 LOG(INFO) << "[upsert wg thread pool] create " + pool_name + " succ, gid=" << wg_id
                           << ", max thread num=" << max_threads
                           << ", min thread num=" << min_threads;

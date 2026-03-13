@@ -283,6 +283,8 @@ Status VScanNode::_init_profile() {
             _scanner_profile->AddHighWaterMarkCounter("FreeBlocks", TUnit::BYTES, "MemoryUsage");
     _newly_create_free_blocks_num =
             ADD_COUNTER(_scanner_profile, "NewlyCreateFreeBlocksNum", TUnit::UNIT);
+    _scanner_memory_back_pressure_cnt =
+            ADD_COUNTER(_scanner_profile, "ScannerMemoryBackPressureCount", TUnit::UNIT);      
     _scale_up_scanners_counter = ADD_COUNTER(_scanner_profile, "NumScaleUpScanners", TUnit::UNIT);
     // time of transfer thread to wait for block from scan thread
     _scanner_wait_batch_timer = ADD_TIMER(_scanner_profile, "ScannerBatchWaitTime");
@@ -302,6 +304,8 @@ Status VScanNode::_init_profile() {
 
     _scan_rows = ADD_COUNTER(_runtime_profile, "ScanRows", TUnit::UNIT);
     _scan_bytes = ADD_COUNTER(_runtime_profile, "ScanBytes", TUnit::BYTES);
+
+    _scanner_cached_block_latency_timer = ADD_TIMER(_runtime_profile, "ScannerCacheBlockLatency");
 
     return Status::OK();
 }
