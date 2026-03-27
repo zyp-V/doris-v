@@ -155,6 +155,8 @@ import org.apache.doris.httpv2.entity.ResponseBody;
 import org.apache.doris.httpv2.meta.MetaBaseAction;
 import org.apache.doris.httpv2.rest.RestApiStatusCode;
 import org.apache.doris.insertoverwrite.InsertOverwriteManager;
+import org.apache.doris.catalog.stream.BaseTableStream;
+import org.apache.doris.catalog.stream.TableStreamManager;
 import org.apache.doris.job.base.AbstractJob;
 import org.apache.doris.job.extensions.mtmv.MTMVTask;
 import org.apache.doris.job.manager.JobManager;
@@ -556,6 +558,8 @@ public class Env {
 
     private InsertOverwriteManager insertOverwriteManager;
 
+    private TableStreamManager tableStreamManager;
+
     private DNSCache dnsCache;
 
     private final NereidsSqlCacheManager sqlCacheManager;
@@ -811,6 +815,7 @@ public class Env {
         this.mtmvService = new MTMVService();
         this.eventProcessor = new EventProcessor(mtmvService);
         this.insertOverwriteManager = new InsertOverwriteManager();
+        this.tableStreamManager = new TableStreamManager();
         this.dnsCache = new DNSCache();
         this.sqlCacheManager = new NereidsSqlCacheManager();
         this.splitSourceManager = new SplitSourceManager();
@@ -886,6 +891,10 @@ public class Env {
 
     public InsertOverwriteManager getInsertOverwriteManager() {
         return insertOverwriteManager;
+    }
+
+    public TableStreamManager getTableStreamManager() {
+        return tableStreamManager;
     }
 
     public TabletScheduler getTabletScheduler() {
@@ -2334,6 +2343,18 @@ public class Env {
         return checksum;
     }
 
+    public long loadTableStreamManager(DataInputStream in, long checksum) throws IOException {
+        this.tableStreamManager = TableStreamManager.read(in);
+        LOG.info("finished replay tableStreamManager from image");
+        return checksum;
+    }
+
+    public long saveTableStreamManager(CountingDataOutputStream out, long checksum) throws IOException {
+        this.tableStreamManager.write(out);
+        LOG.info("finished save tableStreamManager to image");
+        return checksum;
+    }
+
     // Only called by checkpoint thread
     // return the latest image file's absolute path
     public String saveImage() throws IOException {
@@ -3572,7 +3593,30 @@ public class Env {
         StringBuilder sb = new StringBuilder();
 
         // 1. create table
-        // 1.1 view
+        // 1.1 stream
+        if (table.getType() == TableType.STREAM) {
+            BaseTableStream stream = (BaseTableStream) table;
+            sb.append("CREATE STREAM `").append(table.getName()).append("` ON TABLE ");
+            TableIf baseTable = stream.getBaseTableNullable();
+            if (baseTable != null) {
+                List<String> qualifiers = baseTable.getFullQualifiers();
+                sb.append("`").append(qualifiers.get(0)).append("`.")
+                        .append("`").append(qualifiers.get(1)).append("`.")
+                        .append("`").append(qualifiers.get(2)).append("`");
+            } else {
+                sb.append("`N/A`");
+            }
+            if (StringUtils.isNotBlank(table.getComment())) {
+                sb.append(" COMMENT '").append(table.getComment()).append("'");
+            }
+            sb.append(" PROPERTIES (\n");
+            stream.appendProperties(sb);
+            sb.append(")");
+            createTableStmt.add(sb + ";");
+            return;
+        }
+
+        // 1.2 view
         if (table.getType() == TableType.VIEW) {
             View view = (View) table;
 
@@ -3970,6 +4014,12 @@ public class Env {
         CatalogIf<?> catalogIf = catalogMgr.getCatalogOrException(stmt.getCatalogName(),
                 catalog -> new DdlException(("Unknown catalog " + catalog)));
         catalogIf.dropTable(stmt);
+    }
+
+    public void dropStream(String catalogName, String dbName, String streamName,
+            boolean ifExists, boolean forceDrop) throws DdlException {
+        Util.prohibitExternalCatalog(catalogName, "DropStreamCommand");
+        getInternalCatalog().dropStream(dbName, streamName, ifExists, forceDrop);
     }
 
     public boolean unprotectDropTable(Database db, Table table, boolean isForceDrop, boolean isReplay,

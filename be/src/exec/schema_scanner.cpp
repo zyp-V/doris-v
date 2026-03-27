@@ -47,6 +47,8 @@
 #include "exec/schema_scanner/schema_table_options_scanner.h"
 #include "exec/schema_scanner/schema_table_privileges_scanner.h"
 #include "exec/schema_scanner/schema_table_properties_scanner.h"
+#include "exec/schema_scanner/schema_table_stream_consumption_scanner.h"
+#include "exec/schema_scanner/schema_table_streams_scanner.h"
 #include "exec/schema_scanner/schema_tables_scanner.h"
 #include "exec/schema_scanner/schema_user_privileges_scanner.h"
 #include "exec/schema_scanner/schema_user_scanner.h"
@@ -240,6 +242,10 @@ std::unique_ptr<SchemaScanner> SchemaScanner::create(TSchemaTableType::type type
         return SchemaTableOptionsScanner::create_unique();
     case TSchemaTableType::SCH_ROUTINE_LOAD_JOBS:
         return SchemaRoutineLoadJobScanner::create_unique();
+    case TSchemaTableType::SCH_TABLE_STREAMS:
+        return SchemaTableStreamsScanner::create_unique();
+    case TSchemaTableType::SCH_TABLE_STREAM_CONSUMPTION:
+        return SchemaTableStreamConsumptionScanner::create_unique();
     default:
         return SchemaDummyScanner::create_unique();
         break;

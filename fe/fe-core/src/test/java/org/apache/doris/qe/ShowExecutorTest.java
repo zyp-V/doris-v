@@ -59,6 +59,8 @@ import org.apache.doris.mysql.MysqlCommand;
 import org.apache.doris.mysql.privilege.AccessControllerManager;
 import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.TStorageType;
+import org.apache.doris.catalog.stream.TableStreamManager;
+import org.apache.doris.nereids.trees.plans.commands.ShowStreamsCommand;
 
 import com.google.common.collect.Lists;
 import mockit.Expectations;
@@ -334,6 +336,28 @@ public class ShowExecutorTest {
         ShowResultSet resultSet = executor.execute();
 
         Assert.assertFalse(resultSet.next());
+    }
+
+    @Test
+    public void testShowStream() throws Exception {
+        // make env usable for SHOW STREAMS: ensure tableStreamManager exists
+        Deencapsulation.setField(env, "tableStreamManager", new TableStreamManager());
+        ctx.setEnv(env);
+
+        final ShowResultSet[] resultHolder = new ShowResultSet[1];
+        new MockUp<StmtExecutor>() {
+            @Mock
+            public void sendResultSet(ResultSet resultSet) {
+                resultHolder[0] = (ShowResultSet) resultSet;
+            }
+        };
+
+        StmtExecutor executor = Deencapsulation.newInstance(StmtExecutor.class);
+        ShowStreamsCommand command = new ShowStreamsCommand("testDb", null, null, null);
+        command.run(ctx, executor);
+
+        Assert.assertNotNull(resultHolder[0]);
+        Assert.assertFalse(resultHolder[0].next());
     }
 
     @Test

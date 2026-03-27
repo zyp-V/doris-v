@@ -427,6 +427,10 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
             if (olapTable instanceof MTMV) {
                 Env.getCurrentEnv().getMtmvService().registerMTMV((MTMV) olapTable, id);
             }
+            if (olapTable.getType() == TableType.STREAM) {
+                Env.getCurrentEnv().getTableStreamManager().addTableStream(
+                        (org.apache.doris.catalog.stream.BaseTableStream) olapTable);
+            }
         }
         olapTable.unmarkDropped();
         return result;
@@ -440,6 +444,10 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
         if (table != null) {
             if (table instanceof MTMV) {
                 Env.getCurrentEnv().getMtmvService().unregisterMTMV((MTMV) table);
+            }
+            if (table.getType() == TableType.STREAM) {
+                Env.getCurrentEnv().getTableStreamManager().removeTableStream(
+                        (org.apache.doris.catalog.stream.BaseTableStream) table);
             }
             this.nameToTable.remove(tableName);
             this.idToTable.remove(table.getId());

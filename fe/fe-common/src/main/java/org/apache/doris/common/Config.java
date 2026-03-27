@@ -2979,6 +2979,11 @@ public class Config extends ConfigBase {
     /*---------------------- PROFILE & AUDIT LOG CONFIG END ------------------------*/
 
 
+    @ConfField(mutable = false, masterOnly = false, description = {
+            "Whether to enable the experimental Table Stream functionality" },
+            varType = VariableAnnotation.EXPERIMENTAL)
+    public static boolean enable_table_stream = false;
+
     //==========================================================================
     //                    begin of cloud config
     //==========================================================================

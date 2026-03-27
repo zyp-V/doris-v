@@ -90,7 +90,10 @@ public enum SchemaTableType {
     SCH_TABLE_OPTIONS("TABLE_OPTIONS", "TABLE_OPTIONS",
             TSchemaTableType.SCH_TABLE_OPTIONS),
     SCH_ROUTINE_LOAD_JOBS("ROUTINE_LOAD_JOBS", "ROUTINE_LOAD_JOBS",
-            TSchemaTableType.SCH_ROUTINE_LOAD_JOBS);
+            TSchemaTableType.SCH_ROUTINE_LOAD_JOBS),
+    SCH_TABLE_STREAMS("TABLE_STREAMS", "TABLE_STREAMS", TSchemaTableType.SCH_TABLE_STREAMS),
+    SCH_TABLE_STREAM_CONSUMPTION("TABLE_STREAM_CONSUMPTION", "TABLE_STREAM_CONSUMPTION",
+            TSchemaTableType.SCH_TABLE_STREAM_CONSUMPTION);
 
     private static final String dbName = "INFORMATION_SCHEMA";
     private static SelectList fullSelectLists;

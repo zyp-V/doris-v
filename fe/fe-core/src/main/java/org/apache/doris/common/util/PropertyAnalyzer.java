@@ -30,6 +30,7 @@ import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.catalog.ReplicaAllocation;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.Type;
+import org.apache.doris.catalog.stream.BaseTableStream;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
@@ -121,6 +122,8 @@ public class PropertyAnalyzer {
     public static final String PROPERTIES_USE_TEMP_PARTITION_NAME = "use_temp_partition_name";
 
     public static final String PROPERTIES_TYPE = "type";
+    public static final String PROPERTIES_STREAM_TYPE = PROPERTIES_TYPE;
+    public static final String PROPERTIES_STREAM_SHOW_INITIAL_ROWS = "show_initial_rows";
     // This is common prefix for function column
     public static final String PROPERTIES_FUNCTION_COLUMN = "function_column";
     public static final String PROPERTIES_SEQUENCE_TYPE = "sequence_type";
@@ -1040,6 +1043,22 @@ public class PropertyAnalyzer {
             properties.remove(PROPERTIES_TYPE);
         }
         return type;
+    }
+
+    public static BaseTableStream.StreamConsumeType analyzeStreamType(Map<String, String> properties)
+            throws AnalysisException {
+        if (properties == null || !properties.containsKey(PROPERTIES_STREAM_TYPE)) {
+            return BaseTableStream.StreamConsumeType.DEFAULT;
+        }
+
+        String typeName = properties.get(PROPERTIES_STREAM_TYPE);
+        properties.remove(PROPERTIES_STREAM_TYPE);
+
+        BaseTableStream.StreamConsumeType consumeType = BaseTableStream.StreamConsumeType.getType(typeName);
+        if (consumeType == BaseTableStream.StreamConsumeType.UNKNOWN) {
+            throw new AnalysisException("Unknown stream type: " + typeName);
+        }
+        return consumeType;
     }
 
     public static Type analyzeSequenceType(Map<String, String> properties, KeysType keysType) throws AnalysisException {
