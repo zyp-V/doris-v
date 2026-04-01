@@ -72,7 +72,8 @@ Status FullCompaction::execute_compact_impl() {
     std::unique_lock base_lock(_tablet->get_base_compaction_lock());
     std::unique_lock cumu_lock(_tablet->get_cumulative_compaction_lock());
 
-    SCOPED_ATTACH_TASK(_mem_tracker);
+    SCOPED_ATTACH_TASK(QueryThreadContext(TUniqueId(), _mem_tracker,
+                                         Compaction::compaction_workload_group()));
 
     // 2. do full compaction, merge rowsets
     int64_t permits = get_compaction_permits();

@@ -66,6 +66,8 @@ DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(workload_group_memtable_flush_thread_pool_act
 
 WorkloadGroup::WorkloadGroup(const WorkloadGroupInfo& wg_info) : WorkloadGroup(wg_info, true) {}
 
+WorkloadGroup::~WorkloadGroup() = default;
+
 WorkloadGroup::WorkloadGroup(const WorkloadGroupInfo& tg_info, bool need_create_query_thread_pool)
         : _id(tg_info.id),
           _name(tg_info.name),
@@ -628,6 +630,12 @@ std::string WorkloadGroup::thread_debug_info() {
 }
 
 void WorkloadGroup::upsert_scan_io_throttle(WorkloadGroupInfo* tg_info) {
+    // Keep WorkloadGroup state consistent with IOThrottle, so debug_string() reflects
+    // the latest throttling config.
+    _scan_bytes_per_second.store(tg_info->read_bytes_per_second, std::memory_order_relaxed);
+    _remote_scan_bytes_per_second.store(tg_info->remote_read_bytes_per_second,
+                                        std::memory_order_relaxed);
+
     for (const auto& [key, io_throttle] : _scan_io_throttle_map) {
         io_throttle->set_io_bytes_per_second(tg_info->read_bytes_per_second);
     }

@@ -86,7 +86,8 @@ Status CumulativeCompaction::execute_compact_impl() {
                 "The tablet is under cumulative compaction. tablet={}", _tablet->tablet_id());
     }
 
-    SCOPED_ATTACH_TASK(_mem_tracker);
+    SCOPED_ATTACH_TASK(QueryThreadContext(TUniqueId(), _mem_tracker,
+                                         Compaction::compaction_workload_group()));
 
     // 3. do cumulative compaction, merge rowsets
     int64_t permits = get_compaction_permits();

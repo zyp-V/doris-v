@@ -287,6 +287,8 @@ DECLARE_mInt32(max_download_speed_kbps);
 DECLARE_mInt32(download_low_speed_limit_kbps);
 // download low speed time(seconds)
 DECLARE_mInt32(download_low_speed_time);
+// whether to enable http download throttling for single replica compaction
+DECLARE_mBool(enable_single_replica_compaction_http_download_throttle);
 // whether to download small files in batch.
 DECLARE_mBool(enable_batch_download);
 // whether to check md5sum when download
@@ -526,6 +528,9 @@ DECLARE_mInt64(total_permits_for_compaction_score);
 DECLARE_mInt32(generate_compaction_tasks_interval_ms);
 // sleep interval in second after update replica infos
 DECLARE_mInt32(update_replica_infos_interval_seconds);
+
+// Compaction read io bytes limit (-1 means unlimited).
+DECLARE_mInt64(compaction_read_bytes_per_second);
 
 // Compaction task number per disk.
 // Must be greater than 2, because Base compaction and Cumulative compaction have at least one thread each.

@@ -72,7 +72,8 @@ Status BaseCompaction::execute_compact_impl() {
                 "another base compaction is running. tablet={}", _tablet->tablet_id());
     }
 
-    SCOPED_ATTACH_TASK(_mem_tracker);
+    SCOPED_ATTACH_TASK(QueryThreadContext(TUniqueId(), _mem_tracker,
+                                         Compaction::compaction_workload_group()));
 
     // 2. do base compaction, merge rowsets
     int64_t permits = get_compaction_permits();

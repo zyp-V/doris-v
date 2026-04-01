@@ -62,6 +62,8 @@ public:
 
     explicit WorkloadGroup(const WorkloadGroupInfo& tg_info, bool need_create_query_thread_pool);
 
+    ~WorkloadGroup();
+
     int64_t version() const { return _version; }
 
     uint64_t cpu_share() const { return _cpu_share.load(); }
@@ -199,6 +201,10 @@ public:
     std::shared_ptr<IOThrottle> get_local_scan_io_throttle(const std::string& disk_dir);
 
     std::shared_ptr<IOThrottle> get_remote_scan_io_throttle();
+
+    int64_t scan_bytes_per_second() const { return _scan_bytes_per_second.load(); }
+
+    int64_t remote_scan_bytes_per_second() const { return _remote_scan_bytes_per_second.load(); }
 
     void upsert_scan_io_throttle(WorkloadGroupInfo* tg_info);
 

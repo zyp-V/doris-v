@@ -17,6 +17,7 @@
 
 #include "olap/single_replica_compaction.h"
 
+#include <algorithm>
 #include <curl/curl.h>
 
 #include "common/logging.h"
@@ -35,6 +36,8 @@
 #include "olap/tablet_meta.h"
 #include "runtime/client_cache.h"
 #include "runtime/memory/mem_tracker_limiter.h"
+#include "runtime/thread_context.h"
+#include "runtime/workload_group/workload_group.h"
 #include "service/brpc.h"
 #include "task/engine_clone_task.h"
 #include "util/brpc_client_cache.h"
@@ -85,7 +88,8 @@ Status SingleReplicaCompaction::execute_compact_impl() {
                 "another base compaction is running. tablet={}", _tablet->tablet_id());
     }
 
-    SCOPED_ATTACH_TASK(_mem_tracker);
+    SCOPED_ATTACH_TASK(QueryThreadContext(TUniqueId(), _mem_tracker,
+                                     Compaction::compaction_workload_group()));
 
     // do single replica compaction
     RETURN_IF_ERROR(_do_single_replica_compaction());
@@ -433,10 +437,22 @@ Status SingleReplicaCompaction::_download_files(DataDir* data_dir,
         }
 
         total_file_size += file_size;
-        uint64_t estimate_timeout = file_size / config::download_low_speed_limit_kbps / 1024;
-        if (estimate_timeout < config::download_low_speed_time) {
-            estimate_timeout = config::download_low_speed_time;
+        int64_t effective_bps = config::download_low_speed_limit_kbps * 1024L;
+        const int64_t max_recv_bps = config::max_download_speed_kbps * 1024L;
+        if (max_recv_bps > 0) {
+            effective_bps = std::min(effective_bps, max_recv_bps);
         }
+        auto* t_ctx = doris::thread_context(true);
+        auto wg = t_ctx != nullptr ? t_ctx->workload_group().lock() : nullptr;
+        const int64_t wg_remote_bps = wg != nullptr ? wg->remote_scan_bytes_per_second() : -1;
+        if (config::enable_single_replica_compaction_http_download_throttle && wg != nullptr && wg_remote_bps > 0) {
+            effective_bps = std::min(effective_bps, wg_remote_bps);
+        }
+        effective_bps = std::max<int64_t>(1, effective_bps);
+
+        // Use ceiling division to avoid zero for small files.
+        uint64_t estimate_timeout = (file_size + effective_bps - 1) / effective_bps;
+        estimate_timeout = std::max<uint64_t>(estimate_timeout, config::download_low_speed_time);
 
         std::string local_file_path = local_path + file_name;
 

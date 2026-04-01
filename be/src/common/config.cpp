@@ -241,6 +241,8 @@ DEFINE_mInt32(max_download_speed_kbps, "50000");
 DEFINE_mInt32(download_low_speed_limit_kbps, "50");
 // download low speed time(seconds)
 DEFINE_mInt32(download_low_speed_time, "300");
+// whether to enable http download throttling for single replica compaction
+DEFINE_mBool(enable_single_replica_compaction_http_download_throttle, "false");
 // whether to download small files in batch
 DEFINE_mBool(enable_batch_download, "false");
 // whether to check md5sum when download
@@ -480,6 +482,11 @@ DEFINE_mInt32(generate_compaction_tasks_interval_ms, "100");
 
 // sleep interval in second after update replica infos
 DEFINE_mInt32(update_replica_infos_interval_seconds, "60");
+
+// Compaction local read io limit, unit is bytes per second. -1 means unlimited.
+DEFINE_mInt64(compaction_read_bytes_per_second, "-1");
+DEFINE_Validator(compaction_read_bytes_per_second,
+                 [](const int64_t config) -> bool { return config == -1 || config > 0; });
 
 // Compaction task number per disk.
 // Must be greater than 2, because Base compaction and Cumulative compaction have at least one thread each.

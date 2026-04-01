@@ -39,6 +39,7 @@ namespace doris {
 
 class MemTrackerLimiter;
 class RowsetWriter;
+class WorkloadGroup;
 
 // This class is a base class for compaction.
 // The entrance of this class is compact()
@@ -69,6 +70,10 @@ public:
 
     virtual ReaderType compaction_type() const = 0;
     virtual std::string compaction_name() const = 0;
+
+    // A dedicated workload group for background compaction tasks, used to reuse
+    // workload-group style IO throttling (read_bytes_per_second).
+    static std::weak_ptr<WorkloadGroup> compaction_workload_group();
 
 protected:
     virtual Status pick_rowsets_to_compact() = 0;

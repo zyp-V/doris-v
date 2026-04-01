@@ -22,8 +22,10 @@
 #include <glog/logging.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <list>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -64,6 +66,7 @@
 #include "olap/utils.h"
 #include "runtime/memory/mem_tracker_limiter.h"
 #include "runtime/thread_context.h"
+#include "runtime/workload_group/workload_group.h"
 #include "util/time.h"
 #include "util/trace.h"
 
@@ -71,6 +74,52 @@ using std::vector;
 
 namespace doris {
 using namespace ErrorCode;
+
+std::weak_ptr<WorkloadGroup> Compaction::compaction_workload_group() {
+    static std::shared_ptr<WorkloadGroup> compaction_wg;
+    static std::mutex wg_mu;
+    static std::atomic<int64_t> last_read_bytes_per_second {std::numeric_limits<int64_t>::min()};
+
+    const int64_t cur_limit = config::compaction_read_bytes_per_second;
+    std::lock_guard<std::mutex> l(wg_mu);
+
+    // Protect fast path with wg_mu to avoid data race on compaction_wg.
+    if (compaction_wg && last_read_bytes_per_second.load(std::memory_order_relaxed) == cur_limit) {
+        return compaction_wg;
+    }
+
+    if (!compaction_wg) {
+        WorkloadGroupInfo wg_info;
+        wg_info.id = std::numeric_limits<uint64_t>::max();
+        wg_info.name = "__compaction_wg";
+        wg_info.cpu_share = 0;
+        wg_info.memory_limit = 0;
+        wg_info.enable_memory_overcommit = true;
+        wg_info.version = 1;
+        wg_info.cpu_hard_limit = -1;
+        // These fields are not used by compaction, but need a valid initialization.
+        wg_info.scan_thread_num = config::doris_scanner_thread_pool_thread_num;
+        wg_info.max_remote_scan_thread_num = 0;
+        wg_info.min_remote_scan_thread_num = config::doris_scanner_min_thread_pool_thread_num;
+        wg_info.spill_low_watermark = 50;
+        wg_info.spill_high_watermark = 80;
+        wg_info.read_bytes_per_second = -1;
+        wg_info.remote_read_bytes_per_second = -1;
+
+        compaction_wg = std::make_shared<WorkloadGroup>(wg_info, false);
+    }
+
+    // Update IO throttle if config changed (or first time).
+    if (last_read_bytes_per_second.load(std::memory_order_relaxed) != cur_limit) {
+        WorkloadGroupInfo wg_info;
+        wg_info.read_bytes_per_second = (cur_limit > 0) ? static_cast<int>(cur_limit) : -1;
+        wg_info.remote_read_bytes_per_second = (cur_limit > 0) ? static_cast<int>(cur_limit) : -1;
+        compaction_wg->upsert_scan_io_throttle(&wg_info);
+        last_read_bytes_per_second.store(cur_limit, std::memory_order_relaxed);
+    }
+
+    return compaction_wg;
+}
 
 Compaction::Compaction(const TabletSharedPtr& tablet, const std::string& label)
         : _tablet(tablet),

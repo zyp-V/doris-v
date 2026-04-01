@@ -17,6 +17,7 @@
 
 #include "http/http_client.h"
 
+#include <algorithm>
 #include <glog/logging.h>
 #include <unistd.h>
 
@@ -28,6 +29,9 @@
 #include "http/http_headers.h"
 #include "http/http_status.h"
 #include "runtime/exec_env.h"
+#include "runtime/workload_management/io_throttle.h"
+#include "runtime/thread_context.h"
+#include "runtime/workload_group/workload_group.h"
 #include "util/security.h"
 #include "util/stack_util.h"
 
@@ -385,7 +389,24 @@ void HttpClient::set_method(HttpMethod method) {
 }
 
 void HttpClient::set_speed_limit() {
-    curl_easy_setopt(_curl, CURLOPT_LOW_SPEED_LIMIT, config::download_low_speed_limit_kbps * 1024);
+    int64_t low_speed_limit_bps = config::download_low_speed_limit_kbps * 1024L;
+    const int64_t max_recv_speed_bps = config::max_download_speed_kbps * 1024L;
+    if (max_recv_speed_bps > 0) {
+        low_speed_limit_bps = std::min(low_speed_limit_bps, max_recv_speed_bps);
+    }
+
+    // If current request is intentionally throttled by workload-group remote scan IO,
+    // avoid treating the throttled speed as "too slow".
+    auto* t_ctx = doris::thread_context(true);
+    auto wg = t_ctx != nullptr ? t_ctx->workload_group().lock() : nullptr;
+    const int64_t wg_remote_bps = wg != nullptr ? wg->remote_scan_bytes_per_second() : -1;
+    if (config::enable_single_replica_compaction_http_download_throttle && wg != nullptr && wg_remote_bps > 0) {
+        // Leave headroom to avoid false positives due to jitter.
+        low_speed_limit_bps =
+                std::min(low_speed_limit_bps, std::max<int64_t>(1, wg_remote_bps * 8 / 10));
+    }
+
+    curl_easy_setopt(_curl, CURLOPT_LOW_SPEED_LIMIT, low_speed_limit_bps);
     curl_easy_setopt(_curl, CURLOPT_LOW_SPEED_TIME, config::download_low_speed_time);
     curl_easy_setopt(_curl, CURLOPT_MAX_RECV_SPEED_LARGE, config::max_download_speed_kbps * 1024);
 }
@@ -485,6 +506,10 @@ Status HttpClient::download(const std::string& local_path) {
     }
     Status status;
     auto callback = [&status, &fp, &local_path](const void* data, size_t length) {
+        if (config::enable_single_replica_compaction_http_download_throttle) {
+            int64_t io_bytes = length;
+            LIMIT_REMOTE_SCAN_IO(&io_bytes);
+        }
         auto res = fwrite(data, length, 1, fp.get());
         if (res != 1) {
             LOG(WARNING) << "fail to write data to file, file=" << local_path
