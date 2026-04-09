@@ -101,8 +101,11 @@ Status SingleReplicaCompaction::execute_compact_impl() {
 
 Status SingleReplicaCompaction::_do_single_replica_compaction() {
     _tablet->data_dir()->disks_compaction_num_increment(1);
+    // metrics are not decremented when compaction throws exception
+    DEFER({
+        _tablet->data_dir()->disks_compaction_num_increment(-1);
+    });
     Status st = _do_single_replica_compaction_impl();
-    _tablet->data_dir()->disks_compaction_num_increment(-1);
 
     return st;
 }

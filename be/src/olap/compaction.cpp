@@ -186,9 +186,12 @@ Status Compaction::do_compaction(int64_t permits) {
 
     _tablet->data_dir()->disks_compaction_score_increment(permits);
     _tablet->data_dir()->disks_compaction_num_increment(1);
+    // metrics are not decremented when compaction throws exception
+    DEFER({
+        _tablet->data_dir()->disks_compaction_score_increment(-permits);
+        _tablet->data_dir()->disks_compaction_num_increment(-1);
+    });
     Status st = do_compaction_impl(permits);
-    _tablet->data_dir()->disks_compaction_score_increment(-permits);
-    _tablet->data_dir()->disks_compaction_num_increment(-1);
 
     if (config::enable_compaction_checksum) {
         EngineChecksumTask checksum_task(_tablet->tablet_id(), _tablet->schema_hash(),
