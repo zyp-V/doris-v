@@ -34,6 +34,7 @@ import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.metric.FingerprintMetric;
 import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mysql.MysqlCommand;
+import org.apache.doris.nereids.NereidsPlanner;
 import org.apache.doris.nereids.analyzer.UnboundOneRowRelation;
 import org.apache.doris.nereids.analyzer.UnboundTableSink;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
@@ -45,6 +46,7 @@ import org.apache.doris.nereids.trees.plans.commands.insert.InsertOverwriteTable
 import org.apache.doris.nereids.trees.plans.logical.LogicalInlineTable;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalUnion;
+import org.apache.doris.planner.OlapScanNode;
 import org.apache.doris.plugin.AuditEvent;
 import org.apache.doris.plugin.AuditEvent.AuditEventBuilder;
 import org.apache.doris.plugin.AuditEvent.EventType;
@@ -62,6 +64,7 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class AuditLogHelper {
 
@@ -263,6 +266,19 @@ public class AuditLogHelper {
                 auditEventBuilder.setFingerprint(sqlDigest);
                 auditEventBuilder.setIsInsert(isInsert);
             }
+        }
+
+        if (ctx.getExecutor() != null && ctx.getExecutor().planner() != null
+                && ctx.getExecutor().planner() instanceof NereidsPlanner
+                && !ctx.getSessionVariable().internalSession) {
+            NereidsPlanner nereidsPlanner = (NereidsPlanner) ctx.getExecutor().planner();
+            String tables = "[" + nereidsPlanner.getScanNodes().stream()
+                    .filter(s -> s instanceof OlapScanNode)
+                    .map(s -> ((OlapScanNode) s).getOlapTable().getQualifiedName())
+                    .distinct()
+                    .sorted()
+                    .collect(Collectors.joining(",")) + "]";
+            auditEventBuilder.setQueriedTablesAndViews(tables);
         }
 
         if (ctx.getState().isQuery()) {

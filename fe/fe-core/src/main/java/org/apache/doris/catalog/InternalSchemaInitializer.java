@@ -17,6 +17,7 @@
 
 package org.apache.doris.catalog;
 
+import org.apache.doris.analysis.AddColumnClause;
 import org.apache.doris.analysis.AlterClause;
 import org.apache.doris.analysis.AlterTableStmt;
 import org.apache.doris.analysis.ColumnDef;
@@ -31,6 +32,7 @@ import org.apache.doris.analysis.ModifyColumnClause;
 import org.apache.doris.analysis.ModifyPartitionClause;
 import org.apache.doris.analysis.PartitionDesc;
 import org.apache.doris.analysis.RangePartitionDesc;
+import org.apache.doris.analysis.ReorderColumnsClause;
 import org.apache.doris.analysis.TableName;
 import org.apache.doris.analysis.TypeDef;
 import org.apache.doris.common.AnalysisException;
@@ -56,6 +58,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 
 public class InternalSchemaInitializer extends Thread {
@@ -366,26 +369,66 @@ public class InternalSchemaInitializer extends Thread {
         }
 
         // 3. check audit table
-        optionalStatsTbl = db.getTable(AuditLoader.AUDIT_LOG_TABLE);
-        if (!optionalStatsTbl.isPresent()) {
+        Optional<Table> optionalAuditTable = db.getTable(AuditLoader.AUDIT_LOG_TABLE);
+        if (!optionalAuditTable.isPresent()) {
             return false;
         }
-        Table auditTbl = optionalStatsTbl.get();
-        Optional<Column> optionalProfileColumn =
-                auditTbl.fullSchema.stream().filter(c -> c.getName().equals("profile")).findFirst();
-        if (!optionalProfileColumn.isPresent()) {
-            // the audit_log table is old format, so drop old one
-            try {
-                LOG.info("start to drop old audit_log table");
-                Env.getCurrentEnv().getInternalCatalog()
-                        .dropTable(new DropTableStmt(true, new TableName(null,
-                                StatisticConstants.DB_NAME, AuditLoader.AUDIT_LOG_TABLE), true));
-                LOG.info("old audit_log table dropped");
-            } catch (Exception e) {
-                LOG.warn("Failed to drop outdated audit_log table", e);
+
+        // 4. check and update audit table schema
+        OlapTable auditTable = (OlapTable) optionalAuditTable.get();
+        List<ColumnDef> expectedSchema = InternalSchema.AUDIT_SCHEMA;
+        List<String> expectedColumnNames = expectedSchema.stream()
+                .map(ColumnDef::getName)
+                .map(String::toLowerCase)
+                .collect(Collectors.toList());
+        List<Column> currentColumns = auditTable.getBaseSchema();
+        List<String> currentColumnNames = currentColumns.stream()
+                .map(Column::getName)
+                .map(String::toLowerCase)
+                .collect(Collectors.toList());
+        // check if all expected columns are exists and in the right order
+        if (currentColumnNames.size() >= expectedColumnNames.size()
+                && expectedColumnNames.equals(currentColumnNames.subList(0, expectedColumnNames.size()))) {
+            return true;
+        }
+
+        List<AlterClause> alterClauses = Lists.newArrayList();
+        // add new columns
+        for (ColumnDef expected : expectedSchema) {
+            if (!currentColumnNames.contains(expected.getName().toLowerCase())) {
+                try {
+                    ColumnDef columnDef = new ColumnDef(expected.getName(), expected.getTypeDef(),
+                            expected.isAllowNull());
+                    AddColumnClause clause = new AddColumnClause(columnDef, null, null,
+                            Maps.newHashMap());
+                    clause.analyze(null);
+                    alterClauses.add(clause);
+                } catch (Exception e) {
+                    LOG.warn("Failed to create alter clause for column: {}", expected.getName(), e);
+                    return false;
+                }
             }
+        }
+
+        // reorder column op
+        List<String> removedColumnNames = Lists.newArrayList(currentColumnNames);
+        removedColumnNames.removeAll(expectedColumnNames);
+        List<String> newColumnOrders = Lists.newArrayList(expectedColumnNames);
+        newColumnOrders.addAll(removedColumnNames);
+        ReorderColumnsClause reorderColumnsClause = new ReorderColumnsClause(newColumnOrders, null, Maps.newHashMap());
+        alterClauses.add(reorderColumnsClause);
+
+        // apply schema changes
+        try {
+            TableName tableName = new TableName(InternalCatalog.INTERNAL_CATALOG_NAME,
+                    FeConstants.INTERNAL_DB_NAME, AuditLoader.AUDIT_LOG_TABLE);
+            AlterTableStmt alterStmt = new AlterTableStmt(tableName, alterClauses);
+            Env.getCurrentEnv().alterTable(alterStmt);
+        } catch (Exception e) {
+            LOG.warn("Failed to alter audit table schema", e);
             return false;
         }
+
         return true;
     }
 

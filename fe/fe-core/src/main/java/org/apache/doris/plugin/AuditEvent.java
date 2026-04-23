@@ -142,6 +142,10 @@ public class AuditEvent {
     @JsonProperty("min_max_partition_names")
     @AuditField(value = "MinMaxPartitionNames")
     public String minMaxPartitionNames = "";
+    // currently only scan olap tables, use the name to be consistent with community
+    @JsonProperty("queriedTablesAndViews")
+    @AuditField(value = "queriedTablesAndViews")
+    public String queriedTablesAndViews = "";
 
     public long pushToAuditLogQueueTime;
 
@@ -323,6 +327,11 @@ public class AuditEvent {
 
         public AuditEventBuilder setMinMaxPartitionNames(String minMaxPartitionNames) {
             auditEvent.minMaxPartitionNames = minMaxPartitionNames;
+            return this;
+        }
+
+        public AuditEventBuilder setQueriedTablesAndViews(String queriedTablesAndViews) {
+            auditEvent.queriedTablesAndViews = queriedTablesAndViews;
             return this;
         }
 

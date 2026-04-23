@@ -172,7 +172,8 @@ public class AuditLoader extends Plugin implements AuditPlugin {
         logBuffer.append(event.shuffleSendBytes).append("|*$&$*|");
         logBuffer.append(event.shuffleSendRows).append("|*$&$*|");
         logBuffer.append(event.logId).append("|*$&$*|");
-        logBuffer.append(event.profile).append("~*$&$*~");
+        logBuffer.append(event.profile).append("|*$&$*|");
+        logBuffer.append(event.queriedTablesAndViews).append("~*$&$*~");
     }
 
     // public for external call.
