@@ -101,7 +101,7 @@ public class InternalSchema {
         AUDIT_SCHEMA.add(new ColumnDef("shuffle_send_rows", TypeDef.create(PrimitiveType.BIGINT), true));
         AUDIT_SCHEMA.add(new ColumnDef("log_id", TypeDef.create(PrimitiveType.STRING), true));
         AUDIT_SCHEMA.add(new ColumnDef("profile", TypeDef.create(PrimitiveType.STRING), true));
-        AUDIT_SCHEMA.add(new ColumnDef("queriedTablesAndViews", TypeDef.create(PrimitiveType.STRING), true));
+        AUDIT_SCHEMA.add(new ColumnDef("queried_tables_and_views", TypeDef.create(PrimitiveType.STRING), true));
     }
 
     // Get copied schema for statistic table
