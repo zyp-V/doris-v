@@ -29,4 +29,5 @@ shuffle_send_bytes	bigint	Yes	false	\N	NONE
 shuffle_send_rows	bigint	Yes	false	\N	NONE
 log_id	text	Yes	false	\N	NONE
 profile	text	Yes	false	\N	NONE
+queried_tables_and_views	text	Yes	false	\N	NONE
 
