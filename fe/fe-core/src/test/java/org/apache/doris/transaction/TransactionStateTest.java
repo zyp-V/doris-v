@@ -25,6 +25,7 @@ import org.apache.doris.transaction.TransactionState.TxnCoordinator;
 import org.apache.doris.transaction.TransactionState.TxnSourceType;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
@@ -35,6 +36,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Map;
 import java.util.UUID;
 
 public class TransactionStateTest {
@@ -49,33 +51,75 @@ public class TransactionStateTest {
 
     @Test
     public void testSerDe() throws IOException {
+        setMetaVersion(FeMetaVersion.VERSION_CURRENT);
+
+        TransactionState transactionState = newTransactionState();
+        Map<String, String> txnExtraInfo = Maps.newHashMap();
+        txnExtraInfo.put("k1", "v1");
+        txnExtraInfo.put("k2", "v2");
+        transactionState.setTxnExtraInfo(txnExtraInfo);
+
+        writeTransactionState(transactionState);
+        TransactionState readTransactionState = readTransactionState();
+
+        Assert.assertEquals(transactionState.getCoordinator().ip, readTransactionState.getCoordinator().ip);
+        Assert.assertEquals(txnExtraInfo, readTransactionState.getTxnExtraInfo());
+    }
+
+    @Test
+    public void testTxnExtraInfoDefaultEmpty() {
+        TransactionState transactionState = new TransactionState();
+        Assert.assertNotNull(transactionState.getTxnExtraInfo());
+        Assert.assertTrue(transactionState.getTxnExtraInfo().isEmpty());
+    }
+
+    @Test
+    public void testSerDeWithOldMetaVersion() throws IOException {
+        setMetaVersion(FeMetaVersion.VERSION_129);
+
+        TransactionState transactionState = newTransactionState();
+        Map<String, String> txnExtraInfo = Maps.newHashMap();
+        txnExtraInfo.put("k1", "v1");
+        transactionState.setTxnExtraInfo(txnExtraInfo);
+
+        writeTransactionState(transactionState);
+        TransactionState readTransactionState = readTransactionState();
+
+        Assert.assertEquals(transactionState.getCoordinator().ip, readTransactionState.getCoordinator().ip);
+        Assert.assertTrue(readTransactionState.getTxnExtraInfo().isEmpty());
+    }
+
+    private void setMetaVersion(int version) {
         MetaContext metaContext = new MetaContext();
-        metaContext.setMetaVersion(FeMetaVersion.VERSION_CURRENT);
+        metaContext.setMetaVersion(version);
         metaContext.setThreadLocalInfo();
+    }
 
-        // 1. Write objects to file
-        File file = new File(fileName);
-        file.createNewFile();
-        DataOutputStream out = new DataOutputStream(new FileOutputStream(file));
-
+    private TransactionState newTransactionState() {
         UUID uuid = UUID.randomUUID();
-        TransactionState transactionState = new TransactionState(1000L, Lists.newArrayList(20000L, 20001L),
+        return new TransactionState(1000L, Lists.newArrayList(20000L, 20001L),
                 3000, "label123", new TUniqueId(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits()),
                 LoadJobSourceType.BACKEND_STREAMING,
                 new TxnCoordinator(TxnSourceType.BE, 0, "127.0.0.1", System.currentTimeMillis()),
                 50000L, 60 * 1000L);
+    }
 
-        transactionState.write(out);
-        out.flush();
-        out.close();
+    private void writeTransactionState(TransactionState transactionState) throws IOException {
+        File file = new File(fileName);
+        file.createNewFile();
+        try (DataOutputStream out = new DataOutputStream(new FileOutputStream(file))) {
+            transactionState.write(out);
+            out.flush();
+        }
+    }
 
-        // 2. Read objects from file
-        DataInputStream in = new DataInputStream(new FileInputStream(file));
-        TransactionState readTransactionState = new TransactionState();
-        readTransactionState.readFields(in);
-
-        Assert.assertEquals(transactionState.getCoordinator().ip, readTransactionState.getCoordinator().ip);
-        in.close();
+    private TransactionState readTransactionState() throws IOException {
+        File file = new File(fileName);
+        try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
+            TransactionState readTransactionState = new TransactionState();
+            readTransactionState.readFields(in);
+            return readTransactionState;
+        }
     }
 
 }

@@ -37,6 +37,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.gson.annotations.SerializedName;
+import com.google.gson.reflect.TypeToken;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
@@ -46,6 +47,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -57,6 +59,8 @@ import java.util.concurrent.TimeUnit;
 
 public class TransactionState implements Writable {
     private static final Logger LOG = LogManager.getLogger(TransactionState.class);
+    private static final Type TXN_EXTRA_INFO_TYPE = new TypeToken<Map<String, String>>() {
+    }.getType();
 
     // compare the TransactionState by txn id, desc
     public static class TxnStateComparator implements Comparator<TransactionState> {
@@ -276,6 +280,8 @@ public class TransactionState implements Writable {
     // tbl id -> (index ids)
     @SerializedName(value = "loadedTblIndexes")
     private Map<Long, Set<Long>> loadedTblIndexes = Maps.newHashMap();
+    @SerializedName(value = "txnExtraInfo")
+    private Map<String, String> txnExtraInfo = Maps.newHashMap();
 
     /**
      * the value is the num delta rows of all replicas in each table
@@ -639,6 +645,17 @@ public class TransactionState implements Writable {
         return loadedTblIndexes;
     }
 
+    public Map<String, String> getTxnExtraInfo() {
+        if (txnExtraInfo == null) {
+            txnExtraInfo = Maps.newHashMap();
+        }
+        return txnExtraInfo;
+    }
+
+    public void setTxnExtraInfo(Map<String, String> txnExtraInfo) {
+        this.txnExtraInfo = txnExtraInfo == null ? Maps.newHashMap() : txnExtraInfo;
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder("TransactionState. ");
@@ -722,6 +739,9 @@ public class TransactionState implements Writable {
         for (Long aLong : tableIdList) {
             out.writeLong(aLong);
         }
+        if (Env.getCurrentEnvJournalVersion() >= FeMetaVersion.VERSION_130) {
+            Text.writeString(out, GsonUtils.GSON.toJson(getTxnExtraInfo()));
+        }
     }
 
     public void readFields(DataInput in) throws IOException {
@@ -757,6 +777,13 @@ public class TransactionState implements Writable {
         int tableListSize = in.readInt();
         for (int i = 0; i < tableListSize; i++) {
             tableIdList.add(in.readLong());
+        }
+        if (Env.getCurrentEnvJournalVersion() >= FeMetaVersion.VERSION_130) {
+            Map<String, String> readTxnExtraInfo =
+                    GsonUtils.GSON.fromJson(Text.readString(in), TXN_EXTRA_INFO_TYPE);
+            txnExtraInfo = readTxnExtraInfo == null ? Maps.newHashMap() : readTxnExtraInfo;
+        } else {
+            txnExtraInfo = Maps.newHashMap();
         }
     }
 
