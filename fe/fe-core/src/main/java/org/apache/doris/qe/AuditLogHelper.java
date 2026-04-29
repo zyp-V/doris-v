@@ -327,7 +327,7 @@ public class AuditLogHelper {
             auditEventBuilder.setStmt(origStmt);
         }
         if (!Env.getCurrentEnv().isMaster()) {
-            if (ctx.executor != null && ctx.executor.isForwardToMaster()) {
+            if (ctx.executor != null && ctx.executor.hasForwardedToMaster()) {
                 auditEventBuilder.setState(ctx.executor.getProxyStatus());
                 int proxyStatusCode = ctx.executor.getProxyStatusCode();
                 if (proxyStatusCode != 0) {
