@@ -45,12 +45,21 @@ public class BackendServiceClient {
 
     public BackendServiceClient(TNetworkAddress address, Executor executor) {
         this.address = address;
-        channel = NettyChannelBuilder.forAddress(address.getHostname(), address.getPort())
-                .executor(executor).keepAliveTime(Config.grpc_keep_alive_second, TimeUnit.SECONDS)
+        NettyChannelBuilder channelBuilder = NettyChannelBuilder.forAddress(address.getHostname(), address.getPort())
+                .keepAliveTime(Config.grpc_keep_alive_second, TimeUnit.SECONDS)
                 .flowControlWindow(Config.grpc_max_message_size_bytes)
                 .keepAliveWithoutCalls(true)
-                .maxInboundMessageSize(Config.grpc_max_message_size_bytes).enableRetry().maxRetryAttempts(MAX_RETRY_NUM)
-                .usePlaintext().build();
+                .maxInboundMessageSize(Config.grpc_max_message_size_bytes)
+                .enableRetry().maxRetryAttempts(MAX_RETRY_NUM)
+                .usePlaintext();
+
+        if (Config.grpc_backend_client_use_direct_executor) {
+            channelBuilder.directExecutor();
+        } else {
+            channelBuilder.executor(executor);
+        }
+
+        channel = channelBuilder.build();
         stub = PBackendServiceGrpc.newFutureStub(channel);
         blockingStub = PBackendServiceGrpc.newBlockingStub(channel);
         // execPlanTimeout should be greater than future.get timeout, otherwise future will throw ExecutionException

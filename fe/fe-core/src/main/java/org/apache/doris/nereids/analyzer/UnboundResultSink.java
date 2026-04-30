@@ -28,6 +28,7 @@ import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.algebra.Sink;
 import org.apache.doris.nereids.trees.plans.logical.LogicalSink;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
+import org.apache.doris.nereids.util.LazyCompute;
 import org.apache.doris.nereids.util.Utils;
 
 import com.google.common.base.Preconditions;
@@ -35,12 +36,14 @@ import com.google.common.collect.ImmutableList;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * unbound result sink
  */
 public class UnboundResultSink<CHILD_TYPE extends Plan> extends LogicalSink<CHILD_TYPE>
         implements Unbound, Sink, BlockFuncDepsPropagation {
+    private Supplier<String> digest = LazyCompute.of(() -> child().toDigest());
 
     public UnboundResultSink(CHILD_TYPE child) {
         super(PlanType.LOGICAL_UNBOUND_RESULT_SINK, ImmutableList.of(), child);
@@ -91,6 +94,6 @@ public class UnboundResultSink<CHILD_TYPE extends Plan> extends LogicalSink<CHIL
 
     @Override
     public String toDigest() {
-        return child().toDigest();
+        return digest.get();
     }
 }

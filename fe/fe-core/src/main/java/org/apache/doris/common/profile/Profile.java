@@ -66,7 +66,7 @@ public class Profile {
     public Profile(String name, boolean isEnable, int profileLevel, boolean isPipelineX) {
         this.name = name;
         this.isPipelineX = isPipelineX;
-        this.summaryProfile = new SummaryProfile();
+        this.summaryProfile = new SummaryProfile(isEnable);
         // if disabled, just set isFinished to true, so that update() will do nothing
         this.isFinished = !isEnable;
         this.profileLevel = profileLevel;

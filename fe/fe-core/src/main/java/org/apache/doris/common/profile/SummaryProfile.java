@@ -264,9 +264,15 @@ public class SummaryProfile {
     private Map<TNetworkAddress, List<Long>> rpcPhase2Latency;
 
     public SummaryProfile() {
+        this(true);
+    }
+
+    public SummaryProfile(boolean isEnable) {
         summaryProfile = new RuntimeProfile(SUMMARY_PROFILE_NAME);
         executionSummaryProfile = new RuntimeProfile(EXECUTION_SUMMARY_PROFILE_NAME);
-        init();
+        if (isEnable) {
+            init();
+        }
     }
 
     public String getProfileId() {
