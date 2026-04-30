@@ -772,8 +772,11 @@ public class StmtExecutor {
         context.setQueryId(queryId);
         context.setStartTime();
         profile.getSummaryProfile().setQueryBeginTime();
-        List<List<String>> changedSessionVar = VariableMgr.dumpChangedVars(context.getSessionVariable());
-        profile.setChangedSessionVar(DebugUtil.prettyPrintChangedSessionVar(changedSessionVar));
+        // short circuit query should not dump changed session var since it will impact the performance.
+        if (context.getSessionVariable().enableProfile && !statementContext.isShortCircuitQuery()) {
+            List<List<String>> changedSessionVar = VariableMgr.dumpChangedVars(context.getSessionVariable());
+            profile.setChangedSessionVar(DebugUtil.prettyPrintChangedSessionVar(changedSessionVar));
+        }
         context.setStmtId(STMT_ID_GENERATOR.incrementAndGet());
 
         parseByNereids();
@@ -1256,6 +1259,11 @@ public class StmtExecutor {
 
     public void updateProfile(boolean isFinished) {
         if (!context.getSessionVariable().enableProfile()) {
+            return;
+        }
+        // If the query is short circuit, we should not update the profile,
+        // which will impact the performance of the short circuit query.
+        if (statementContext.isShortCircuitQuery()) {
             return;
         }
         // If any error happened in update profile, we should ignore this error
