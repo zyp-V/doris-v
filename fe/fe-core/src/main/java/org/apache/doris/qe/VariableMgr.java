@@ -157,7 +157,7 @@ public class VariableMgr {
     }
 
     private static boolean isLegacySessionVariable(String name) {
-        if (bytedanceLegacyNames.contains(name)) {
+        if (bytedanceLegacyNames.contains(StringUtils.lowerCase(name))) {
             LOG.warn("receive legacy variable: {}", name);
             return true;
         }

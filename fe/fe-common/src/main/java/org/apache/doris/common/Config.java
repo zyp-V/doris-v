@@ -1912,6 +1912,9 @@ public class Config extends ConfigBase {
     @ConfField
     public static int async_task_consumer_thread_num = 64;
 
+    @ConfField(mutable = true)
+    public static boolean enable_convert_execute_group = false;
+
     /**
      * When job is finished, it will be saved in job manager for a while.
      * This configuration is used to control the max saved time.

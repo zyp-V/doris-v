@@ -165,6 +165,26 @@ public class VariableMgrTest {
     }
 
     @Test
+    public void testExecuteGroupConvertToLowerCaseWorkloadGroup() throws Exception {
+        boolean origin = Config.enable_convert_execute_group;
+        try {
+            Config.enable_convert_execute_group = true;
+            SetStmt stmt = (SetStmt) UtFrameUtils.parseAndAnalyzeStmt("set execute_group='LOW'", ctx);
+            SetExecutor executor = new SetExecutor(ctx, stmt);
+            executor.execute();
+            Assert.assertEquals("low", ctx.getSessionVariable().getWorkloadGroup());
+
+            Config.enable_convert_execute_group = false;
+            stmt = (SetStmt) UtFrameUtils.parseAndAnalyzeStmt("set execute_group='HIGH'", ctx);
+            executor = new SetExecutor(ctx, stmt);
+            executor.execute();
+            Assert.assertNotEquals("high", ctx.getSessionVariable().getWorkloadGroup());
+        } finally {
+            Config.enable_convert_execute_group = origin;
+        }
+    }
+
+    @Test
     public void testGlobalVariablePersist() throws Exception {
         Config.edit_log_roll_num = 1;
         SetStmt stmt = (SetStmt) UtFrameUtils.parseAndAnalyzeStmt("set global exec_mem_limit=5678", ctx);

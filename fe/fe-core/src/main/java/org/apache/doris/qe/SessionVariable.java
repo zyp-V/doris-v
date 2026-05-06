@@ -93,6 +93,7 @@ public class SessionVariable implements Serializable, Writable {
     public static final String AUTO_PROFILE_THRESHOLD_MS = "auto_profile_threshold_ms";
     public static final String SQL_MODE = "sql_mode";
     public static final String WORKLOAD_VARIABLE = "workload_group";
+    public static final String EXECUTE_VARIABLE = "execute_group";
     public static final String RESOURCE_VARIABLE = "resource_group";
     public static final String AUTO_COMMIT = "autocommit";
     public static final String TX_ISOLATION = "tx_isolation";
@@ -815,6 +816,10 @@ public class SessionVariable implements Serializable, Writable {
 
     @VariableMgr.VarAttr(name = WORKLOAD_VARIABLE, needForward = true)
     public String workloadGroup = "";
+
+
+    @VariableMgr.VarAttr(name = EXECUTE_VARIABLE, needForward = true, setter = "setExecutedGroup")
+    public String executeGroup = "";
 
     @VariableMgr.VarAttr(name = BYPASS_WORKLOAD_GROUP, needForward = true, description = {
             "查询是否绕开WorkloadGroup的限制，目前仅支持绕开查询排队的逻辑",
@@ -2888,6 +2893,13 @@ public class SessionVariable implements Serializable, Writable {
 
     public void setWorkloadGroup(String workloadGroup) {
         this.workloadGroup = workloadGroup;
+    }
+
+    public void setExecutedGroup(String executeGroup) {
+        this.executeGroup = executeGroup;
+        if (Config.enable_convert_execute_group) {
+            setWorkloadGroup(StringUtils.lowerCase(executeGroup));
+        }
     }
 
     public boolean getBypassWorkloadGroup() {
