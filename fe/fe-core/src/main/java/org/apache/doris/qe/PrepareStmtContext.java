@@ -34,6 +34,7 @@ public class PrepareStmtContext {
 
     // Timestamp in millisecond last command starts at
     protected volatile long startTime;
+    public String fingerprint = null;
 
     public PrepareStmtContext(StatementBase stmt, ConnectContext ctx, Planner planner,
                                     Analyzer analyzer, String stmtString) {

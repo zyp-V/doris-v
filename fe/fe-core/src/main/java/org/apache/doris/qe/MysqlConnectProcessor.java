@@ -166,8 +166,22 @@ public class MysqlConnectProcessor extends ConnectProcessor {
             ctx.getState().setError(ErrorCode.ERR_UNKNOWN_ERROR,
                     e.getClass().getSimpleName() + ", msg: " + e.getMessage());
         }
-        auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
-                executor.getLogId());
+        if (ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
+            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                    executor.getLogId());
+        } else {
+            String fingerprint = null;
+            PrepareStmtContext preparedStmtContext = ConnectContext.get().getPreparedStmt(String.valueOf(stmtId));
+            if (preparedStmtContext != null) {
+                fingerprint = preparedStmtContext.fingerprint;
+                if (fingerprint == null) {
+                    fingerprint = AuditLogHelper.getFingerprint(executor.getParsedStmt());
+                    preparedStmtContext.fingerprint = fingerprint;
+                }
+            }
+            // When audit log is disabled for prepared statements, still update QPS metrics.
+            AuditLogHelper.updateMetrics(ctx, fingerprint);
+        }
     }
 
     private String getHexStr(ByteBuffer packetBuf) {
@@ -256,8 +270,18 @@ public class MysqlConnectProcessor extends ConnectProcessor {
             ctx.getState().setError(ErrorCode.ERR_UNKNOWN_ERROR,
                     e.getClass().getSimpleName() + ", msg: " + e.getMessage());
         }
-        auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
-                executor.getLogId());
+        if (ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
+            auditAfterExec(stmtStr, executor.getParsedStmt(), executor.getQueryStatisticsForAuditLog(), true,
+                    executor.getLogId());
+        } else {
+            String fingerprint = prepCtx.fingerprint;
+            if (fingerprint == null) {
+                fingerprint = AuditLogHelper.getFingerprint(executor.getParsedStmt());
+                prepCtx.fingerprint = fingerprint;
+            }
+            // When audit log is disabled for prepared statements, still update QPS metrics.
+            AuditLogHelper.updateMetrics(ctx, fingerprint);
+        }
     }
 
     // process COM_EXECUTE, parse binary row data

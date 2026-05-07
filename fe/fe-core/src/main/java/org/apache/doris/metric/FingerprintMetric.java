@@ -73,18 +73,18 @@ public class FingerprintMetric {
         MetricRepo.addFingerprintQueryLatency(shortFingerprint, auditEvent.queryTime);
     }
 
-    public static void reportExecuteCommandFingerprint(AuditEvent auditEvent) {
-        if (auditEvent.fingerprint == null || auditEvent.fingerprint.isEmpty() || !MetricRepo.isInit) {
+    public static void reportExecuteCommandFingerprint(String fingerprint, long elapseMs) {
+        if (fingerprint == null || fingerprint.isEmpty()) {
             return;
         }
-        String shortFingerprint = auditEvent.fingerprint.substring(0, 12);
+        String shortFingerprint = fingerprint.substring(0, 12);
         // even though histogram metric has counter-metric
         // But it cannot be queried may be related to bytedance metrics service, so we still add a counter-metric
         String countMetricName = "_execute_cmd_count";
         MetricRepo.addFingerprint(shortFingerprint, shortFingerprint + countMetricName, 1L,
                 "fingerprint" + countMetricName, Metric.MetricUnit.REQUESTS,
                 "execute cmd count for every fingerprint");
-        MetricRepo.addExecuteCommandFingerprintQueryLatency(shortFingerprint, auditEvent.queryTime);
+        MetricRepo.addExecuteCommandFingerprintQueryLatency(shortFingerprint, elapseMs);
     }
 
     public static void cleanUp() {

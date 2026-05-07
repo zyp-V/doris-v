@@ -69,6 +69,7 @@ import java.util.stream.Collectors;
 public class AuditLogHelper {
 
     private static final Logger LOG = LogManager.getLogger(AuditLogHelper.class);
+    private static final String EMPTY_FINGERPRINT = DigestUtils.md5Hex("");
 
     /**
      * Add a new method to wrap original logAuditLog to catch all exceptions. Because write audit
@@ -240,6 +241,7 @@ public class AuditLogHelper {
             }
         }
 
+        String fingerprint = null;
         if (Config.enable_fingerprint_metrics) {
             // compatible with old parser
             boolean isQuery = parsedStmt instanceof Queriable;
@@ -262,8 +264,8 @@ public class AuditLogHelper {
                 } else {
                     // do not compatible with old insert stmt
                 }
-                String sqlDigest = DigestUtils.md5Hex(digest);
-                auditEventBuilder.setFingerprint(sqlDigest);
+                fingerprint = DigestUtils.md5Hex(digest);
+                auditEventBuilder.setFingerprint(fingerprint);
                 auditEventBuilder.setIsInsert(isInsert);
             }
         }
@@ -282,24 +284,9 @@ public class AuditLogHelper {
         }
 
         if (ctx.getState().isQuery()) {
-            if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
-                MetricRepo.COUNTER_QUERY_ALL.increase(1L);
-                MetricRepo.USER_COUNTER_QUERY_ALL.getOrAdd(ctx.getQualifiedUser()).increase(1L);
-            }
-            if (ctx.getState().getStateType() == MysqlStateType.ERR
-                    && ctx.getState().getErrType() != QueryState.ErrType.ANALYSIS_ERR) {
-                // err query
-                if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
-                    MetricRepo.COUNTER_QUERY_ERR.increase(1L);
-                    MetricRepo.USER_COUNTER_QUERY_ERR.getOrAdd(ctx.getQualifiedUser()).increase(1L);
-                }
-            } else if (ctx.getState().getStateType() == MysqlStateType.OK
+            updateMetricsImpl(ctx, fingerprint);
+            if (ctx.getState().getStateType() == MysqlStateType.OK
                     || ctx.getState().getStateType() == MysqlStateType.EOF) {
-                // ok query
-                if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
-                    MetricRepo.HISTO_QUERY_LATENCY.update(elapseMs);
-                }
-
                 if (elapseMs > Config.qe_slow_log_ms) {
                     String sqlDigest = DigestUtils.md5Hex(((Queriable) parsedStmt).toDigest());
                     auditEventBuilder.setSqlDigest(sqlDigest);
@@ -340,23 +327,6 @@ public class AuditLogHelper {
             auditEventBuilder.setState(String.valueOf(MysqlStateType.OK));
         }
         AuditEvent event = auditEventBuilder.build();
-        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE) {
-            if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
-                if (Config.enable_fingerprint_metrics) {
-                    // execute command use special metric registry
-                    // because if users do not use prepare/execute, the fingerprint will be the same
-                    // we should distinguish these calls
-                    FingerprintMetric.reportExecuteCommandFingerprint(event);
-                }
-                boolean ok = ((ctx.getState().getStateType() == MysqlStateType.OK)
-                        || (ctx.getState().getStateType() == MysqlStateType.EOF));
-                if (ok) {
-                    MetricRepo.EXECUTE_CMD_REQUEST_OK.increase(1L);
-                } else {
-                    MetricRepo.EXECUTE_CMD_REQUEST_ERR.increase(1L);
-                }
-            }
-        }
         if (ctx.getCommand() == MysqlCommand.COM_STMT_PREPARE) {
             if (!ctx.getSessionVariable().internalSession && MetricRepo.isInit) {
                 boolean ok = (ctx.getState().getErrorCode() == null)
@@ -369,13 +339,84 @@ public class AuditLogHelper {
                 }
             }
         }
-        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE
-                && !ctx.getSessionVariable().isEnablePreparedStmtAuditLog()) {
-            return;
-        }
         Env.getCurrentEnv().getWorkloadRuntimeStatusMgr().submitFinishQueryToAudit(event);
         if (LOG.isDebugEnabled()) {
             LOG.debug("submit audit event: {}", event.queryId);
+        }
+    }
+
+    public static String getFingerprint(StatementBase parsedStmt) {
+        if (Config.enable_fingerprint_metrics) {
+            String digest = null;
+            if (parsedStmt instanceof LogicalPlanAdapter) {
+                digest = ((LogicalPlanAdapter) parsedStmt).toDigest();
+            } else if (parsedStmt instanceof Queriable) {
+                digest = ((Queriable) parsedStmt).toDigest();
+            } else {
+                // do not compatible with old insert stmt
+                return EMPTY_FINGERPRINT;
+            }
+            return DigestUtils.md5Hex(digest);
+        }
+        return null;
+    }
+
+    /**
+     * Update query metrics without writing audit log. This is used when
+     * enable_prepared_stmt_audit_log is disabled, to ensure QPS metrics
+     * are still counted for prepared statement executions.
+     */
+    public static void updateMetrics(ConnectContext ctx, String fingerprint) {
+        if (Config.enable_bdbje_debug_mode) {
+            return;
+        }
+        try {
+            updateMetricsImpl(ctx, fingerprint);
+        } catch (Throwable t) {
+            LOG.warn("Failed to update query metrics.", t);
+        }
+    }
+
+    private static void updateMetricsImpl(ConnectContext ctx, String fingerprint) {
+        if (!ctx.getState().isQuery()) {
+            return;
+        }
+        if (!MetricRepo.isInit) {
+            return;
+        }
+        if (ctx.getSessionVariable().internalSession) {
+            return;
+        }
+
+        long elapseMs = System.currentTimeMillis() - ctx.getStartTime();
+        MetricRepo.COUNTER_QUERY_ALL.increase(1L);
+        MetricRepo.USER_COUNTER_QUERY_ALL.getOrAdd(ctx.getQualifiedUser()).increase(1L);
+
+        if (ctx.getState().getStateType() == MysqlStateType.ERR
+                && ctx.getState().getErrType() != QueryState.ErrType.ANALYSIS_ERR) {
+            // err query
+            MetricRepo.COUNTER_QUERY_ERR.increase(1L);
+            MetricRepo.USER_COUNTER_QUERY_ERR.getOrAdd(ctx.getQualifiedUser()).increase(1L);
+        } else if (ctx.getState().getStateType() == MysqlStateType.OK
+                || ctx.getState().getStateType() == MysqlStateType.EOF) {
+            // ok query
+            MetricRepo.HISTO_QUERY_LATENCY.update(elapseMs);
+        }
+
+        if (ctx.getCommand() == MysqlCommand.COM_STMT_EXECUTE) {
+            if (Config.enable_fingerprint_metrics) {
+                // execute command use special metric registry
+                // because if users do not use prepare/execute, the fingerprint will be the same
+                // we should distinguish these calls
+                FingerprintMetric.reportExecuteCommandFingerprint(fingerprint, elapseMs);
+            }
+            boolean ok = ((ctx.getState().getStateType() == MysqlStateType.OK)
+                    || (ctx.getState().getStateType() == MysqlStateType.EOF));
+            if (ok) {
+                MetricRepo.EXECUTE_CMD_REQUEST_OK.increase(1L);
+            } else {
+                MetricRepo.EXECUTE_CMD_REQUEST_ERR.increase(1L);
+            }
         }
     }
 }
