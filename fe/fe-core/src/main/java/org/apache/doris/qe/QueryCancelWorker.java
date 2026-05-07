@@ -17,6 +17,7 @@
 
 package org.apache.doris.qe;
 
+import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Status;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.proto.Types;
@@ -37,7 +38,7 @@ public class QueryCancelWorker extends MasterDaemon {
         List<Backend> allBackends = systemInfoService.getAllBackends();
 
         for (Coordinator co : QeProcessorImpl.INSTANCE.getAllCoordinators()) {
-            Status status = co.shouldCancel(allBackends);
+            Status status = co.shouldCancel(Env.getCurrentInternalCatalog().getId(), allBackends);
             if (!status.ok()) {
                 // TODO(zhiqiang): We need more clear cancel message, so that user can figure out what happened
                 //  by searching log.

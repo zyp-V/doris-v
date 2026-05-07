@@ -38,6 +38,7 @@ import org.apache.doris.analysis.TableSnapshot;
 import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.analysis.TupleId;
 import org.apache.doris.catalog.Column;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.PartitionInfo;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.common.AnalysisException;
@@ -764,5 +765,9 @@ public abstract class ScanNode extends PlanNode implements SplitGenerator {
 
     public long getSelectedSplitNum() {
         return selectedSplitNum;
+    }
+
+    public long getCatalogId() {
+        return Env.getCurrentInternalCatalog().getId();
     }
 }

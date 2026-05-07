@@ -2151,6 +2151,15 @@ public class Config extends ConfigBase {
     @ConfField(mutable = false, masterOnly = false)
     public static long max_external_schema_cache_num = 10000;
 
+    @ConfField(description = {
+            "外部表元数据缓存对象在最后访问后过期的时间。",
+            "The expiration time of a cache object after last access of it. For external meta cache."
+    })
+    public static long external_cache_expire_time_seconds_after_access = 1; // 1s
+
+    @ConfField(mutable = true)
+    public static long remote_catalog_thrift_rpc_timeout_ms = 3000;
+
     /**
      * The expiration time of a cache object after last access of it.
      * For external schema cache and hive meta cache.

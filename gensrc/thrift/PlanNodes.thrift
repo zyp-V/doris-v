@@ -369,6 +369,15 @@ struct TTransactionalHiveDesc {
     2: optional list<TTransactionalHiveDeleteDeltaDesc> delete_deltas
 }
 
+struct TRemoteDorisFileDesc {
+    1: optional string ip
+    2: optional string arrow_port
+    3: optional binary ticket
+    4: optional string location_uri
+    5: optional string user
+    6: optional string password
+}
+
 struct TTableFormatFileDesc {
     1: optional string table_format_type
     2: optional TIcebergFileDesc iceberg_params
@@ -376,6 +385,7 @@ struct TTableFormatFileDesc {
     4: optional TPaimonFileDesc paimon_params
     5: optional TTransactionalHiveDesc transactional_hive_params
     6: optional TMaxComputeFileDesc max_compute_params
+    10: optional TRemoteDorisFileDesc remote_doris_params
 }
 
 enum TTextSerdeType {

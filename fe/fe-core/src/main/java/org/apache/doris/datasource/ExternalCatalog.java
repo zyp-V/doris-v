@@ -43,6 +43,7 @@ import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.security.authentication.PreExecutionAuthenticator;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.ExternalSchemaCache.SchemaCacheKey;
+import org.apache.doris.datasource.doris.RemoteDorisExternalDatabase;
 import org.apache.doris.datasource.es.EsExternalDatabase;
 import org.apache.doris.datasource.hive.HMSExternalCatalog;
 import org.apache.doris.datasource.hive.HMSExternalDatabase;
@@ -233,6 +234,10 @@ public abstract class ExternalCatalog
             // If not setting USE_META_CACHE in replay logic,
             // set default value to false to be compatible with older version meta data.
             catalogProperty.addProperty(USE_META_CACHE, isReplay ? "false" : String.valueOf(DEFAULT_USE_META_CACHE));
+        }
+        if (this.logType == InitCatalogLog.Type.REMOTE_DORIS) {
+            // set default value to true, no matter is replaying or not.
+            catalogProperty.addProperty(USE_META_CACHE, String.valueOf(DEFAULT_USE_META_CACHE));
         }
         useMetaCache = Optional.of(
                 Boolean.valueOf(catalogProperty.getOrDefault(USE_META_CACHE, String.valueOf(DEFAULT_USE_META_CACHE))));
@@ -933,6 +938,8 @@ public abstract class ExternalCatalog
                 return new TestExternalDatabase(this, dbId, localDbName, remoteDbName);
             case PAIMON:
                 return new PaimonExternalDatabase(this, dbId, localDbName, remoteDbName);
+            case REMOTE_DORIS:
+                return new RemoteDorisExternalDatabase(this, dbId, localDbName, remoteDbName);
             default:
                 break;
         }

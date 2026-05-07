@@ -850,10 +850,17 @@ Status FragmentMgr::_get_query_ctx(const Params& params, TUniqueId query_id, boo
 
                     // This may be a first fragment request of the query.
                     // Create the query fragments context.
+                    // Cross-cluster query: coordinator FE may not belong to local cluster.
+                    // In that case, cancel_worker() should not cancel it based on local FE liveness.
+                    QuerySource actual_query_source = query_source;
+                    if (query_source == QuerySource::INTERNAL_FRONTEND &&
+                        !_exec_env->get_running_frontends().contains(params.coord)) {
+                        actual_query_source = QuerySource::EXTERNAL_FRONTEND;
+                    }
                     query_ctx = QueryContext::create_shared(
                             query_id, params.fragment_num_on_host, _exec_env, params.query_options,
                             params.coord, pipeline, params.is_nereids, current_connect_fe_addr,
-                            query_source);
+                            actual_query_source);
                     VLOG(10) << "query_id: " << print_id(query_id)
                              << ", coord_addr: " << params.coord
                              << ", total fragment num on current host: "
@@ -1403,6 +1410,11 @@ void FragmentMgr::cancel_worker() {
                                              -> Status {
                     for (const auto& q : map) {
                         auto q_ctx = q.second;
+                        // Cross-cluster query: coordinator FE is not in local `running_fes`,
+                        // we should not cancel it based on local coordinator liveness.
+                        if (q_ctx->get_query_source() == QuerySource::EXTERNAL_FRONTEND) {
+                            continue;
+                        }
                         const int64_t fe_process_uuid = q_ctx->get_fe_process_uuid();
 
                         if (fe_process_uuid == 0) {

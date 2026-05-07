@@ -34,6 +34,7 @@ import org.apache.doris.common.Pair;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.ExternalTable;
 import org.apache.doris.datasource.ExternalView;
+import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalTable.DLAType;
 import org.apache.doris.nereids.CTEContext;
@@ -440,6 +441,10 @@ public class BindRelation extends OneAnalysisRuleFactory {
                     return new LogicalEsScan(unboundRelation.getRelationId(), table, qualifierWithoutTableName);
                 case TEST_EXTERNAL_TABLE:
                     return new LogicalTestScan(unboundRelation.getRelationId(), table, qualifierWithoutTableName);
+                case DORIS_EXTERNAL_TABLE:
+                    RemoteDorisExternalTable externalTable = (RemoteDorisExternalTable) table;
+                    OlapTable olapTable = externalTable.getOlapTable();
+                    return makeOlapScan(olapTable, unboundRelation, qualifierWithoutTableName, cascadesContext);
                 default:
                     throw new AnalysisException("Unsupported tableType " + table.getType());
             }

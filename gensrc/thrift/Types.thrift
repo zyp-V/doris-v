@@ -617,6 +617,7 @@ enum TTableType {
     JDBC_TABLE,
     TEST_EXTERNAL_TABLE,
     MAX_COMPUTE_TABLE,
+    REMOTE_DORIS_TABLE = 16,
 }
 
 enum TKeysType {

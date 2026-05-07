@@ -30,6 +30,7 @@ import org.apache.doris.persist.gson.GsonUtils;
 import org.apache.doris.qe.SimpleScheduler;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.system.HeartbeatResponse.HbStatus;
+import org.apache.doris.thrift.TBackend;
 import org.apache.doris.thrift.TDisk;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStorageMedium;
@@ -141,6 +142,9 @@ public class Backend implements Writable {
     // And once it back to alive, reset this counter.
     // No need to persist, because only master FE handle heartbeat.
     private int heartbeatFailureCounter = 0;
+
+    // is external backend
+    private boolean isVirtual = false;
 
     // Not need serialize this field. If fe restart the state is reset to false. Maybe fe will
     // send some queries to this BE, it is not an important problem.
@@ -937,6 +941,23 @@ public class Backend implements Writable {
         }
 
         return !Collections.disjoint(wgTagSet, beTagSet);
+    }
+
+    public boolean isVirtual() {
+        return isVirtual;
+    }
+
+    public static Backend fromThrift(TBackend backend) {
+        Backend result = new Backend();
+        result.id = backend.getId();
+        result.host = backend.getHost();
+        result.httpPort = backend.getHttpPort();
+        result.brpcPort = backend.getBrpcPort();
+        result.bePort = backend.getBePort();
+        result.setAlive(backend.isIsAlive());
+        // set is virtual to true
+        result.isVirtual = true;
+        return result;
     }
 
 }

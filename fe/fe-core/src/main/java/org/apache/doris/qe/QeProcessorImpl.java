@@ -219,7 +219,7 @@ public final class QeProcessorImpl implements QeProcessor {
                 writeProfileExecutor.submit(new Runnable() {
                     @Override
                     public void run() {
-                        executionProfile.updateProfile(params);
+                        executionProfile.updateProfile(params, beAddr);
                     }
                 });
             } else {

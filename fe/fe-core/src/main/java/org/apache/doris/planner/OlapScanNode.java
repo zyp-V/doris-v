@@ -752,7 +752,8 @@ public class OlapScanNode extends ScanNode {
         boolean needCheckTags = false;
         boolean skipMissingVersion = false;
         Set<Long> userSetBackendBlacklist = null;
-        if (ConnectContext.get() != null) {
+        // only check tags for internal table
+        if (ConnectContext.get() != null && olapTable.getCatalogId() == Env.getCurrentInternalCatalog().getId()) {
             if (ConnectContext.get().getGdprIdentity() == null) {
                 allowedTags = ConnectContext.get().getResourceTags();
                 needCheckTags = ConnectContext.get().isResourceTagsSet();
@@ -837,7 +838,7 @@ public class OlapScanNode extends ScanNode {
                 replicas.sort(Replica.ID_COMPARATOR);
                 Replica replica = replicas.get(useFixReplica >= replicas.size() ? replicas.size() - 1 : useFixReplica);
                 if (ConnectContext.get().getSessionVariable().fallbackOtherReplicaWhenFixedCorrupt) {
-                    Backend backend = Env.getCurrentSystemInfo().getBackend(replica.getBackendId());
+                    Backend backend = olapTable.getBackend(replica.getBackendId());
                     // If the fixed replica is bad, then not clear the replicas using random replica
                     if (backend == null || !backend.isAlive()) {
                         if (LOG.isDebugEnabled()) {
@@ -869,7 +870,7 @@ public class OlapScanNode extends ScanNode {
                             .filter(r -> r.getId() == coolDownReplicaId).findAny();
                     replicaOptional.ifPresent(
                             r -> {
-                                Backend backend = Env.getCurrentSystemInfo()
+                                Backend backend = olapTable
                                         .getBackend(r.getBackendId());
                                 if (backend != null && backend.isAlive()) {
                                     replicas.clear();
@@ -883,7 +884,7 @@ public class OlapScanNode extends ScanNode {
             boolean collectedStat = false;
             List<String> errs = Lists.newArrayList();
             for (Replica replica : replicas) {
-                Backend backend = Env.getCurrentSystemInfo().getBackend(replica.getBackendId());
+                Backend backend = olapTable.getBackend(replica.getBackendId());
                 if (backend == null || !backend.isAlive()) {
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("backend {} not exists or is not alive for replica {}", replica.getBackendId(),
@@ -1184,7 +1185,7 @@ public class OlapScanNode extends ScanNode {
         Preconditions.checkState(scanBackendIds.size() == 0);
         Preconditions.checkState(scanTabletIds.size() == 0);
         Map<Long, Set<Long>> backendAlivePathHashs = Maps.newHashMap();
-        for (Backend backend : Env.getCurrentSystemInfo().getAllBackends()) {
+        for (Backend backend : olapTable.getAllBackends()) {
             backendAlivePathHashs.put(backend.getId(), backend.getDisks().values().stream()
                     .filter(DiskInfo::isAlive).map(DiskInfo::getPathHash).collect(Collectors.toSet()));
         }
@@ -1716,7 +1717,8 @@ public class OlapScanNode extends ScanNode {
      */
     public DataPartition constructInputPartitionByDistributionInfo() throws UserException {
         ColocateTableIndex colocateTableIndex = Env.getCurrentColocateIndex();
-        if ((colocateTableIndex.isColocateTable(olapTable.getId())
+        if ((olapTable.getCatalogId() == Env.getCurrentInternalCatalog().getId()
+                && colocateTableIndex.isColocateTable(olapTable.getId())
                 && !colocateTableIndex.isGroupUnstable(colocateTableIndex.getGroup(olapTable.getId())))
                 || olapTable.getPartitionInfo().getType() == PartitionType.UNPARTITIONED
                 || olapTable.getPartitions().size() == 1) {
@@ -1791,6 +1793,9 @@ public class OlapScanNode extends ScanNode {
 
     @Override
     public StatsDelta genStatsDelta() throws AnalysisException {
+        if (olapTable.getCatalogId() != Env.getCurrentInternalCatalog().getId()) {
+            return null;
+        }
         return new StatsDelta(Env.getCurrentEnv().getCurrentCatalog().getId(),
                 Env.getCurrentEnv().getCurrentCatalog().getDbOrAnalysisException(
                         olapTable.getQualifiedDbName()).getId(),
@@ -1848,5 +1853,13 @@ public class OlapScanNode extends ScanNode {
     @Override
     public int numScanBackends() {
         return scanBackendIds.size();
+    }
+
+    @Override
+    public long getCatalogId() {
+        if (olapTable != null) {
+            return olapTable.getCatalogId();
+        }
+        return super.getCatalogId();
     }
 }

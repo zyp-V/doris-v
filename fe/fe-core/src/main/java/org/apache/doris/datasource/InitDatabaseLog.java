@@ -42,6 +42,7 @@ public class InitDatabaseLog implements Writable {
         PAIMON,
         TEST,
         INFO_SCHEMA_DB,
+        REMOTE_DORIS,
         UNKNOWN;
     }
 

@@ -187,8 +187,10 @@ public class Coordinator implements CoordInterface {
 
     // save of related backends of this query
     Map<TNetworkAddress, Long> addressToBackendID = Maps.newHashMap();
+    Map<Long, Set<TNetworkAddress>> catalogToBeAddresses = Maps.newHashMap();
 
-    private ImmutableMap<Long, Backend> idToBackend = ImmutableMap.of();
+    // catalog id -> backendId -> backend
+    private Map<Long, ImmutableMap<Long, Backend>> idToBackend = Maps.newHashMap();
 
     // copied from TQueryExecRequest; constant across all fragments
     private final TDescriptorTable descTable;
@@ -222,8 +224,8 @@ public class Coordinator implements CoordInterface {
 
     private final List<PlanFragment> fragments;
 
-    private Map<Long, BackendExecStates> beToExecStates = Maps.newHashMap();
-    private Map<Long, PipelineExecContexts> beToPipelineExecCtxs = Maps.newHashMap();
+    private Map<TNetworkAddress, BackendExecStates> beToExecStates = Maps.newHashMap();
+    private Map<TNetworkAddress, PipelineExecContexts> beToPipelineExecCtxs = Maps.newHashMap();
 
     // backend execute state
     private final List<BackendExecState> backendExecStates = Lists.newArrayList();
@@ -370,7 +372,7 @@ public class Coordinator implements CoordInterface {
         nextInstanceId.setHi(queryId.hi);
         nextInstanceId.setLo(queryId.lo + 1);
         this.assignedRuntimeFilters = planner.getRuntimeFilters();
-        this.executionProfile = new ExecutionProfile(queryId, fragments);
+        this.executionProfile = new ExecutionProfile(queryId, fragments, hasVirtualCatalog());
     }
 
     // Used for broker load task/export task/update coordinator
@@ -392,7 +394,7 @@ public class Coordinator implements CoordInterface {
         this.nextInstanceId = new TUniqueId();
         nextInstanceId.setHi(queryId.hi);
         nextInstanceId.setLo(queryId.lo + 1);
-        this.executionProfile = new ExecutionProfile(queryId, fragments);
+        this.executionProfile = new ExecutionProfile(queryId, fragments, hasVirtualCatalog());
     }
 
     private void setFromUserProperty(ConnectContext connectContext) {
@@ -573,17 +575,30 @@ public class Coordinator implements CoordInterface {
             currentConnectFE = coordAddress;
         }
 
-        this.idToBackend = Env.getCurrentSystemInfo().getIdToBackend();
+        // initialize backends of each catalog
+        this.idToBackend.put(Env.getCurrentInternalCatalog().getId(), Env.getCurrentSystemInfo().getIdToBackend());
+        for (ScanNode scanNode : scanNodes) {
+            fragmentExecParamsMap.get(scanNode.getFragmentId()).catalogId = scanNode.getCatalogId();
+            if (!(scanNode instanceof OlapScanNode)) {
+                continue;
+            }
+            this.idToBackend.put(scanNode.getCatalogId(), ((OlapScanNode) scanNode).getOlapTable().getIdToBackend());
+        }
         if (LOG.isDebugEnabled()) {
-            int backendNum = idToBackend.size();
+            int backendNum = 0;
             StringBuilder backendInfos = new StringBuilder("backends info:");
-            for (Map.Entry<Long, Backend> entry : idToBackend.entrySet()) {
-                Long backendID = entry.getKey();
-                Backend backend = entry.getValue();
-                backendInfos.append(' ').append(backendID).append("-")
+            for (Long catalogId : this.idToBackend.keySet()) {
+                ImmutableMap<Long, Backend> backends = idToBackend.get(catalogId);
+                backendNum  += backends.size();
+                for (Map.Entry<Long, Backend> entry : backends.entrySet()) {
+                    Long backendID = entry.getKey();
+                    Backend backend = entry.getValue();
+                    backendInfos.append(' ').append(catalogId).append("-")
+                            .append(backendID).append("-")
                             .append(backend.getHost()).append("-")
                             .append(backend.getBePort()).append("-")
                             .append(backend.getProcessEpoch());
+                }
             }
             if (LOG.isDebugEnabled()) {
                 LOG.debug("query {}, backend size: {}, {}",
@@ -628,6 +643,14 @@ public class Coordinator implements CoordInterface {
         computeScanRangeAssignment();
 
         computeFragmentExecParams();
+
+        if (this.queryOptions.enable_profile) {
+            Map<PlanFragmentId, Long> fragmentIdToCatalog = Maps.newHashMapWithExpectedSize(fragments.size());
+            for (Map.Entry<PlanFragmentId, FragmentExecParams> entry : fragmentExecParamsMap.entrySet()) {
+                fragmentIdToCatalog.put(entry.getKey(), entry.getValue().catalogId);
+            }
+            executionProfile.registerRuntimeInfo(fragmentIdToCatalog, idToBackend);
+        }
     }
 
 
@@ -737,15 +760,17 @@ public class Coordinator implements CoordInterface {
         this.timeoutDeadline = System.currentTimeMillis() + queryOptions.getExecutionTimeout() * 1000L;
         if (topDataSink instanceof ResultSink || topDataSink instanceof ResultFileSink) {
             TNetworkAddress execBeAddr = topParams.instanceExecParams.get(0).host;
+            long catalogId = topParams.catalogId;
             if (context.isReturnResultFromLocal()) {
                 receiver = new ResultReceiver(queryId, topParams.instanceExecParams.get(0).instanceId,
-                        addressToBackendID.get(execBeAddr), toBrpcHost(execBeAddr), this.timeoutDeadline,
+                        addressToBackendID.get(execBeAddr), toBrpcHost(catalogId, execBeAddr), this.timeoutDeadline,
                         context.getSessionVariable().getMaxMsgSizeOfResultReceiver());
             } else {
                 Preconditions.checkState(context.getConnectType().equals(ConnectType.ARROW_FLIGHT_SQL));
                 TUniqueId finstId = topParams.instanceExecParams.get(0).instanceId;
                 context.addFlightSqlEndpointsLocation(new FlightSqlEndpointsLocation(finstId,
-                        toArrowFlightHost(execBeAddr), toBrpcHost(execBeAddr), fragments.get(0).getOutputExprs()));
+                        toArrowFlightHost(catalogId, execBeAddr), toBrpcHost(catalogId, execBeAddr),
+                        fragments.get(0).getOutputExprs()));
             }
 
             LOG.info("dispatch result sink of query {} to {}", DebugUtil.printId(queryId),
@@ -877,11 +902,12 @@ public class Coordinator implements CoordInterface {
                         }
                     }
 
-                    BackendExecStates states = beToExecStates.get(execState.backend.getId());
+                    TNetworkAddress brpcAddress = execState.brpcAddress;
+                    BackendExecStates states = beToExecStates.get(brpcAddress);
                     if (states == null) {
                         states = new BackendExecStates(execState.backend.getId(), execState.brpcAddress,
-                                twoPhaseExecution, execState.backend.getProcessEpoch());
-                        beToExecStates.putIfAbsent(execState.backend.getId(), states);
+                                twoPhaseExecution, execState.backend.getProcessEpoch(), params.catalogId);
+                        beToExecStates.putIfAbsent(brpcAddress, states);
                     }
                     states.addState(execState);
                     if (tParam.getFragment().getOutputSink() != null
@@ -1004,12 +1030,13 @@ public class Coordinator implements CoordInterface {
                         }
                     }
 
-                    PipelineExecContexts ctxs = beToPipelineExecCtxs.get(pipelineExecContext.backend.getId());
+                    TNetworkAddress brpcAddress = pipelineExecContext.brpcAddress;
+                    PipelineExecContexts ctxs = beToPipelineExecCtxs.get(brpcAddress);
                     if (ctxs == null) {
                         ctxs = new PipelineExecContexts(pipelineExecContext.backend.getId(),
                                 pipelineExecContext.brpcAddress, twoPhaseExecution,
                                 entry.getValue().getFragmentNumOnHost());
-                        beToPipelineExecCtxs.putIfAbsent(pipelineExecContext.backend.getId(), ctxs);
+                        beToPipelineExecCtxs.putIfAbsent(brpcAddress, ctxs);
                     }
                     ctxs.addContext(pipelineExecContext);
 
@@ -1474,7 +1501,7 @@ public class Coordinator implements CoordInterface {
     // We use a very conservative cancel strategy.
     // 0. If backends has zero process epoch, do not cancel. Zero process epoch usually arises in cluster upgrading.
     // 1. If process epoch is same, do not cancel. Means backends does not restart or die.
-    public Status shouldCancel(List<Backend> currentBackends) {
+    public Status shouldCancel(long catalogId, List<Backend> currentBackends) {
         Map<Long, Backend> curBeMap = Maps.newHashMap();
         for (Backend be : currentBackends) {
             curBeMap.put(be.getId(), be);
@@ -1485,6 +1512,9 @@ public class Coordinator implements CoordInterface {
 
             if (queryOptions.isEnablePipelineEngine()) {
                 for (PipelineExecContext pipelineExecContext : pipelineExecContexts.values()) {
+                    if (pipelineExecContext.catalogId != catalogId) {
+                        continue;
+                    }
                     Backend be = curBeMap.get(pipelineExecContext.backend.getId());
                     if (be == null || !be.isAlive()) {
                         Status errorStatus = new Status(TStatusCode.CANCELLED,
@@ -1513,6 +1543,9 @@ public class Coordinator implements CoordInterface {
             } else {
                 // beToExecStates will be updated only in non-pipeline query.
                 for (BackendExecStates beExecState : beToExecStates.values()) {
+                    if (beExecState.catalogId != catalogId) {
+                        continue;
+                    }
                     Backend be = curBeMap.get(beExecState.beId);
                     if (be == null || !be.isAlive()) {
                         Status errorStatus = new Status(TStatusCode.CANCELLED,
@@ -1722,8 +1755,8 @@ public class Coordinator implements CoordInterface {
                         hostSet.add(instanceExecParams.host);
                         if (instanceExecParams.bucketSeqSet.contains(bucketSeq)) {
                             dest.fragment_instance_id = instanceExecParams.instanceId;
-                            dest.server = toRpcHost(instanceExecParams.host);
-                            dest.setBrpcServer(toBrpcHost(instanceExecParams.host));
+                            dest.server = toRpcHost(destParams.catalogId, instanceExecParams.host);
+                            dest.setBrpcServer(toBrpcHost(destParams.catalogId, instanceExecParams.host));
                             instanceExecParams.recvrId = params.destinations.size();
                             break;
                         }
@@ -1746,8 +1779,8 @@ public class Coordinator implements CoordInterface {
                             TPlanFragmentDestination dest = new TPlanFragmentDestination();
                             dest.fragment_instance_id = param.instanceId;
                             try {
-                                dest.server = toRpcHost(param.host);
-                                dest.setBrpcServer(toBrpcHost(param.host));
+                                dest.server = toRpcHost(destParams.catalogId, param.host);
+                                dest.setBrpcServer(toBrpcHost(destParams.catalogId, param.host));
                             } catch (Exception e) {
                                 throw new RuntimeException(e);
                             }
@@ -1765,8 +1798,8 @@ public class Coordinator implements CoordInterface {
                         hostSet.add(destParams.instanceExecParams.get(j).host);
                         TPlanFragmentDestination dest = new TPlanFragmentDestination();
                         dest.fragment_instance_id = destParams.instanceExecParams.get(j).instanceId;
-                        dest.server = toRpcHost(destParams.instanceExecParams.get(j).host);
-                        dest.setBrpcServer(toBrpcHost(destParams.instanceExecParams.get(j).host));
+                        dest.server = toRpcHost(destParams.catalogId, destParams.instanceExecParams.get(j).host);
+                        dest.setBrpcServer(toBrpcHost(destParams.catalogId, destParams.instanceExecParams.get(j).host));
                         destParams.instanceExecParams.get(j).recvrId = params.destinations.size();
                         params.destinations.add(dest);
                     }
@@ -1845,8 +1878,8 @@ public class Coordinator implements CoordInterface {
                             hostSet.add(instanceExecParams.host);
                             if (instanceExecParams.bucketSeqSet.contains(bucketSeq)) {
                                 dest.fragment_instance_id = instanceExecParams.instanceId;
-                                dest.server = toRpcHost(instanceExecParams.host);
-                                dest.setBrpcServer(toBrpcHost(instanceExecParams.host));
+                                dest.server = toRpcHost(destParams.catalogId, instanceExecParams.host);
+                                dest.setBrpcServer(toBrpcHost(destParams.catalogId, instanceExecParams.host));
                                 instanceExecParams.recvrId = destinations.size();
                                 break;
                             }
@@ -1869,8 +1902,8 @@ public class Coordinator implements CoordInterface {
                             TPlanFragmentDestination dest = new TPlanFragmentDestination();
                             dest.fragment_instance_id = param.instanceId;
                             try {
-                                dest.server = toRpcHost(param.host);
-                                dest.setBrpcServer(toBrpcHost(param.host));
+                                dest.server = toRpcHost(destParams.catalogId, param.host);
+                                dest.setBrpcServer(toBrpcHost(destParams.catalogId, param.host));
                             } catch (Exception e) {
                                 throw new RuntimeException(e);
                             }
@@ -1887,8 +1920,8 @@ public class Coordinator implements CoordInterface {
                         hostSet.add(destParams.instanceExecParams.get(j).host);
                         TPlanFragmentDestination dest = new TPlanFragmentDestination();
                         dest.fragment_instance_id = destParams.instanceExecParams.get(j).instanceId;
-                        dest.server = toRpcHost(destParams.instanceExecParams.get(j).host);
-                        dest.brpc_server = toBrpcHost(destParams.instanceExecParams.get(j).host);
+                        dest.server = toRpcHost(destParams.catalogId, destParams.instanceExecParams.get(j).host);
+                        dest.brpc_server = toBrpcHost(destParams.catalogId, destParams.instanceExecParams.get(j).host);
                         destParams.instanceExecParams.get(j).recvrId = destinations.size();
                         destinations.add(dest);
                     }
@@ -1897,8 +1930,18 @@ public class Coordinator implements CoordInterface {
         }
     }
 
-    private TNetworkAddress toRpcHost(TNetworkAddress host) throws Exception {
-        Backend backend = Env.getCurrentSystemInfo().getBackendWithBePort(
+    private Backend getBackendWithBePort(long catalogId, String ip, int bePort) {
+        ImmutableMap<Long, Backend> idToBackendRef = idToBackend.get(catalogId);
+        for (Backend backend : idToBackendRef.values()) {
+            if (backend.getHost().equals(ip) && backend.getBePort() == bePort) {
+                return backend;
+            }
+        }
+        return null;
+    }
+
+    private TNetworkAddress toRpcHost(long catalogId, TNetworkAddress host) throws Exception {
+        Backend backend = getBackendWithBePort(catalogId,
                 host.getHostname(), host.getPort());
         if (backend == null) {
             throw new UserException(SystemInfoService.NO_SCAN_NODE_BACKEND_AVAILABLE_MSG);
@@ -1907,8 +1950,8 @@ public class Coordinator implements CoordInterface {
         return dest;
     }
 
-    private TNetworkAddress toBrpcHost(TNetworkAddress host) throws Exception {
-        Backend backend = Env.getCurrentSystemInfo().getBackendWithBePort(
+    private TNetworkAddress toBrpcHost(long catalogId, TNetworkAddress host) throws Exception {
+        Backend backend = getBackendWithBePort(catalogId,
                 host.getHostname(), host.getPort());
         if (backend == null) {
             throw new UserException(SystemInfoService.NO_BACKEND_LOAD_AVAILABLE_MSG);
@@ -1919,8 +1962,8 @@ public class Coordinator implements CoordInterface {
         return new TNetworkAddress(backend.getHost(), backend.getBrpcPort());
     }
 
-    private TNetworkAddress toArrowFlightHost(TNetworkAddress host) throws Exception {
-        Backend backend = Env.getCurrentSystemInfo().getBackendWithBePort(
+    private TNetworkAddress toArrowFlightHost(long catalogId, TNetworkAddress host) throws Exception {
+        Backend backend = getBackendWithBePort(catalogId,
                 host.getHostname(), host.getPort());
         if (backend == null) {
             throw new UserException(SystemInfoService.NO_BACKEND_LOAD_AVAILABLE_MSG);
@@ -2016,8 +2059,13 @@ public class Coordinator implements CoordInterface {
         for (int i = fragments.size() - 1; i >= 0; --i) {
             PlanFragment fragment = fragments.get(i);
             FragmentExecParams params = fragmentExecParamsMap.get(fragment.getFragmentId());
+            long catalogId = params.catalogId;
 
             if (fragment.getDataPartition() == DataPartition.UNPARTITIONED) {
+                if (params.inputFragments.size() > 0) {
+                    catalogId = fragmentExecParamsMap.get(params.inputFragments.get(0)).catalogId;
+                    params.catalogId = catalogId;
+                }
                 Reference<Long> backendIdRef = new Reference<Long>();
                 TNetworkAddress execHostport;
                 if (groupCommitBackend != null) {
@@ -2034,9 +2082,9 @@ public class Coordinator implements CoordInterface {
                     // can be executed on any BE. addressToBackendID can be empty when this is a constant
                     // select stmt like:
                     //      SELECT  @@session.auto_increment_increment AS auto_increment_increment;
-                    execHostport = SimpleScheduler.getHostByCurrentBackend(addressToBackendID);
+                    execHostport = SimpleScheduler.getHostByCurrentBackend(catalogToBeAddresses.get(catalogId));
                 } else {
-                    execHostport = SimpleScheduler.getHost(this.idToBackend, backendIdRef);
+                    execHostport = SimpleScheduler.getHost(this.idToBackend.get(catalogId), backendIdRef);
                 }
                 if (execHostport == null) {
                     LOG.warn("DataPartition UNPARTITIONED, no scanNode Backend available");
@@ -2045,6 +2093,7 @@ public class Coordinator implements CoordInterface {
                 if (backendIdRef.getRef() != null) {
                     // backendIdRef can be null is we call getHostByCurrentBackend() before
                     this.addressToBackendID.put(execHostport, backendIdRef.getRef());
+                    saveCatalogUsedBackends(catalogId, execHostport);
                 }
                 FInstanceExecParam instanceParam = new FInstanceExecParam(null, execHostport,
                         0, params);
@@ -2103,6 +2152,7 @@ public class Coordinator implements CoordInterface {
                         params.instanceExecParams.add(instanceParam);
                     }
                 }
+                params.catalogId = fragmentExecParamsMap.get(inputFragmentId).catalogId;
 
                 // When group by cardinality is smaller than number of backend, only some backends always
                 // process while other has no data to process.
@@ -2210,9 +2260,9 @@ public class Coordinator implements CoordInterface {
                     // of the query can be executed on any BE. addressToBackendID can be empty when this is a constant
                     // select stmt like:
                     //      SELECT  @@session.auto_increment_increment AS auto_increment_increment;
-                    execHostport = SimpleScheduler.getHostByCurrentBackend(addressToBackendID);
+                    execHostport = SimpleScheduler.getHostByCurrentBackend(catalogToBeAddresses.get(catalogId));
                 } else {
-                    execHostport = SimpleScheduler.getHost(this.idToBackend, backendIdRef);
+                    execHostport = SimpleScheduler.getHost(this.idToBackend.get(catalogId), backendIdRef);
                 }
                 if (execHostport == null) {
                     throw new UserException(SystemInfoService.NO_SCAN_NODE_BACKEND_AVAILABLE_MSG);
@@ -2220,6 +2270,7 @@ public class Coordinator implements CoordInterface {
                 if (backendIdRef.getRef() != null) {
                     // backendIdRef can be null is we call getHostByCurrentBackend() before
                     this.addressToBackendID.put(execHostport, backendIdRef.getRef());
+                    saveCatalogUsedBackends(catalogId, execHostport);
                 }
                 FInstanceExecParam instanceParam = new FInstanceExecParam(null, execHostport, 0, params);
                 params.instanceExecParams.add(instanceParam);
@@ -2253,6 +2304,7 @@ public class Coordinator implements CoordInterface {
         TNetworkAddress execHostport = new TNetworkAddress(groupCommitBackend.getHost(),
                 groupCommitBackend.getBePort());
         addressToBackendID.put(execHostport, groupCommitBackend.getId());
+        saveCatalogUsedBackends(Env.getCurrentInternalCatalog().getId(), execHostport);
         return execHostport;
     }
 
@@ -2266,7 +2318,8 @@ public class Coordinator implements CoordInterface {
                 List<FRuntimeFilterTargetParam> targetFragments = ridToTargetParam.computeIfAbsent(rid,
                         k -> new ArrayList<>());
                 for (final FInstanceExecParam instance : params.instanceExecParams) {
-                    targetFragments.add(new FRuntimeFilterTargetParam(instance.instanceId, toBrpcHost(instance.host)));
+                    targetFragments.add(new FRuntimeFilterTargetParam(instance.instanceId,
+                            toBrpcHost(params.catalogId, instance.host)));
                 }
             }
 
@@ -2277,7 +2330,7 @@ public class Coordinator implements CoordInterface {
         }
         // Use the uppermost fragment as a merged node, the uppermost fragment has one and only one instance
         FragmentExecParams uppermostParams = fragmentExecParamsMap.get(fragments.get(0).getFragmentId());
-        runtimeFilterMergeAddr = toBrpcHost(uppermostParams.instanceExecParams.get(0).host);
+        runtimeFilterMergeAddr = toBrpcHost(uppermostParams.catalogId, uppermostParams.instanceExecParams.get(0).host);
         runtimeFilterMergeInstanceId = uppermostParams.instanceExecParams.get(0).instanceId;
     }
 
@@ -2442,11 +2495,12 @@ public class Coordinator implements CoordInterface {
         }
         Map<Integer, TNetworkAddress> bucketSeqToAddress = fragmentIdToSeqToAddressMap.get(scanNode.getFragmentId());
         BucketSeqToScanRange bucketSeqToScanRange = fragmentIdTobucketSeqToScanRangeMap.get(scanNode.getFragmentId());
+        long catalogId = scanNode.getCatalogId();
         for (Integer bucketSeq : scanNode.bucketSeq2locations.keySet()) {
             //fill scanRangeParamsList
             List<TScanRangeLocations> locations = scanNode.bucketSeq2locations.get(bucketSeq);
             if (!bucketSeqToAddress.containsKey(bucketSeq)) {
-                getExecHostPortForFragmentIDAndBucketSeq(locations.get(0),
+                getExecHostPortForFragmentIDAndBucketSeq(catalogId, locations.get(0),
                         scanNode.getFragmentId(), bucketSeq, assignedBytesPerHost,
                         replicaNumPerHost, isEnableOrderedLocations);
             }
@@ -2468,16 +2522,17 @@ public class Coordinator implements CoordInterface {
     }
 
     //ensure bucket sequence distribued to every host evenly
-    private void getExecHostPortForFragmentIDAndBucketSeq(TScanRangeLocations seqLocation,
+    private void getExecHostPortForFragmentIDAndBucketSeq(long catalogId, TScanRangeLocations seqLocation,
             PlanFragmentId fragmentId, Integer bucketSeq, Map<TNetworkAddress, Long> assignedBytesPerHost,
             Map<TNetworkAddress, Long> replicaNumPerHost, boolean isEnableOrderedLocations)
             throws Exception {
         Reference<Long> backendIdRef = new Reference<Long>();
-        selectBackendsByRoundRobin(seqLocation, assignedBytesPerHost, replicaNumPerHost,
+        selectBackendsByRoundRobin(catalogId, seqLocation, assignedBytesPerHost, replicaNumPerHost,
                 backendIdRef, isEnableOrderedLocations);
-        Backend backend = this.idToBackend.get(backendIdRef.getRef());
+        Backend backend = this.idToBackend.get(catalogId).get(backendIdRef.getRef());
         TNetworkAddress execHostPort = new TNetworkAddress(backend.getHost(), backend.getBePort());
         this.addressToBackendID.put(execHostPort, backendIdRef.getRef());
+        saveCatalogUsedBackends(catalogId, execHostPort);
         this.fragmentIdToSeqToAddressMap.get(fragmentId).put(bucketSeq, execHostPort);
     }
 
@@ -2501,7 +2556,7 @@ public class Coordinator implements CoordInterface {
         });
     }
 
-    public TScanRangeLocation selectBackendsByRoundRobin(TScanRangeLocations seqLocation,
+    public TScanRangeLocation selectBackendsByRoundRobin(long catalogId, TScanRangeLocations seqLocation,
                                                          Map<TNetworkAddress, Long> assignedBytesPerHost,
                                                          Map<TNetworkAddress, Long> replicaNumPerHost,
                                                          Reference<Long> backendIdRef,
@@ -2511,7 +2566,7 @@ public class Coordinator implements CoordInterface {
             Collections.sort(locations);
         }
         if (!Config.enable_local_replica_selection) {
-            return selectBackendsByRoundRobin(locations, assignedBytesPerHost, replicaNumPerHost,
+            return selectBackendsByRoundRobin(catalogId, locations, assignedBytesPerHost, replicaNumPerHost,
                     backendIdRef);
         }
 
@@ -2519,7 +2574,7 @@ public class Coordinator implements CoordInterface {
         List<TScanRangeLocation> nonlocalLocations = new ArrayList<>();
         long localBeId = Env.getCurrentSystemInfo().getBackendIdByHost(FrontendOptions.getLocalHostAddress());
         for (final TScanRangeLocation location : locations) {
-            if (location.backend_id == localBeId) {
+            if (location.backend_id == localBeId && catalogId == Env.getCurrentInternalCatalog().getId()) {
                 localLocations.add(location);
             } else {
                 nonlocalLocations.add(location);
@@ -2527,16 +2582,18 @@ public class Coordinator implements CoordInterface {
         }
 
         try {
-            return selectBackendsByRoundRobin(localLocations, assignedBytesPerHost, replicaNumPerHost, backendIdRef);
+            return selectBackendsByRoundRobin(catalogId, localLocations, assignedBytesPerHost,
+                    replicaNumPerHost, backendIdRef);
         } catch (UserException ue) {
             if (!Config.enable_local_replica_selection_fallback) {
                 throw ue;
             }
-            return selectBackendsByRoundRobin(nonlocalLocations, assignedBytesPerHost, replicaNumPerHost, backendIdRef);
+            return selectBackendsByRoundRobin(catalogId, nonlocalLocations, assignedBytesPerHost,
+                    replicaNumPerHost, backendIdRef);
         }
     }
 
-    public TScanRangeLocation selectBackendsByRoundRobin(List<TScanRangeLocation> sortedLocations,
+    public TScanRangeLocation selectBackendsByRoundRobin(long catalogId, List<TScanRangeLocation> sortedLocations,
             Map<TNetworkAddress, Long> assignedBytesPerHost, Map<TNetworkAddress, Long> replicaNumPerHost,
             Reference<Long> backendIdRef) throws UserException {
         Long minAssignedBytes = Long.MAX_VALUE;
@@ -2557,7 +2614,7 @@ public class Coordinator implements CoordInterface {
             replicaNumPerHost.put(location.server, replicaNumPerHost.get(location.server) - 1);
         }
         TScanRangeLocation location = SimpleScheduler.getLocation(minLocation, sortedLocations,
-                this.idToBackend, backendIdRef);
+                this.idToBackend.get(catalogId), backendIdRef);
         assignedBytesPerHost.put(location.server, assignedBytesPerHost.get(location.server) + step);
 
         return location;
@@ -2575,13 +2632,15 @@ public class Coordinator implements CoordInterface {
         // The duplicate "location" will NOT be filtered by FragmentScanRangeAssignment,
         // since FragmentScanRangeAssignment use List<TScanRangeParams> as its value type,
         // duplicate "locations" will be converted to list.
+        long catalogId = scanNode.getCatalogId();
         for (TScanRangeLocations scanRangeLocations : locations) {
             Reference<Long> backendIdRef = new Reference<Long>();
-            TScanRangeLocation minLocation = selectBackendsByRoundRobin(scanRangeLocations,
+            TScanRangeLocation minLocation = selectBackendsByRoundRobin(catalogId, scanRangeLocations,
                     assignedBytesPerHost, replicaNumPerHost, backendIdRef, isEnableOrderedLocations);
-            Backend backend = this.idToBackend.get(backendIdRef.getRef());
+            Backend backend = this.idToBackend.get(catalogId).get(backendIdRef.getRef());
             TNetworkAddress execHostPort = new TNetworkAddress(backend.getHost(), backend.getBePort());
             this.addressToBackendID.put(execHostPort, backendIdRef.getRef());
+            saveCatalogUsedBackends(catalogId, execHostPort);
 
             Map<Integer, List<TScanRangeParams>> scanRanges = findOrInsert(assignment, execHostPort,
                     new HashMap<Integer, List<TScanRangeParams>>());
@@ -3021,8 +3080,8 @@ public class Coordinator implements CoordInterface {
         }
 
         // make sure each host have average bucket to scan
-        private void getExecHostPortForFragmentIDAndBucketSeq(TScanRangeLocations seqLocation,
-                PlanFragmentId fragmentId, Integer bucketSeq, ImmutableMap<Long, Backend> idToBackend,
+        private void getExecHostPortForFragmentIDAndBucketSeq(long catalogId, TScanRangeLocations seqLocation,
+                PlanFragmentId fragmentId, Integer bucketSeq, Map<Long, ImmutableMap<Long, Backend>> idToBackend,
                 Map<TNetworkAddress, Long> addressToBackendID,
                 Map<TNetworkAddress, Long> replicaNumPerHost) throws Exception {
             Map<Long, Integer> buckendIdToBucketCountMap = fragmentIdToBuckendIdBucketCountMap.get(fragmentId);
@@ -3042,7 +3101,7 @@ public class Coordinator implements CoordInterface {
             }
             Reference<Long> backendIdRef = new Reference<>();
             TNetworkAddress execHostPort = SimpleScheduler.getHost(buckendId,
-                    seqLocation.locations, idToBackend, backendIdRef);
+                    seqLocation.locations, idToBackend.get(catalogId), backendIdRef);
             //the backend with buckendId is not alive, chose another new backend
             if (backendIdRef.getRef() != buckendId) {
                 buckendIdToBucketCountMap.put(backendIdRef.getRef(),
@@ -3054,12 +3113,13 @@ public class Coordinator implements CoordInterface {
                 replicaNumPerHost.put(location.server, replicaNumPerHost.get(location.server) - 1);
             }
             addressToBackendID.put(execHostPort, backendIdRef.getRef());
+            saveCatalogUsedBackends(catalogId, execHostPort);
             this.fragmentIdToSeqToAddressMap.get(fragmentId).put(bucketSeq, execHostPort);
         }
 
         // to ensure the same bucketSeq tablet to the same execHostPort
         private void computeScanRangeAssignmentByBucket(
-                final OlapScanNode scanNode, ImmutableMap<Long, Backend> idToBackend,
+                final OlapScanNode scanNode, Map<Long, ImmutableMap<Long, Backend>> idToBackend,
                 Map<TNetworkAddress, Long> addressToBackendID,
                 Map<TNetworkAddress, Long> replicaNumPerHost) throws Exception {
             if (!fragmentIdToSeqToAddressMap.containsKey(scanNode.getFragmentId())) {
@@ -3085,11 +3145,12 @@ public class Coordinator implements CoordInterface {
                     = fragmentIdToSeqToAddressMap.get(scanNode.getFragmentId());
             BucketSeqToScanRange bucketSeqToScanRange = fragmentIdBucketSeqToScanRangeMap.get(scanNode.getFragmentId());
 
+            long catalogId = scanNode.getCatalogId();
             for (Integer bucketSeq : scanNode.bucketSeq2locations.keySet()) {
                 //fill scanRangeParamsList
                 List<TScanRangeLocations> locations = scanNode.bucketSeq2locations.get(bucketSeq);
                 if (!bucketSeqToAddress.containsKey(bucketSeq)) {
-                    getExecHostPortForFragmentIDAndBucketSeq(locations.get(0), scanNode.getFragmentId(),
+                    getExecHostPortForFragmentIDAndBucketSeq(catalogId, locations.get(0), scanNode.getFragmentId(),
                             bucketSeq, idToBackend, addressToBackendID, replicaNumPerHost);
                 }
 
@@ -3261,7 +3322,8 @@ public class Coordinator implements CoordInterface {
             FInstanceExecParam fi = fragmentExecParamsMap.get(fragmentId).instanceExecParams.get(instanceId);
             this.instanceId = fi.instanceId;
             this.address = fi.host;
-            this.backend = idToBackend.get(addressToBackendID.get(address));
+            long catalogId = fragmentExecParamsMap.get(fragmentId).catalogId;
+            this.backend = idToBackend.get(catalogId).get(addressToBackendID.get(address));
             this.brpcAddress = new TNetworkAddress(backend.getHost(), backend.getBrpcPort());
             this.lastMissingHeartbeatTime = backend.getLastMissingHeartbeatTime();
             String profileName = "Instance " + DebugUtil.printId(
@@ -3401,6 +3463,7 @@ public class Coordinator implements CoordInterface {
         private final int numInstances;
         private boolean hasCancelled = false;
         private boolean cancelInProcess = false;
+        long catalogId;
 
         public PipelineExecContext(PlanFragmentId fragmentId,
                 TPipelineFragmentParams rpcParams, Long backendId,
@@ -3414,7 +3477,8 @@ public class Coordinator implements CoordInterface {
             this.initiated = false;
             this.done = false;
 
-            this.backend = idToBackend.get(backendId);
+            this.catalogId = fragmentExecParamsMap.get(fragmentId).catalogId;
+            this.backend = idToBackend.get(catalogId).get(backendId);
             this.address = new TNetworkAddress(backend.getHost(), backend.getBePort());
             this.brpcAddress = new TNetworkAddress(backend.getHost(), backend.getBrpcPort());
             this.beProcessEpoch = backend.getProcessEpoch();
@@ -3648,12 +3712,15 @@ public class Coordinator implements CoordInterface {
         List<BackendExecState> states = Lists.newArrayList();
         boolean twoPhaseExecution = false;
         long beProcessEpoch = 0;
+        long catalogId;
 
-        public BackendExecStates(long beId, TNetworkAddress brpcAddr, boolean twoPhaseExecution, long beProcessEpoch) {
+        public BackendExecStates(long beId, TNetworkAddress brpcAddr, boolean twoPhaseExecution, long beProcessEpoch,
+                long catalogId) {
             this.beId = beId;
             this.brpcAddr = brpcAddr;
             this.twoPhaseExecution = twoPhaseExecution;
             this.beProcessEpoch = beProcessEpoch;
+            this.catalogId = catalogId;
         }
 
         public void addState(BackendExecState state) {
@@ -3863,6 +3930,8 @@ public class Coordinator implements CoordInterface {
     // per-fragment can have multiple FInstanceExecParam,
     // used to assemble TPlanFragmentExecParams
     protected class FragmentExecParams {
+        // catalogId used for calc backend
+        public long catalogId = Env.getCurrentInternalCatalog().getId();
         public PlanFragment fragment;
         public int parallelTasksNum = 0;
         public boolean ignoreDataDistribution = false;
@@ -4294,6 +4363,24 @@ public class Coordinator implements CoordInterface {
                 .map(ConnectContext::getExecutor)
                 .map(StmtExecutor::getSummaryProfile)
                 .ifPresent(profileAction);
+    }
+
+    private void saveCatalogUsedBackends(long catalogId, TNetworkAddress host) {
+        Set<TNetworkAddress> hosts = catalogToBeAddresses.get(catalogId);
+        if (hosts == null) {
+            hosts = Sets.newHashSet();
+            catalogToBeAddresses.put(catalogId, hosts);
+        }
+        hosts.add(host);
+    }
+
+    private boolean hasVirtualCatalog() {
+        for (ScanNode node : scanNodes) {
+            if (node.getCatalogId() != Env.getCurrentInternalCatalog().getId()) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 

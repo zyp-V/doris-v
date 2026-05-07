@@ -17,8 +17,11 @@
 
 package org.apache.doris.persist.gson;
 
+import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
+import org.apache.doris.datasource.doris.RemoteDorisExternalDatabase;
 import org.apache.doris.persist.gson.GsonSerializationTest.Key.MyEnum;
 
 import com.google.common.collect.ArrayListMultimap;
@@ -428,5 +431,18 @@ public class GsonSerializationTest {
         MultiMapClassA readClassA = MultiMapClassA.read(in);
         Assert.assertEquals(Sets.newHashSet(new Key(MyEnum.TYPE_A, "key1"), new Key(MyEnum.TYPE_B, "key2")),
                 readClassA.map.keySet());
+    }
+
+    @Test
+    public void testRemoteDorisExternalDatabasePolymorphicSerialization() {
+        RemoteDorisExternalCatalog catalog = new RemoteDorisExternalCatalog(
+                1000L, "remote_ctl", "", Maps.newHashMap(), "");
+        DatabaseIf<?> db = new RemoteDorisExternalDatabase(catalog, 1001L, "db1", "db1");
+        String json = GsonUtils.GSON.toJson(db, DatabaseIf.class);
+        DatabaseIf<?> readDb = GsonUtils.GSON.fromJson(json, DatabaseIf.class);
+        Assert.assertTrue(json.contains(RemoteDorisExternalDatabase.class.getSimpleName()));
+        Assert.assertTrue(readDb instanceof RemoteDorisExternalDatabase);
+        Assert.assertEquals(1001L, readDb.getId());
+        Assert.assertEquals("db1", readDb.getFullName());
     }
 }

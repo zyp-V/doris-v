@@ -37,6 +37,7 @@ import org.apache.logging.log4j.Logger;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -239,8 +240,8 @@ public class SimpleScheduler {
         }
     }
 
-    public static TNetworkAddress getHostByCurrentBackend(Map<TNetworkAddress, Long> addressToBackendID) {
-        long id = nextId.getAndIncrement() % addressToBackendID.size();
-        return addressToBackendID.keySet().stream().skip(id).findFirst().orElse(null);
+    public static TNetworkAddress getHostByCurrentBackend(Set<TNetworkAddress> addresses) {
+        long id = nextId.getAndIncrement() % addresses.size();
+        return addresses.stream().skip(id).findFirst().orElse(null);
     }
 }

@@ -31,6 +31,7 @@ import org.apache.doris.thrift.TReportExecStatusParams;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.thrift.TUnit;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.logging.log4j.LogManager;
@@ -86,8 +87,11 @@ public class ExecutionProfile {
     private Map<TUniqueId, PlanFragmentId> instanceIdToFragmentId;
     private Map<Integer, Integer> fragmentIdBeNum;
     private Map<Integer, Integer> seqNoToFragmentId;
+    private final boolean hasVirtualCatalog;
+    private Map<PlanFragmentId, Long> fragmentIdToCatalog;
+    private Map<Long, ImmutableMap<Long, Backend>> idToBackend;
 
-    public ExecutionProfile(TUniqueId queryId, List<PlanFragment> fragments) {
+    public ExecutionProfile(TUniqueId queryId, List<PlanFragment> fragments, boolean hasVirtualCatalog) {
         this.queryId = queryId;
         root = new RuntimeProfile("Execution Profile " + DebugUtil.printId(queryId));
         RuntimeProfile fragmentsProfile = new RuntimeProfile("Fragments");
@@ -111,6 +115,7 @@ public class ExecutionProfile {
         root.addChild(loadChannelProfile);
         fragmentInstancesProfiles = Maps.newHashMap();
         instanceIdToFragmentId = Maps.newHashMap();
+        this.hasVirtualCatalog = hasVirtualCatalog;
     }
 
     private List<List<RuntimeProfile>> getMultiBeProfile(int fragmentId) {
@@ -245,10 +250,34 @@ public class ExecutionProfile {
         }
     }
 
-    public void updateProfile(TReportExecStatusParams params) {
+    public void updateProfile(TReportExecStatusParams params, TNetworkAddress beAddr) {
         Backend backend  = null;
         if (params.isSetBackendId()) {
-            backend = Env.getCurrentSystemInfo().getBackend(params.getBackendId());
+            if (!hasVirtualCatalog) {
+                backend = Env.getCurrentSystemInfo().getBackend(params.getBackendId());
+            } else {
+                if (idToBackend != null && fragmentIdToCatalog != null) {
+                    PlanFragmentId fragmentId = null;
+                    if (isPipelineXProfile) {
+                        fragmentId = new PlanFragmentId(params.fragment_id);
+                    } else {
+                        fragmentId = instanceIdToFragmentId.get(params.fragment_instance_id);
+                    }
+                    if (fragmentId != null) {
+                        Long catalogId = fragmentIdToCatalog.get(fragmentId);
+                        if (catalogId != null) {
+                            ImmutableMap<Long, Backend> backends = idToBackend.get(catalogId);
+                            if (backends != null) {
+                                backend = backends.get(params.getBackendId());
+                            }
+                        }
+                    }
+                }
+                if (backend == null && beAddr != null) {
+                    // new a fake backend
+                    backend = new Backend(-1, beAddr.getHostname(), 9050);
+                }
+            }
             if (backend == null) {
                 LOG.warn("could not find backend with id {}", params.getBackendId());
                 return;
@@ -330,6 +359,12 @@ public class ExecutionProfile {
             fragmentProfiles.get(fragmentId.asInt()).addChild(instanceProfile);
             return;
         }
+    }
+
+    public void registerRuntimeInfo(Map<PlanFragmentId, Long> fragmentIdToCatalog,
+            Map<Long, ImmutableMap<Long, Backend>> idToBackend) {
+        this.fragmentIdToCatalog = fragmentIdToCatalog;
+        this.idToBackend = idToBackend;
     }
 
     public synchronized void addFragmentBackend(PlanFragmentId fragmentId, Long backendId) {

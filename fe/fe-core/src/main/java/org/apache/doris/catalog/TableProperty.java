@@ -703,4 +703,40 @@ public class TableProperty implements Writable {
         }
         return str.toString();
     }
+
+    /**
+     * NOTE: only used by cross-cluster query
+     * higher version already uses gson format, but lower version still uses binary format.
+     * To compatible with higher version in the future, we also use gson format here.
+     *
+     * TableProperty does not implement GsonPostProcessable, should call it manually
+     */
+    public void gsonPostProcess() throws IOException {
+        executeBuildDynamicProperty();
+        buildInMemory();
+        buildMinLoadReplicaNum();
+        buildStorageMedium();
+        buildStorageFormat();
+        buildInvertedIndexStorageFormat();
+        buildDataSortInfo();
+        buildCompressionType();
+        buildStoragePolicy();
+        buildIsBeingSynced();
+        buildBinlogConfig();
+        buildEnableLightSchemaChange();
+        buildStoreRowColumn();
+        buildRowStorePageSize();
+        buildSkipWriteIndexOnLoad();
+        buildCompactionPolicy();
+        buildTimeSeriesCompactionGoalSizeMbytes();
+        buildTimeSeriesCompactionFileCountThreshold();
+        buildTimeSeriesCompactionTimeThresholdSeconds();
+        buildDisableAutoCompaction();
+        buildEnableSingleReplicaCompaction();
+        buildTimeSeriesCompactionEmptyRowsetsThreshold();
+        buildTimeSeriesCompactionLevelThreshold();
+        buildInAtomicRestore();
+        removeDuplicateReplicaNumProperty();
+        buildReplicaAllocation();
+    }
 }

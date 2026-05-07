@@ -365,6 +365,12 @@ struct TMCTable {
   10: optional string quota
 }
 
+struct TRemoteDorisTable {
+  1: optional string db_name
+  2: optional string table_name
+  3: optional map<string, string> properties
+}
+
 // "Union" of all table types.
 struct TTableDescriptor {
   1: required Types.TTableId id
@@ -388,6 +394,7 @@ struct TTableDescriptor {
   19: optional THudiTable hudiTable
   20: optional TJdbcTable jdbcTable
   21: optional TMCTable mcTable
+  25: optional TRemoteDorisTable remoteDorisTable
 }
 
 struct TDescriptorTable {
