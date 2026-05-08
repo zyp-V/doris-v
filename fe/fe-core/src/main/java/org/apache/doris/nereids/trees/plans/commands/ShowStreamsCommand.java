@@ -61,7 +61,7 @@ public class ShowStreamsCommand extends Command implements NoForward {
     }
 
     private boolean isShowStreamsCaseSensitive() {
-        if (Env.getLowerCaseTableNames(catalog) == 0) {
+        if (Env.isTableNamesCaseSensitive()) {
             return CaseSensibility.TABLE.getCaseSensibility();
         }
         return false;
@@ -115,9 +115,6 @@ public class ShowStreamsCommand extends Command implements NoForward {
                 continue;
             }
             if (matcher != null && !matcher.match(table.get().getName())) {
-                continue;
-            }
-            if (table.get().isTemporary()) {
                 continue;
             }
             if (!Env.getCurrentEnv().getAccessManager().checkTblPriv(ConnectContext.get(),

@@ -849,6 +849,87 @@ public class InternalCatalog implements CatalogIf<Database> {
         LOG.info("replay rename database {} to {}", dbName, newDbName);
     }
 
+    // Create table stream
+    public void createTableStream(
+            org.apache.doris.nereids.trees.plans.commands.CreateStreamCommand command)
+            throws org.apache.doris.common.DdlException {
+        org.apache.doris.nereids.trees.plans.commands.info.CreateStreamInfo info = command.getCreateStreamInfo();
+
+        // stream db/name
+        String dbName = info.getStreamName().getDb();
+        String streamName = info.getStreamName().getTbl();
+
+        // base table
+        String baseCtl = info.getBaseTableName().getCtl();
+        String baseDb = info.getBaseTableName().getDb();
+        String baseTbl = info.getBaseTableName().getTbl();
+
+        // get base table (may throw AnalysisException, convert to DdlException)
+        org.apache.doris.catalog.TableIf baseTable;
+        try {
+            baseTable = org.apache.doris.catalog.Env.getCurrentEnv().getCatalogMgr()
+                    .getCatalogOrAnalysisException(baseCtl)
+                    .getDbOrAnalysisException(baseDb)
+                    .getTableOrAnalysisException(baseTbl);
+        } catch (org.apache.doris.common.AnalysisException e) {
+            throw new org.apache.doris.common.DdlException(e.getMessage());
+        }
+
+        // pre-check stream consume type to align unit-test expected message
+        java.util.Map<String, String> properties = info.getProperties() == null
+                ? new java.util.HashMap<>()
+                : new java.util.HashMap<>(info.getProperties());
+        String typeName = properties.get(org.apache.doris.common.util.PropertyAnalyzer.PROPERTIES_STREAM_TYPE);
+        if (typeName != null) {
+            org.apache.doris.catalog.stream.BaseTableStream.StreamConsumeType consumeType =
+                    org.apache.doris.catalog.stream.BaseTableStream.StreamConsumeType.getType(typeName);
+            if (consumeType == org.apache.doris.catalog.stream.BaseTableStream.StreamConsumeType.UNKNOWN) {
+                throw new org.apache.doris.common.DdlException("not supported type: " + typeName);
+            }
+        }
+
+        // build stream under base table read lock
+        baseTable.readLock();
+        try {
+            org.apache.doris.catalog.stream.BaseTableStream stream =
+                    new org.apache.doris.catalog.stream.TableStreamBuildFactory()
+                            .withName(streamName)
+                            .withBaseTable(baseTable)
+                            .build();
+            stream.setId(idGeneratorBuffer.getNextId());
+            stream.setComment(info.getComment());
+
+            try {
+                stream.setProperties(properties);
+            } catch (org.apache.doris.common.AnalysisException e) {
+                throw new org.apache.doris.common.DdlException(e.getMessage());
+            }
+            if (!properties.isEmpty()) {
+                throw new org.apache.doris.common.DdlException("Unknown properties: " + properties);
+            }
+
+            org.apache.doris.catalog.Database db = getDbOrDdlException(dbName);
+            org.apache.doris.common.Pair<Boolean, Boolean> result =
+                    db.createTableWithLock((org.apache.doris.catalog.Table) stream, false, info.isIfNotExists());
+            if (!result.first) {
+                // existed and not IF NOT EXISTS
+                org.apache.doris.common.ErrorReport.reportDdlException(
+                        org.apache.doris.common.ErrorCode.ERR_TABLE_EXISTS_ERROR, streamName);
+            }
+        } finally {
+            baseTable.readUnlock();
+        }
+    }
+
+    public void dropStream(String dbName, String streamName, boolean ifExists, boolean forceDrop)
+            throws org.apache.doris.common.DdlException {
+        // reuse existing dropTable logic
+        dropTable(new org.apache.doris.analysis.DropTableStmt(
+                ifExists,
+                new org.apache.doris.analysis.TableName(InternalCatalog.INTERNAL_CATALOG_NAME, dbName, streamName),
+                forceDrop));
+    }
+
     // Drop table
     public void dropTable(DropTableStmt stmt) throws DdlException {
         Map<String, Long> costTimes = new TreeMap<String, Long>();
