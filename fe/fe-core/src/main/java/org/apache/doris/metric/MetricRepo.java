@@ -44,10 +44,10 @@ import org.apache.doris.transaction.TransactionStatus;
 
 import com.codahale.metrics.Histogram;
 import com.codahale.metrics.MetricRegistry;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalNotification;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.RemovalCause;
+import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
@@ -58,9 +58,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class MetricRepo {
@@ -585,16 +585,17 @@ public final class MetricRepo {
         };
         DORIS_METRIC_REGISTER.addMetrics(GAUGE_INTERNAL_TABLE_NUM);
 
-        COUNTER_QUERY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
+        COUNTER_QUERY_PER_FINGERPRINT_CACHE = Caffeine.newBuilder()
                 .expireAfterAccess(5, TimeUnit.MINUTES)
-                .concurrencyLevel(Config.max_mysql_service_task_threads_num)
+                .initialCapacity(1024)
+                .executor(Runnable::run)
                 .removalListener(new RemovalListener<String, LongCounterMetric>() {
-                    public void onRemoval(RemovalNotification<String, LongCounterMetric> notification) {
+                    @Override
+                    public void onRemoval(String key, LongCounterMetric longCounterMetric, RemovalCause removalCause) {
                         // e.g.
                         // metric_name: fingerprint${type}
                         // metric_key:  ${short_fingerprint}${type}
                         // notice that ${type} start with '_'
-                        String key = notification.getKey();
                         String fingerprint = key.startsWith("NaN") ? "NaN" : key.substring(0, 12);
                         String type = key.startsWith("NaN") ? key.substring(3) : key.substring(12);
                         DORIS_METRIC_REGISTER.removeMetricsByNameAndLabels("fingerprint" + type,
@@ -603,22 +604,25 @@ public final class MetricRepo {
                 })
                 .build();
         // If the cache expires, remove the fingerprint
-        LATENCY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
+        LATENCY_PER_FINGERPRINT_CACHE = Caffeine.newBuilder()
                 .expireAfterAccess(5, TimeUnit.MINUTES)
-                .concurrencyLevel(Config.max_mysql_service_task_threads_num)
+                .initialCapacity(1024)
+                .executor(Runnable::run)
                 .removalListener(new RemovalListener<String, Histogram>() {
-                    public void onRemoval(RemovalNotification<String, Histogram> notification) {
-                        FINGERPRINT_METRIC_REGISTER.remove(notification.getKey());
+                    @Override
+                    public void onRemoval(String key, Histogram histogram, RemovalCause removalCause) {
+                        FINGERPRINT_METRIC_REGISTER.remove(key);
                     }
                 })
                 .build();
-        EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE = CacheBuilder.newBuilder()
+        EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE = Caffeine.newBuilder()
                 .expireAfterAccess(5, TimeUnit.MINUTES)
-                .concurrencyLevel(Config.max_mysql_service_task_threads_num)
+                .initialCapacity(1024)
+                .executor(Runnable::run)
                 .removalListener(new RemovalListener<String, Histogram>() {
                     @Override
-                    public void onRemoval(RemovalNotification<String, Histogram> notification) {
-                        EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER.remove(notification.getKey());
+                    public void onRemoval(String key, Histogram histogram, RemovalCause removalCause) {
+                        EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER.remove(key);
                     }
                 })
                 .build();
@@ -894,9 +898,9 @@ public final class MetricRepo {
         if (fingerprintMetric == null) {
             try {
                 fingerprintMetric = MetricRepo.COUNTER_QUERY_PER_FINGERPRINT_CACHE.get(fingerprintMetricKey,
-                        new Callable<LongCounterMetric>() {
+                        new Function<String, LongCounterMetric>() {
                             @Override
-                            public LongCounterMetric call() throws Exception {
+                            public LongCounterMetric apply(String key) {
                                 LongCounterMetric result = new LongCounterMetric(fingerprintMetricName, unit,
                                         fingerprintMetricComment);
                                 // add label
@@ -920,9 +924,9 @@ public final class MetricRepo {
         if (fingerprintLatencyHistogram == null) {
             try {
                 fingerprintLatencyHistogram = MetricRepo.LATENCY_PER_FINGERPRINT_CACHE.get(fingerprint,
-                        new Callable<Histogram>() {
+                        new Function<String, Histogram>() {
                             @Override
-                            public Histogram call() throws Exception {
+                            public Histogram apply(String key) {
                                 return FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
                             }
                         });
@@ -940,9 +944,9 @@ public final class MetricRepo {
         if (latencyHistogram == null) {
             try {
                 latencyHistogram = MetricRepo.EXECUTE_CMD_LATENCY_PER_FINGERPRINT_CACHE.get(fingerprint,
-                        new Callable<Histogram>() {
+                        new Function<String, Histogram>() {
                             @Override
-                            public Histogram call() throws Exception {
+                            public Histogram apply(String key) {
                                 return EXECUTE_CMD_FINGERPRINT_METRIC_REGISTER.histogram(fingerprint);
                             }
                         });
