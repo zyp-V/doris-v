@@ -2718,7 +2718,10 @@ Status Tablet::_get_segment_column_iterator(
         const BetaRowsetSharedPtr& rowset, uint32_t segid, const TabletColumn& target_column,
         SegmentCacheHandle* segment_cache_handle,
         std::unique_ptr<segment_v2::ColumnIterator>* column_iterator, OlapReaderStatistics* stats) {
-    RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(rowset, segment_cache_handle, true));
+    {
+        SCOPED_RAW_TIMER(&stats->segment_load_meta_timer_ns);
+        RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(rowset, segment_cache_handle, true));
+    }
     // find segment
     auto it = std::find_if(
             segment_cache_handle->get_segments().begin(),
@@ -2837,6 +2840,7 @@ Status Tablet::lookup_row_data(const Slice& encoded_key, const RowLocation& row_
     RETURN_IF_ERROR(column_iterator->read_by_rowids(rowids.data(), 1, column_ptr));
     assert(column_ptr->size() == 1);
     auto string_column = static_cast<vectorized::ColumnString*>(column_ptr.get());
+
     StringRef value = string_column->get_data_at(0);
     values = value.to_string();
     if (write_to_cache) {
@@ -2851,7 +2855,8 @@ Status Tablet::lookup_row_key(const Slice& encoded_key, TabletSchema* latest_sch
                               const std::vector<RowsetSharedPtr>& specified_rowsets,
                               RowLocation* row_location, uint32_t version,
                               std::vector<std::unique_ptr<SegmentCacheHandle>>& segment_caches,
-                              RowsetSharedPtr* rowset, bool with_rowid, bool is_partial_update) {
+                              RowsetSharedPtr* rowset, bool with_rowid, bool is_partial_update,
+                              OlapReaderStatistics* stats) {
     SCOPED_BVAR_LATENCY(g_tablet_lookup_rowkey_latency);
     size_t seq_col_length = 0;
     // use the latest tablet schema to decide if the tablet has sequence column currently
@@ -2893,15 +2898,18 @@ Status Tablet::lookup_row_key(const Slice& encoded_key, TabletSchema* latest_sch
 
         if (UNLIKELY(segment_caches[i] == nullptr)) {
             segment_caches[i] = std::make_unique<SegmentCacheHandle>();
-            RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(
-                    std::static_pointer_cast<BetaRowset>(rs), segment_caches[i].get(), true));
+            {
+                SCOPED_RAW_TIMER(GET_MEMBER_IF_VALID(stats, segment_load_meta_timer_ns));
+                RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(
+                        std::static_pointer_cast<BetaRowset>(rs), segment_caches[i].get(), true));
+            }
         }
         auto& segments = segment_caches[i]->get_segments();
         DCHECK_EQ(segments.size(), num_segments);
 
         for (auto id : picked_segments) {
             Status s = segments[id]->lookup_row_key(encoded_key, schema, with_seq_col, with_rowid,
-                                                    &loc);
+                                                    &loc, stats);
             if (s.is<KEY_NOT_FOUND>()) {
                 continue;
             }

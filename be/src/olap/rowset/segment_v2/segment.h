@@ -127,7 +127,8 @@ public:
     }
 
     Status lookup_row_key(const Slice& key, const TabletSchema* latest_schema, bool with_seq_col,
-                          bool with_rowid, RowLocation* row_location);
+                          bool with_rowid, RowLocation* row_location,
+                          OlapReaderStatistics* stats = nullptr);
 
     Status read_key_by_rowid(uint32_t row_id, std::string* key);
 
@@ -135,9 +136,9 @@ public:
                                   vectorized::MutableColumnPtr& result, OlapReaderStatistics& stats,
                                   std::unique_ptr<ColumnIterator>& iterator_hint);
 
-    Status load_index();
+    Status load_index(OlapReaderStatistics* stats = nullptr);
 
-    Status load_pk_index_and_bf();
+    Status load_pk_index_and_bf(OlapReaderStatistics* stats = nullptr);
 
     void update_healthy_status(Status new_status) { _healthy_status.update(new_status); }
     // The segment is loaded into SegmentCache and then will load indices, if there are something wrong
@@ -211,7 +212,7 @@ private:
     Status _open();
     Status _parse_footer(SegmentFooterPB* footer);
     Status _create_column_readers(const SegmentFooterPB& footer);
-    Status _load_pk_bloom_filter();
+    Status _load_pk_bloom_filter(OlapReaderStatistics* stats = nullptr);
     ColumnReader* _get_column_reader(const TabletColumn& col);
 
     // Get Iterator which will read variant root column and extract with paths and types info

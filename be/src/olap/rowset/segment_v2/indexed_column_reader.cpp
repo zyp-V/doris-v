@@ -33,6 +33,8 @@
 #include "olap/types.h"
 #include "util/block_compression.h"
 #include "util/bvar_helper.h"
+#include "util/doris_metrics.h"
+#include "util/time.h"
 
 namespace doris {
 using namespace ErrorCode;
@@ -115,7 +117,8 @@ Status IndexedColumnReader::load_index_page(const PagePointerPB& pp, PageHandle*
 
 Status IndexedColumnReader::read_page(const PagePointer& pp, PageHandle* handle, Slice* body,
                                       PageFooterPB* footer, PageTypePB type,
-                                      BlockCompressionCodec* codec, bool pre_decode) const {
+                                      BlockCompressionCodec* codec, bool pre_decode,
+                                      OlapReaderStatistics* stats) const {
     OlapReaderStatistics tmp_stats;
     PageReadOptions opts {
             .use_page_cache = _use_page_cache,
@@ -137,6 +140,14 @@ Status IndexedColumnReader::read_page(const PagePointer& pp, PageHandle* handle,
     g_index_reader_bytes << footer->uncompressed_size();
     g_index_reader_pages << 1;
     g_index_reader_cached_pages << tmp_stats.cached_pages_num;
+
+    // update stats
+    if (stats != nullptr) {
+        stats->index_io_ns += tmp_stats.io_ns;
+        stats->index_uncompressed_bytes_read += tmp_stats.uncompressed_bytes_read;
+        stats->index_pages_read += tmp_stats.total_pages_num;
+    }
+
     return st;
 }
 
@@ -154,8 +165,8 @@ Status IndexedColumnIterator::_read_data_page(const PagePointer& pp) {
     PageHandle handle;
     Slice body;
     PageFooterPB footer;
-    RETURN_IF_ERROR(
-            _reader->read_page(pp, &handle, &body, &footer, DATA_PAGE, _compress_codec, true));
+    RETURN_IF_ERROR(_reader->read_page(pp, &handle, &body, &footer, DATA_PAGE, _compress_codec,
+                                      true, _stats));
     // parse data page
     // note that page_index is not used in IndexedColumnIterator, so we pass 0
     PageDecoderOptions opts;

@@ -38,10 +38,12 @@
 #include "runtime/exec_env.h"
 #include "runtime/runtime_state.h"
 #include "runtime/thread_context.h"
+#include "util/doris_metrics.h"
 #include "util/key_util.h"
 #include "util/runtime_profile.h"
 #include "util/simd/bits.h"
 #include "util/thrift_util.h"
+#include "util/time.h"
 #include "vec/columns/columns_number.h"
 #include "vec/data_types/serde/data_type_serde.h"
 #include "vec/exprs/vexpr.h"
@@ -237,7 +239,86 @@ Status PointQueryExecutor::lookup_up() {
     RETURN_IF_ERROR(_lookup_row_key());
     RETURN_IF_ERROR(_lookup_row_data());
     RETURN_IF_ERROR(_output_data());
+
+    _emit_point_query_metrics();
+
     return Status::OK();
+}
+
+void PointQueryExecutor::_emit_point_query_metrics() {
+    if (!config::enable_point_query_detail_metrics) {
+        return;
+    }
+
+    auto& read_stats = _profile_metrics.read_stats;
+
+    // 1. staged point query: init -> lookup key -> lookup data -> output
+    // 1.1 init point query latency
+    uint64_t init_us = _profile_metrics.init_ns.value() / NANOS_PER_MICRO;
+    DorisMetrics::instance()->point_query_latency_us_init->add(init_us);
+
+    // 1.2 lookup key latency: reuse profile metrics
+    uint64_t lookup_key_us = _profile_metrics.lookup_key_ns.value() / NANOS_PER_MICRO;
+    DorisMetrics::instance()->point_query_latency_us_lookup_key->add(lookup_key_us);
+    
+    // 1.3 lookup data latency: reuse profile metrics
+    uint64_t lookup_data_us = _profile_metrics.lookup_data_ns.value() / NANOS_PER_MICRO;
+    DorisMetrics::instance()->point_query_latency_us_lookup_data->add(lookup_data_us);
+
+    // 1.4 output stage latency
+    uint64_t output_us = _profile_metrics.output_data_ns.value() / NANOS_PER_MICRO;
+    DorisMetrics::instance()->point_query_latency_us_output->add(output_us);
+
+    // segment load: read segment meta
+    if (read_stats.segment_load_meta_timer_ns > 0) {
+        uint64_t segment_load_init_us = read_stats.segment_load_meta_timer_ns / NANOS_PER_MICRO;
+        DorisMetrics::instance()->point_query_read_us_load_segment_meta->add(segment_load_init_us);
+    }
+
+    // segment load: load bf
+    if (read_stats.segment_load_bf_timer_ns > 0) {
+        uint64_t segment_load_bf_us = read_stats.segment_load_bf_timer_ns / NANOS_PER_MICRO;
+        DorisMetrics::instance()->point_query_read_us_load_segment_bf->add(segment_load_bf_us);
+    }
+
+    // segment load: load pk index
+    if (read_stats.segment_load_index_timer_ns > 0) {
+        uint64_t segment_load_index_us = read_stats.segment_load_index_timer_ns / NANOS_PER_MICRO;
+        DorisMetrics::instance()->point_query_read_us_load_segment_pk->add(segment_load_index_us);
+    }
+
+    // read_us: read_pk_index
+    if (read_stats.index_io_ns > 0) {
+        uint64_t read_index_us = read_stats.index_io_ns / NANOS_PER_MICRO;
+        DorisMetrics::instance()->point_query_read_us_read_pk_index->add(read_index_us);
+    }
+
+    // read_us: read_data
+    if (read_stats.io_ns > 0) {
+        uint64_t read_data_us = read_stats.io_ns / NANOS_PER_MICRO;
+        DorisMetrics::instance()->point_query_read_us_read_data->add(read_data_us);
+    }
+
+    // scan_bytes: index
+    if (read_stats.index_uncompressed_bytes_read > 0) {
+        DorisMetrics::instance()->point_query_scan_bytes_index->increment(read_stats.index_uncompressed_bytes_read);
+    }
+
+    // scan_bytes: data
+    if (read_stats.uncompressed_bytes_read > 0) {
+        DorisMetrics::instance()->point_query_scan_bytes_data->increment(
+                read_stats.uncompressed_bytes_read);
+    }
+
+    // total_page: index
+    if (read_stats.index_pages_read > 0) {
+        DorisMetrics::instance()->point_query_total_page_index->increment(read_stats.index_pages_read);
+    }
+
+    // total_page: data
+    if (read_stats.total_pages_num > 0) {
+         DorisMetrics::instance()->point_query_total_page_data->increment(read_stats.total_pages_num);
+    }
 }
 
 std::string PointQueryExecutor::print_profile() {
@@ -258,14 +339,16 @@ std::string PointQueryExecutor::print_profile() {
             ""
             ", is_binary_row:{}, output_columns:{}, total_keys:{}, row_cache_hits:{}"
             ", hit_cached_pages:{}, total_pages_read:{}, compressed_bytes_read:{}, "
-            "io_latency:{}ns, "
-            "uncompressed_bytes_read:{}, result_data_bytes:{}"
+            "data[io_latency:{}ns, "
+            "uncompressed_bytes_read:{}, result_data_bytes:{}], "
+            "index[io_latency:{}ns, uncompress_bytes_read:{}, pages: {}, check bf: {}ns]"
             "",
             total_us, init_us, init_key_us, lookup_key_us, lookup_data_us, output_data_us,
             _profile_metrics.hit_lookup_cache, _binary_row_format, _reusable->output_exprs().size(),
             _row_read_ctxs.size(), _profile_metrics.row_cache_hits, read_stats.cached_pages_num,
             read_stats.total_pages_num, read_stats.compressed_bytes_read, read_stats.io_ns,
-            read_stats.uncompressed_bytes_read, _profile_metrics.result_data_bytes);
+            read_stats.uncompressed_bytes_read, _profile_metrics.result_data_bytes,
+            read_stats.index_io_ns, read_stats.index_uncompressed_bytes_read, read_stats.index_pages_read, read_stats.segment_check_bf_timer_ns);
 }
 
 Status PointQueryExecutor::_init_keys(const PTabletKeyLookupRequest* request) {
@@ -317,7 +400,9 @@ Status PointQueryExecutor::_lookup_row_key() {
         auto rowset_ptr = std::make_unique<RowsetSharedPtr>();
         st = (_tablet->lookup_row_key(_row_read_ctxs[i]._primary_key, nullptr, false,
                                       specified_rowsets, &location, INT32_MAX /*rethink?*/,
-                                      segment_caches, rowset_ptr.get(), false));
+                                      segment_caches, rowset_ptr.get(), false,
+                                      /*is_partial_update*/ false,
+                                      /*stats*/ &_profile_metrics.read_stats));
         if (st.is<ErrorCode::KEY_NOT_FOUND>()) {
             continue;
         }
@@ -419,6 +504,7 @@ Status PointQueryExecutor::_output_data() {
         _response->set_empty_batch(true);
     }
     _profile_metrics.result_data_bytes = _result_block->bytes();
+    DorisMetrics::instance()->point_query_result_data_bytes->increment(_profile_metrics.result_data_bytes);
     _reusable->return_block(_result_block);
     return Status::OK();
 }

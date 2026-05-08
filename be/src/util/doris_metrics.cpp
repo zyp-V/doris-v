@@ -32,6 +32,7 @@
 
 #include "common/status.h"
 #include "io/fs/local_file_system.h"
+#include "util/bvar_helper.h"
 #include "util/system_metrics.h"
 
 namespace doris {
@@ -45,6 +46,54 @@ DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(fragment_request_duration_us, MetricUnit::M
 DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(query_scan_bytes, MetricUnit::BYTES);
 DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(query_scan_rows, MetricUnit::ROWS);
 DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(query_scan_count, MetricUnit::NOUNIT);
+
+DEFINE_METRIC_PROTOTYPE(point_query_latency_us_total, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_latency_us", Labels({{"stage", "total"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_latency_us_init, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_latency_us", Labels({{"stage", "init"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_latency_us_lookup_key, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_latency_us", Labels({{"stage", "lookup_key"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_latency_us_lookup_data, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_latency_us", Labels({{"stage", "lookup_data"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_latency_us_output, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_latency_us", Labels({{"stage", "output"}}), false);
+
+DEFINE_METRIC_PROTOTYPE(point_query_read_us_load_segment_meta, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_read_us", Labels({{"type", "load_segment_meta"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_read_us_load_segment_bf, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_read_us", Labels({{"type", "load_segment_bf"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_read_us_load_segment_pk, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_read_us", Labels({{"type", "load_segment_pk"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_read_us_read_pk_index, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_read_us", Labels({{"type", "read_pk_index"}}), false);
+DEFINE_METRIC_PROTOTYPE(point_query_read_us_read_data, MetricType::HISTOGRAM,
+                        MetricUnit::MICROSECONDS, "",
+                        "point_query_read_us", Labels({{"type", "read_data"}}), false);
+
+DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(point_query_requests_success_total, MetricUnit::REQUESTS,
+                                     "", point_query_requests_total,
+                                     Labels({{"status", "success"}}));
+DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(point_query_requests_fail_total, MetricUnit::REQUESTS, "",
+                                     point_query_requests_total, Labels({{"status", "fail"}}));
+DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(point_query_scan_bytes_index, MetricUnit::BYTES, "",
+                                     point_query_scan_bytes, Labels({{"type", "index"}}));
+DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(point_query_scan_bytes_data, MetricUnit::BYTES, "",
+                                     point_query_scan_bytes, Labels({{"type", "data"}}));
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(point_query_result_data_bytes, MetricUnit::BYTES);
+DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(point_query_total_page_index, MetricUnit::NOUNIT, "",
+                                     point_query_total_page, Labels({{"type", "index"}}));
+DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(point_query_total_page_data, MetricUnit::NOUNIT, "",
+                                     point_query_total_page, Labels({{"type", "data"}}));
+
 DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(push_requests_success_total, MetricUnit::REQUESTS, "",
                                      push_requests_total, Labels({{"status", "SUCCESS"}}));
 DEFINE_COUNTER_METRIC_PROTOTYPE_5ARG(push_requests_fail_total, MetricUnit::REQUESTS, "",
@@ -203,6 +252,14 @@ DorisMetrics::DorisMetrics() : _metric_registry(_s_registry_name) {
     INT_COUNTER_METRIC_REGISTER(_server_metric_entity, query_scan_bytes);
     INT_COUNTER_METRIC_REGISTER(_server_metric_entity, query_scan_rows);
 
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_requests_success_total);
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_requests_fail_total);
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_scan_bytes_index);
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_scan_bytes_data);
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_result_data_bytes);
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_total_page_index);
+    INT_COUNTER_METRIC_REGISTER(_server_metric_entity, point_query_total_page_data);
+
     INT_COUNTER_METRIC_REGISTER(_server_metric_entity, push_requests_success_total);
     INT_COUNTER_METRIC_REGISTER(_server_metric_entity, push_requests_fail_total);
     INT_COUNTER_METRIC_REGISTER(_server_metric_entity, push_request_duration_us);
@@ -322,8 +379,48 @@ DorisMetrics::DorisMetrics() : _metric_registry(_s_registry_name) {
     INT_COUNTER_METRIC_REGISTER(_server_metric_entity, pipeline_task_queue_size);
 }
 
+void DorisMetrics::_init_point_query_metrics() {
+    // Must be called after init_bvar_flags_from_config().
+    _point_query_latency_us_total_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_latency_us_init_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_latency_us_lookup_key_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_latency_us_lookup_data_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_latency_us_output_recorder = std::make_unique<bvar::LatencyRecorder>();
+
+    _point_query_read_us_load_segment_meta_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_read_us_load_segment_bf_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_read_us_load_segment_pk_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_read_us_read_pk_index_recorder = std::make_unique<bvar::LatencyRecorder>();
+    _point_query_read_us_read_data_recorder = std::make_unique<bvar::LatencyRecorder>();
+
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_latency_us_total,
+                                 _point_query_latency_us_total_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_latency_us_init,
+                                 _point_query_latency_us_init_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_latency_us_lookup_key,
+                                 _point_query_latency_us_lookup_key_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_latency_us_lookup_data,
+                                 _point_query_latency_us_lookup_data_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_latency_us_output,
+                                 _point_query_latency_us_output_recorder.get());
+
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_read_us_load_segment_meta,
+                                 _point_query_read_us_load_segment_meta_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_read_us_load_segment_bf,
+                                 _point_query_read_us_load_segment_bf_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_read_us_load_segment_pk,
+                                 _point_query_read_us_load_segment_pk_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_read_us_read_pk_index,
+                                 _point_query_read_us_read_pk_index_recorder.get());
+    BVAR_LATENCY_METRIC_REGISTER(_server_metric_entity, point_query_read_us_read_data,
+                                 _point_query_read_us_read_data_recorder.get());
+}
+
 void DorisMetrics::initialize(bool init_system_metrics, const std::set<std::string>& disk_devices,
                               const std::vector<std::string>& network_interfaces) {
+    doris::init_bvar_flags_from_config();
+    _init_point_query_metrics();
+
     if (init_system_metrics) {
         _system_metrics.reset(
                 new SystemMetrics(&_metric_registry, disk_devices, network_interfaces));

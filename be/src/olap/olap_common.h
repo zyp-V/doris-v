@@ -292,6 +292,11 @@ struct OlapReaderStatistics {
     int64_t decompress_ns = 0;
     int64_t uncompressed_bytes_read = 0;
 
+    // index page IO stats
+    int64_t index_io_ns = 0;
+    int64_t index_uncompressed_bytes_read = 0;
+    int64_t index_pages_read = 0;
+
     // total read bytes in memory
     int64_t bytes_read = 0;
 
@@ -416,6 +421,11 @@ struct OlapReaderStatistics {
 
     int64_t segment_create_column_readers_timer_ns = 0;
     int64_t segment_load_index_timer_ns = 0;
+    // bloom filter load timer
+    int64_t segment_load_bf_timer_ns = 0;
+    int64_t segment_check_bf_timer_ns = 0;
+    // load segment & segment meta init
+    int64_t segment_load_meta_timer_ns = 0;
 };
 
 using ColumnId = uint32_t;

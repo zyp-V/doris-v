@@ -59,7 +59,9 @@
 #include "runtime/runtime_state.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
+#include "util/doris_metrics.h"
 #include "util/slice.h" // Slice
+#include "util/time.h"
 #include "vec/columns/column.h"
 #include "vec/common/string_ref.h"
 #include "vec/core/field.h"
@@ -210,7 +212,7 @@ Status Segment::new_iterator(SchemaSPtr schema, const StorageReadOptions& read_o
     }
 
     {
-        SCOPED_RAW_TIMER(&read_options.stats->segment_load_index_timer_ns);
+        SCOPED_RAW_TIMER(GET_MEMBER_IF_VALID(read_options.stats, segment_load_index_timer_ns));
         RETURN_IF_ERROR(load_index());
     }
 
@@ -306,7 +308,7 @@ Status Segment::_parse_footer(SegmentFooterPB* footer) {
     return Status::OK();
 }
 
-Status Segment::_load_pk_bloom_filter() {
+Status Segment::_load_pk_bloom_filter(OlapReaderStatistics* stats) {
 #ifdef BE_TEST
     if (_pk_index_meta == nullptr) {
         // for BE UT "segment_cache_test"
@@ -320,6 +322,7 @@ Status Segment::_load_pk_bloom_filter() {
     DCHECK(_pk_index_meta != nullptr);
     DCHECK(_pk_index_reader != nullptr);
 
+    SCOPED_RAW_TIMER(GET_MEMBER_IF_VALID(stats, segment_load_bf_timer_ns));
     return _load_pk_bf_once.call([this] {
         RETURN_IF_ERROR(_pk_index_reader->parse_bf(_file_reader, *_pk_index_meta));
         // _meta_mem_usage += _pk_index_reader->get_bf_memory_size();
@@ -327,18 +330,20 @@ Status Segment::_load_pk_bloom_filter() {
     });
 }
 
-Status Segment::load_pk_index_and_bf() {
+Status Segment::load_pk_index_and_bf(OlapReaderStatistics* stats) {
     // `DorisCallOnce` may catch exception in calling stack A and re-throw it in
     // a different calling stack B which doesn't have catch block. So we add catch block here
     // to prevent coreudmp
     RETURN_IF_CATCH_EXCEPTION({
-        RETURN_IF_ERROR(load_index());
-        RETURN_IF_ERROR(_load_pk_bloom_filter());
+        RETURN_IF_ERROR(load_index(stats));
+        RETURN_IF_ERROR(_load_pk_bloom_filter(stats));
     });
+    
     return Status::OK();
 }
 
-Status Segment::load_index() {
+Status Segment::load_index(OlapReaderStatistics* stats) {
+    SCOPED_RAW_TIMER(GET_MEMBER_IF_VALID(stats, segment_load_index_timer_ns));
     return _load_index_once.call([this] {
         if (_tablet_schema->keys_type() == UNIQUE_KEYS && _pk_index_meta != nullptr) {
             _pk_index_reader = std::make_unique<PrimaryKeyIndexReader>();
@@ -743,8 +748,9 @@ Status Segment::new_inverted_index_iterator(const TabletColumn& tablet_column,
 }
 
 Status Segment::lookup_row_key(const Slice& key, const TabletSchema* latest_schema,
-                               bool with_seq_col, bool with_rowid, RowLocation* row_location) {
-    RETURN_IF_ERROR(load_pk_index_and_bf());
+                              bool with_seq_col, bool with_rowid, RowLocation* row_location,
+                              OlapReaderStatistics* stats) {
+    RETURN_IF_ERROR(load_pk_index_and_bf(stats));
     bool has_seq_col = latest_schema->has_sequence_col();
     bool has_rowid = !latest_schema->cluster_key_idxes().empty();
     size_t seq_col_length = 0;
@@ -757,13 +763,16 @@ Status Segment::lookup_row_key(const Slice& key, const TabletSchema* latest_sche
             Slice(key.get_data(), key.get_size() - (with_seq_col ? seq_col_length : 0) -
                                           (with_rowid ? rowid_length : 0));
 
-    DCHECK(_pk_index_reader != nullptr);
-    if (!_pk_index_reader->check_present(key_without_seq)) {
-        return Status::Error<ErrorCode::KEY_NOT_FOUND>("Can't find key in the segment");
+    {
+        SCOPED_RAW_TIMER(GET_MEMBER_IF_VALID(stats, segment_check_bf_timer_ns));
+        DCHECK(_pk_index_reader != nullptr);
+        if (!_pk_index_reader->check_present(key_without_seq)) {
+            return Status::Error<ErrorCode::KEY_NOT_FOUND>("Can't find key in the segment");
+        }
     }
     bool exact_match = false;
     std::unique_ptr<segment_v2::IndexedColumnIterator> index_iterator;
-    RETURN_IF_ERROR(_pk_index_reader->new_iterator(&index_iterator));
+    RETURN_IF_ERROR(_pk_index_reader->new_iterator(&index_iterator, stats));
     auto st = index_iterator->seek_at_or_after(&key_without_seq, &exact_match);
     if (!st.ok() && !st.is<ErrorCode::ENTRY_NOT_FOUND>()) {
         return st;

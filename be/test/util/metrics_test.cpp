@@ -17,6 +17,7 @@
 
 #include "util/metrics.h"
 
+#include <bvar/latency_recorder.h>
 #include <glog/logging.h>
 #include <gtest/gtest-message.h>
 #include <gtest/gtest-test-part.h>
@@ -483,5 +484,44 @@ test_registry_task_duration_standard_deviation{instance="test",type="create_tabl
                 registry.to_json());
         registry.deregister_entity(entity);
     }
+}
+
+TEST_F(MetricsTest, BvarLatencyRegistryOutput) {
+    MetricRegistry registry("test_registry");
+
+    // Register one bvar latency metric to the entity
+    auto entity = registry.register_entity("test_entity");
+
+    MetricPrototype task_duration_type(MetricType::HISTOGRAM, MetricUnit::MICROSECONDS,
+                                       "task_duration");
+    BvarLatencyMetric* task_duration =
+            (BvarLatencyMetric*)entity->register_metric<BvarLatencyMetric>(&task_duration_type);
+
+    bvar::LatencyRecorder recorder;
+    task_duration->bind(&recorder);
+
+    // Feed samples across multiple seconds so that percentile window has enough sampled buckets.
+    // PercentileWindow::get_samples() needs at least 3 sampling points to produce a non-empty set.
+    for (int i = 0; i < 5; ++i) {
+        recorder << 123;
+        usleep(1100000); // > 1s, wait for bvar sampler tick
+    }
+
+    EXPECT_EQ(R"(# TYPE test_registry_task_duration histogram
+test_registry_task_duration{quantile="0.50"} 123
+test_registry_task_duration{quantile="0.75"} 123
+test_registry_task_duration{quantile="0.90"} 123
+test_registry_task_duration{quantile="0.95"} 123
+test_registry_task_duration{quantile="0.99"} 123
+test_registry_task_duration_count 5
+test_registry_task_duration_max 123
+test_registry_task_duration_average 123
+test_registry_task_duration_median 123
+)",
+              registry.to_prometheus());
+    EXPECT_EQ(
+            R"([{"tags":{"metric":"task_duration"},"unit":"microseconds","value":{"total_count":5,"average":123,"median":123,"percentile_50":123,"percentile_75":123,"percentile_90":123,"percentile_95":123,"percentile_99":123,"max":123}}])",
+            registry.to_json());
+    registry.deregister_entity(entity);
 }
 } // namespace doris

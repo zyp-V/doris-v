@@ -299,6 +299,8 @@ private:
 
     Status _output_data();
 
+    void _emit_point_query_metrics();
+
     static void release_rowset(RowsetSharedPtr* r) {
         if (r && *r) {
             VLOG_DEBUG << "release rowset " << (*r)->rowset_id();

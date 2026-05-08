@@ -72,6 +72,7 @@ class TRuntimeProfileTree;
     ScopedTimer<ThreadCpuStopWatch> MACRO_CONCAT(SCOPED_TIMER, __COUNTER__)(c)
 #define CANCEL_SAFE_SCOPED_TIMER(c, is_cancelled) \
     ScopedTimer<MonotonicStopWatch> MACRO_CONCAT(SCOPED_TIMER, __COUNTER__)(c, is_cancelled)
+#define GET_MEMBER_IF_VALID(p, member) ((p) == nullptr ? nullptr : &((p)->member))
 #define SCOPED_RAW_TIMER(c)                                                                  \
     doris::ScopedRawTimer<doris::MonotonicStopWatch, int64_t> MACRO_CONCAT(SCOPED_RAW_TIMER, \
                                                                            __COUNTER__)(c)
@@ -658,7 +659,11 @@ class ScopedRawTimer {
 public:
     ScopedRawTimer(C* counter) : _counter(counter) { _sw.start(); }
     // Update counter when object is destroyed
-    ~ScopedRawTimer() { *_counter += _sw.elapsed_time(); }
+    ~ScopedRawTimer() {
+        if (_counter != nullptr) {
+            *_counter += _sw.elapsed_time();
+        }
+    }
 
     // Disable copy constructor and assignment
     ScopedRawTimer(const ScopedRawTimer& timer) = delete;

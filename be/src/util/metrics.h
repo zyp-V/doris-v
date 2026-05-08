@@ -32,6 +32,10 @@
 
 #include "util/histogram.h"
 
+namespace bvar {
+class LatencyRecorder;
+}
+
 namespace doris {
 
 namespace rj = RAPIDJSON_NAMESPACE;
@@ -130,6 +134,32 @@ protected:
     HistogramStat _stats;
 };
 
+class BvarLatencyMetric : public Metric {
+public:
+    BvarLatencyMetric() = default;
+    explicit BvarLatencyMetric(bvar::LatencyRecorder* recorder) : _recorder(recorder) {}
+    ~BvarLatencyMetric() override = default;
+
+    BvarLatencyMetric(const BvarLatencyMetric&) = delete;
+    BvarLatencyMetric& operator=(const BvarLatencyMetric&) = delete;
+
+    void bind(bvar::LatencyRecorder* recorder) { _recorder = recorder; }
+
+    // Record a latency value (unit should match the bound recorder's semantics).
+    void add(const uint64_t& value);
+
+    std::string to_string() const override;
+    std::string to_prometheus(const std::string& display_name, const Labels& entity_labels,
+                              const Labels& metric_labels) const override;
+    rj::Value to_json_value(rj::Document::AllocatorType& allocator) const override;
+
+private:
+    const bvar::LatencyRecorder& _latency_recorder() const;
+
+    static std::map<std::string, double> _s_output_percentiles;
+    bvar::LatencyRecorder* _recorder = nullptr;
+};
+
 template <typename T>
 class AtomicCounter : public AtomicMetric<T> {
 public:
@@ -219,6 +249,10 @@ public:
 
 #define HISTOGRAM_METRIC_REGISTER(entity, metric) \
     metric = (HistogramMetric*)(entity->register_metric<HistogramMetric>(&METRIC_##metric))
+
+#define BVAR_LATENCY_METRIC_REGISTER(entity, metric, recorder)                              \
+    metric = (BvarLatencyMetric*)(entity->register_metric<BvarLatencyMetric>(&METRIC_##metric)); \
+    metric->bind(recorder)
 
 #define METRIC_DEREGISTER(entity, metric) entity->deregister_metric(&METRIC_##metric)
 

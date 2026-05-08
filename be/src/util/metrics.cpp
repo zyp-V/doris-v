@@ -17,6 +17,7 @@
 
 #include "util/metrics.h"
 
+#include <bvar/latency_recorder.h>
 #include <glog/logging.h>
 #include <rapidjson/encodings.h>
 #include <rapidjson/stringbuffer.h>
@@ -122,6 +123,9 @@ std::string Metric::to_prometheus(const std::string& display_name, const Labels&
 
 std::map<std::string, double> HistogramMetric::_s_output_percentiles = {
         {"0.50", 50.0}, {"0.75", 75.0}, {"0.90", 90.0}, {"0.95", 95.0}, {"0.99", 99.0}};
+std::map<std::string, double> BvarLatencyMetric::_s_output_percentiles = {
+        {"0.50", 0.50}, {"0.75", 0.75}, {"0.90", 0.90}, {"0.95", 0.95}, {"0.99", 0.99}};
+
 void HistogramMetric::clear() {
     std::lock_guard<std::mutex> l(_lock);
     _stats.clear();
@@ -209,6 +213,61 @@ rj::Value HistogramMetric::to_json_value(rj::Document::AllocatorType& allocator)
     json_value.AddMember("standard_deviation", rj::Value(_stats.standard_deviation()), allocator);
     json_value.AddMember("max", rj::Value(_stats.max()), allocator);
     json_value.AddMember("total_sum", rj::Value(_stats.sum()), allocator);
+
+    return json_value;
+}
+
+const bvar::LatencyRecorder& BvarLatencyMetric::_latency_recorder() const {
+    DCHECK(_recorder != nullptr);
+    return *_recorder;
+}
+
+void BvarLatencyMetric::add(const uint64_t& value) {
+    DCHECK(_recorder != nullptr);
+    (*_recorder) << static_cast<int64_t>(value);
+}
+
+std::string BvarLatencyMetric::to_string() const {
+    return std::to_string(_latency_recorder().latency());
+}
+
+std::string BvarLatencyMetric::to_prometheus(const std::string& display_name,
+                                             const Labels& entity_labels,
+                                             const Labels& metric_labels) const {
+    const auto& recorder = _latency_recorder();
+
+    std::stringstream ss;
+    for (const auto& percentile : _s_output_percentiles) {
+        auto quantile_label = Labels({{"quantile", percentile.first}});
+        ss << display_name << labels_to_string({&entity_labels, &metric_labels, &quantile_label})
+           << " " << recorder.latency_percentile(percentile.second) << "\n";
+    }
+    ss << display_name << "_count" << labels_to_string({&entity_labels, &metric_labels}) << " "
+       << recorder.count() << "\n";
+    ss << display_name << "_max" << labels_to_string({&entity_labels, &metric_labels}) << " "
+       << recorder.max_latency() << "\n";
+    ss << display_name << "_average" << labels_to_string({&entity_labels, &metric_labels}) << " "
+       << recorder.latency() << "\n";
+    ss << display_name << "_median" << labels_to_string({&entity_labels, &metric_labels}) << " "
+       << recorder.latency_percentile(0.50) << "\n";
+
+    return ss.str();
+}
+
+rj::Value BvarLatencyMetric::to_json_value(rj::Document::AllocatorType& allocator) const {
+    const auto& recorder = _latency_recorder();
+
+    rj::Value json_value(rj::kObjectType);
+    json_value.AddMember("total_count", rj::Value(recorder.count()), allocator);
+    json_value.AddMember("average", rj::Value(recorder.latency()), allocator);
+    json_value.AddMember("median", rj::Value(recorder.latency_percentile(0.50)), allocator);
+    for (const auto& percentile : _s_output_percentiles) {
+        json_value.AddMember(
+                rj::Value(std::string("percentile_").append(percentile.first.substr(2)).c_str(),
+                          allocator),
+                rj::Value(recorder.latency_percentile(percentile.second)), allocator);
+    }
+    json_value.AddMember("max", rj::Value(recorder.max_latency()), allocator);
 
     return json_value;
 }

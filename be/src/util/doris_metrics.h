@@ -19,6 +19,8 @@
 
 #include <jni.h>
 
+#include <bvar/latency_recorder.h>
+
 #include <memory>
 #include <set>
 #include <string>
@@ -51,6 +53,27 @@ public:
     IntCounter* fragment_request_duration_us = nullptr;
     IntCounter* query_scan_bytes = nullptr;
     IntCounter* query_scan_rows = nullptr;
+
+    // Point query metrics
+    BvarLatencyMetric* point_query_latency_us_total = nullptr;
+    BvarLatencyMetric* point_query_latency_us_init = nullptr;
+    BvarLatencyMetric* point_query_latency_us_lookup_key = nullptr;
+    BvarLatencyMetric* point_query_latency_us_lookup_data = nullptr;
+    BvarLatencyMetric* point_query_latency_us_output = nullptr;
+
+    BvarLatencyMetric* point_query_read_us_load_segment_meta = nullptr;
+    BvarLatencyMetric* point_query_read_us_load_segment_bf = nullptr;
+    BvarLatencyMetric* point_query_read_us_load_segment_pk = nullptr;
+    BvarLatencyMetric* point_query_read_us_read_pk_index = nullptr;
+    BvarLatencyMetric* point_query_read_us_read_data = nullptr;
+
+    IntCounter* point_query_requests_success_total = nullptr;
+    IntCounter* point_query_requests_fail_total = nullptr;
+    IntCounter* point_query_scan_bytes_index = nullptr;
+    IntCounter* point_query_scan_bytes_data = nullptr;
+    IntCounter* point_query_result_data_bytes = nullptr;
+    IntCounter* point_query_total_page_index = nullptr;
+    IntCounter* point_query_total_page_data = nullptr;
 
     IntCounter* push_requests_success_total = nullptr;
     IntCounter* push_requests_fail_total = nullptr;
@@ -269,6 +292,7 @@ private:
     void _update();
     void _update_process_thread_num();
     void _update_process_fd_num();
+    void _init_point_query_metrics();
 
 private:
     static const std::string _s_registry_name;
@@ -280,6 +304,19 @@ private:
     std::unique_ptr<JvmMetrics> _jvm_metrics;
 
     std::shared_ptr<MetricEntity> _server_metric_entity;
+
+    // Point query latency recorders (unit: microseconds).
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_latency_us_total_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_latency_us_init_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_latency_us_lookup_key_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_latency_us_lookup_data_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_latency_us_output_recorder;
+
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_read_us_load_segment_meta_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_read_us_load_segment_bf_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_read_us_load_segment_pk_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_read_us_read_pk_index_recorder;
+    std::unique_ptr<bvar::LatencyRecorder> _point_query_read_us_read_data_recorder;
 };
 
 }; // namespace doris

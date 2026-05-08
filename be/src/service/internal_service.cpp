@@ -199,14 +199,15 @@ void offer_failed(T* response, google::protobuf::Closure* done, const FifoThread
     Status st = Status::Error<TStatusCode::CANCELLED>(
             "fail to offer request to the work pool, pool={}", pool.get_info());
     st.to_protobuf(response->mutable_status());
-    LOG(WARNING) << "cancelled due to fail to offer request to the work pool, pool="
-                 << pool.get_info();
+    LOG_EVERY_SECOND(WARNING) << "cancelled due to fail to offer request to the work pool, pool="
+                              << pool.get_info();
 }
 
 template <typename T>
 void offer_failed(T* response, google::protobuf::Closure* done, const FifoThreadPool& pool) {
     brpc::ClosureGuard closure_guard(done);
-    LOG(WARNING) << "fail to offer request to the work pool, pool=" << pool.get_info();
+    LOG_EVERY_SECOND(WARNING) << "fail to offer request to the work pool, pool="
+                              << pool.get_info();
 }
 
 PInternalServiceImpl::PInternalServiceImpl(ExecEnv* exec_env)
@@ -963,13 +964,24 @@ void PInternalServiceImpl::tablet_fetch_data(google::protobuf::RpcController* co
                                              const PTabletKeyLookupRequest* request,
                                              PTabletKeyLookupResponse* response,
                                              google::protobuf::Closure* done) {
-    bool ret = _light_work_pool.try_offer([this, controller, request, response, done]() {
+    int64_t start_ns = MonotonicNanos();
+
+    bool ret = _light_work_pool.try_offer([this, controller, request, response, done, start_ns]() {
         [[maybe_unused]] brpc::Controller* cntl = static_cast<brpc::Controller*>(controller);
         brpc::ClosureGuard guard(done);
         Status st = _tablet_fetch_data(request, response);
+        if (st.ok()) {
+            DorisMetrics::instance()->point_query_requests_success_total->increment(1);
+        } else {
+            DorisMetrics::instance()->point_query_requests_fail_total->increment(1);
+        }
         st.to_protobuf(response->mutable_status());
+
+        uint64_t elapsed_us = (MonotonicNanos() - start_ns) / NANOS_PER_MICRO;
+        DorisMetrics::instance()->point_query_latency_us_total->add(elapsed_us);
     });
     if (!ret) {
+        DorisMetrics::instance()->point_query_requests_fail_total->increment(1);
         offer_failed(response, done, _light_work_pool);
         return;
     }
