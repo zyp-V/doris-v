@@ -119,6 +119,7 @@ import org.apache.doris.common.util.NetUtils;
 import org.apache.doris.common.util.ProfileManager.ProfileType;
 import org.apache.doris.common.util.SqlParserUtils;
 import org.apache.doris.common.util.TimeUtils;
+import org.apache.doris.common.util.UniqueIdUtils;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.FileScanNode;
 import org.apache.doris.datasource.jdbc.client.JdbcClientException;
@@ -552,8 +553,7 @@ public class StmtExecutor {
 
     // query with a random sql
     public void execute() throws Exception {
-        UUID uuid = UUID.randomUUID();
-        TUniqueId queryId = new TUniqueId(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
+        TUniqueId queryId = UniqueIdUtils.fastUniqueId();
         execute(queryId);
     }
 
@@ -955,9 +955,7 @@ public class StmtExecutor {
             try {
                 // reset query id for each retry
                 if (i > 0) {
-                    UUID uuid = UUID.randomUUID();
-                    TUniqueId newQueryId = new TUniqueId(uuid.getMostSignificantBits(),
-                            uuid.getLeastSignificantBits());
+                    TUniqueId newQueryId = UniqueIdUtils.fastUniqueId();
                     AuditLog.getQueryAudit().log("Query {} {} times with new query id: {}",
                             DebugUtil.printId(queryId), i, DebugUtil.printId(newQueryId));
                     context.setQueryId(newQueryId);
@@ -3336,8 +3334,7 @@ public class StmtExecutor {
         if (LOG.isDebugEnabled()) {
             LOG.debug("INTERNAL QUERY: " + originStmt.toString());
         }
-        UUID uuid = UUID.randomUUID();
-        TUniqueId queryId = new TUniqueId(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
+        TUniqueId queryId = UniqueIdUtils.fastUniqueId();
         context.setQueryId(queryId);
         if (originStmt.originStmt != null) {
             context.setSqlHash(DigestUtils.md5Hex(originStmt.originStmt));
