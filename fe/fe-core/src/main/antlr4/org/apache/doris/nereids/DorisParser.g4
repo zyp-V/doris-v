@@ -938,6 +938,10 @@ dataDesc
     ;
 
 // -----------------Command accessories-----------------
+statementScope
+    : (GLOBAL | SESSION | LOCAL)
+    ;
+
 buildMode
     : BUILD (IMMEDIATE | DEFERRED)
     ;
