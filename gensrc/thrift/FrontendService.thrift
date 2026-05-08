@@ -988,6 +988,8 @@ enum TSchemaTableName {
   TABLE_PROPERTIES = 8,
   CATALOG_META_CACHE_STATS = 9,
   PARTITIONS = 10,
+  TABLE_STREAMS = 11, // db information_schema's table
+  TABLE_STREAM_CONSUMPTION = 12, // db information_schema's table
 }
 
 struct TMetadataTableRequestParams {
