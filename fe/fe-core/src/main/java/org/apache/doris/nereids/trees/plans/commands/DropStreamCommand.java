@@ -17,7 +17,6 @@
 
 package org.apache.doris.nereids.trees.plans.commands;
 
-import org.apache.doris.analysis.StmtType;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.ErrorCode;
@@ -75,10 +74,6 @@ public class DropStreamCommand extends Command implements ForwardWithSync {
         return visitor.visitCommand(this, context);
     }
 
-    @Override
-    public StmtType stmtType() {
-        return StmtType.DROP;
-    }
 
     public boolean isIfExists() {
         return ifExists;
