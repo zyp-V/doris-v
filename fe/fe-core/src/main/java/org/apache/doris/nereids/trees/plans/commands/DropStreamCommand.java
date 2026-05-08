@@ -74,7 +74,6 @@ public class DropStreamCommand extends Command implements ForwardWithSync {
         return visitor.visitCommand(this, context);
     }
 
-
     public boolean isIfExists() {
         return ifExists;
     }
