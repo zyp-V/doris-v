@@ -1259,12 +1259,14 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
     //
     // ATTN: partitions not belonging to this table will be filtered.
     public List<Long> selectNonEmptyPartitionIds(Collection<Long> partitionIds) {
-        return partitionIds.stream()
-                .map(this::getPartition)
-                .filter(p -> p != null)
-                .filter(Partition::hasData)
-                .map(Partition::getId)
-                .collect(Collectors.toList());
+        List<Long> nonEmptyIds = Lists.newArrayListWithCapacity(partitionIds.size());
+        for (Long partitionId : partitionIds) {
+            Partition partition = getPartition(partitionId);
+            if (partition != null && partition.hasData()) {
+                nonEmptyIds.add(partitionId);
+            }
+        }
+        return nonEmptyIds;
     }
 
     public int getPartitionNum() {

@@ -336,17 +336,25 @@ public class Tablet extends MetaObject implements Writable {
         }
 
         if (Config.skip_compaction_slower_replica && allQueryableReplica.size() > 1) {
-            long minVersionCount = allQueryableReplica.stream().mapToLong(Replica::getVisibleVersionCount)
-                    .filter(count -> count != -1).min().orElse(Long.MAX_VALUE);
+            long minVersionCount = Long.MAX_VALUE;
+            for (Replica replica : allQueryableReplica) {
+                long visibleVersionCount = replica.getVisibleVersionCount();
+                if (visibleVersionCount != -1 && visibleVersionCount < minVersionCount) {
+                    minVersionCount = visibleVersionCount;
+                }
+            }
             long maxVersionCount = Config.min_version_count_indicate_replica_compaction_too_slow;
             if (minVersionCount != Long.MAX_VALUE) {
                 maxVersionCount = Math.max(maxVersionCount, minVersionCount * QUERYABLE_TIMES_OF_MIN_VERSION_COUNT);
             }
 
-            final long finalMaxVersionCount = maxVersionCount;
-            return allQueryableReplica.stream()
-                    .filter(replica -> replica.getVisibleVersionCount() < finalMaxVersionCount)
-                    .collect(Collectors.toList());
+            List<Replica> lowerVersionReplicas = Lists.newArrayListWithCapacity(allQueryableReplica.size());
+            for (Replica replica : allQueryableReplica) {
+                if (replica.getVisibleVersionCount() < maxVersionCount) {
+                    lowerVersionReplicas.add(replica);
+                }
+            }
+            return lowerVersionReplicas;
         }
         return allQueryableReplica;
     }
