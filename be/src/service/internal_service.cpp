@@ -952,6 +952,9 @@ Status PInternalServiceImpl::_tablet_fetch_data(const PTabletKeyLookupRequest* r
                                                 PTabletKeyLookupResponse* response) {
     PointQueryExecutor lookup_util;
     RETURN_IF_ERROR(lookup_util.init(request, response));
+    if (response->has_need_resend_query_context() && response->need_resend_query_context()) {
+        return Status::OK();
+    }
     RETURN_IF_ERROR(lookup_util.lookup_up());
     if (VLOG_DEBUG_IS_ON) {
         VLOG_DEBUG << lookup_util.print_profile();
