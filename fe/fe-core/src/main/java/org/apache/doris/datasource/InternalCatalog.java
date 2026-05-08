@@ -896,7 +896,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                             .withName(streamName)
                             .withBaseTable(baseTable)
                             .build();
-            stream.setId(idGeneratorBuffer.getNextId());
+            stream.setId(Env.getCurrentEnv().getNextId());
             stream.setComment(info.getComment());
 
             try {

@@ -4018,7 +4018,11 @@ public class Env {
 
     public void dropStream(String catalogName, String dbName, String streamName,
             boolean ifExists, boolean forceDrop) throws DdlException {
-        Util.prohibitExternalCatalog(catalogName, "DropStreamCommand");
+        try {
+            Util.prohibitExternalCatalog(catalogName, "DropStreamCommand");
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage());
+        }
         getInternalCatalog().dropStream(dbName, streamName, ifExists, forceDrop);
     }
 
