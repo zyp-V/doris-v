@@ -669,27 +669,27 @@ fromRollup
     ;
 
 unsupportedDropStatement
-    : DROP (DATABASE | SCHEMA) (IF EXISTS)? name=multipartIdentifier FORCE?     #dropDatabase
-    | DROP CATALOG (IF EXISTS)? name=identifier                                 #dropCatalog
+    : DROP (DATABASE | SCHEMA) (IF EXISTS)? name=multipartIdentifier FORCE?
+    | DROP CATALOG (IF EXISTS)? name=identifier
     | DROP (GLOBAL | SESSION | LOCAL)? FUNCTION (IF EXISTS)?
-        functionIdentifier LEFT_PAREN functionArguments? RIGHT_PAREN            #dropFunction
-    | DROP TABLE (IF EXISTS)? name=multipartIdentifier FORCE?                   #dropTable
-    | DROP USER (IF EXISTS)? userIdentify                                       #dropUser
-    | DROP VIEW (IF EXISTS)? name=multipartIdentifier                           #dropView
-    | DROP REPOSITORY name=identifier                                           #dropRepository
-    | DROP ROLE (IF EXISTS)? name=identifier                                    #dropRole
+        functionIdentifier LEFT_PAREN functionArguments? RIGHT_PAREN
+    | DROP TABLE (IF EXISTS)? name=multipartIdentifier FORCE?
+    | DROP USER (IF EXISTS)? userIdentify
+    | DROP VIEW (IF EXISTS)? name=multipartIdentifier
+    | DROP REPOSITORY name=identifier
+    | DROP ROLE (IF EXISTS)? name=identifier
     | DROP FILE name=STRING_LITERAL
-        ((FROM | IN) database=identifier)? properties=propertyClause            #dropFile
-    | DROP INDEX (IF EXISTS)? name=identifier ON tableName=multipartIdentifier  #dropIndex
-    | DROP RESOURCE (IF EXISTS)? name=identifierOrText                          #dropResource
-    | DROP WORKLOAD GROUP (IF EXISTS)? name=identifierOrText                    #dropWorkloadGroup
-    | DROP WORKLOAD POLICY (IF EXISTS)? name=identifierOrText                   #dropWorkloadPolicy
-    | DROP ENCRYPTKEY (IF EXISTS)? name=multipartIdentifier                     #dropEncryptkey
-    | DROP SQL_BLOCK_RULE (IF EXISTS)? identifierSeq                            #dropSqlBlockRule
+        ((FROM | IN) database=identifier)? properties=propertyClause
+    | DROP INDEX (IF EXISTS)? name=identifier ON tableName=multipartIdentifier
+    | DROP RESOURCE (IF EXISTS)? name=identifierOrText
+    | DROP WORKLOAD GROUP (IF EXISTS)? name=identifierOrText
+    | DROP WORKLOAD POLICY (IF EXISTS)? name=identifierOrText
+    | DROP ENCRYPTKEY (IF EXISTS)? name=multipartIdentifier
+    | DROP SQL_BLOCK_RULE (IF EXISTS)? identifierSeq
     | DROP ROW POLICY (IF EXISTS)? policyName=identifier
         ON tableName=multipartIdentifier
-        (FOR (userIdentify | ROLE roleName=identifier))?                        #dropRowPolicy
-    | DROP STORAGE POLICY (IF EXISTS)? name=identifier                          #dropStoragePolicy
+        (FOR (userIdentify | ROLE roleName=identifier))?
+    | DROP STORAGE POLICY (IF EXISTS)? name=identifier
     ;
 
 unsupportedStatsStatement
