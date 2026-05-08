@@ -49,6 +49,7 @@ import org.apache.doris.nereids.trees.plans.algebra.Project;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
 import org.apache.doris.nereids.trees.plans.logical.LogicalFilter;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOlapScan;
+import org.apache.doris.nereids.trees.plans.logical.LogicalOlapTableStreamScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
 import org.apache.doris.nereids.trees.plans.logical.LogicalRepeat;
 import org.apache.doris.nereids.util.ExpressionUtils;
@@ -70,6 +71,10 @@ import java.util.stream.Collectors;
  */
 @Developing
 public class AdjustPreAggStatus implements RewriteRuleFactory {
+    private static boolean shouldAdjustPreAggStatus(LogicalOlapScan scan) {
+        return scan.isPreAggStatusUnSet() && !(scan instanceof LogicalOlapTableStreamScan);
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // All the patterns
     ///////////////////////////////////////////////////////////////////////////
@@ -77,7 +82,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
     public List<Rule> buildRules() {
         return ImmutableList.of(
                 // Aggregate(Scan)
-                logicalAggregate(logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet))
+                logicalAggregate(logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus))
                         .thenApply(ctx -> {
                             LogicalAggregate<LogicalOlapScan> agg = ctx.root;
                             LogicalOlapScan scan = agg.child();
@@ -95,7 +100,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Filter(Scan))
                 logicalAggregate(
-                        logicalFilter(logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)))
+                        logicalFilter(logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalFilter<LogicalOlapScan>> agg = ctx.root;
                                     LogicalFilter<LogicalOlapScan> filter = agg.child();
@@ -116,7 +121,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Project(Scan))
                 logicalAggregate(logicalProject(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalProject<LogicalOlapScan>> agg =
                                             ctx.root;
@@ -140,7 +145,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Project(Filter(Scan)))
                 logicalAggregate(logicalProject(logicalFilter(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet))))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus))))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalProject<LogicalFilter<LogicalOlapScan>>> agg = ctx.root;
                                     LogicalProject<LogicalFilter<LogicalOlapScan>> project = agg.child();
@@ -163,7 +168,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Filter(Project(Scan)))
                 logicalAggregate(logicalFilter(logicalProject(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet))))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus))))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalFilter<LogicalProject<LogicalOlapScan>>> agg = ctx.root;
                                     LogicalFilter<LogicalProject<LogicalOlapScan>> filter =
@@ -188,7 +193,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Repeat(Scan))
                 logicalAggregate(
-                        logicalRepeat(logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)))
+                        logicalRepeat(logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalRepeat<LogicalOlapScan>> agg = ctx.root;
                                     LogicalRepeat<LogicalOlapScan> repeat = agg.child();
@@ -208,7 +213,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Repeat(Filter(Scan)))
                 logicalAggregate(logicalRepeat(logicalFilter(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet))))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus))))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalRepeat<LogicalFilter<LogicalOlapScan>>> agg = ctx.root;
                                     LogicalRepeat<LogicalFilter<LogicalOlapScan>> repeat = agg.child();
@@ -230,7 +235,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Repeat(Project(Scan)))
                 logicalAggregate(logicalRepeat(logicalProject(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet))))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus))))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalRepeat<LogicalProject<LogicalOlapScan>>> agg = ctx.root;
                                     LogicalRepeat<LogicalProject<LogicalOlapScan>> repeat = agg.child();
@@ -253,7 +258,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Repeat(Project(Filter(Scan))))
                 logicalAggregate(logicalRepeat(logicalProject(logicalFilter(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)))))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)))))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalRepeat<LogicalProject<LogicalFilter<LogicalOlapScan>>>> agg
                                             = ctx.root;
@@ -279,7 +284,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Aggregate(Repeat(Filter(Project(Scan))))
                 logicalAggregate(logicalRepeat(logicalFilter(logicalProject(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)))))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)))))
                                 .thenApply(ctx -> {
                                     LogicalAggregate<LogicalRepeat<LogicalFilter<LogicalProject<LogicalOlapScan>>>> agg
                                             = ctx.root;
@@ -306,7 +311,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
 
                 // Filter(Project(Scan))
                 logicalFilter(logicalProject(
-                        logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)))
+                        logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)))
                                 .thenApply(ctx -> {
                                     LogicalFilter<LogicalProject<LogicalOlapScan>> filter = ctx.root;
                                     LogicalProject<LogicalOlapScan> project = filter.child();
@@ -325,7 +330,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
                                 }).toRule(RuleType.PREAGG_STATUS_FILTER_PROJECT_SCAN),
 
                 // Filter(Scan)
-                logicalFilter(logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet))
+                logicalFilter(logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus))
                         .thenApply(ctx -> {
                             LogicalFilter<LogicalOlapScan> filter = ctx.root;
                             LogicalOlapScan scan = filter.child();
@@ -341,7 +346,7 @@ public class AdjustPreAggStatus implements RewriteRuleFactory {
                         }).toRule(RuleType.PREAGG_STATUS_FILTER_SCAN),
 
                 // only scan.
-                logicalOlapScan().when(LogicalOlapScan::isPreAggStatusUnSet)
+                logicalOlapScan().when(AdjustPreAggStatus::shouldAdjustPreAggStatus)
                         .thenApply(ctx -> {
                             LogicalOlapScan scan = ctx.root;
                             PreAggStatus preAggStatus = checkKeysType(scan);

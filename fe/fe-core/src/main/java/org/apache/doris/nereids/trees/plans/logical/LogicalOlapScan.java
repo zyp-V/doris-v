@@ -63,17 +63,17 @@ public class LogicalOlapScan extends LogicalCatalogRelation implements OlapScan 
     /**
      * The select materialized index id to read data from.
      */
-    private final long selectedIndexId;
+    protected final long selectedIndexId;
 
     /**
      * Status to indicate materialized index id is selected or not.
      */
-    private final boolean indexSelected;
+    protected final boolean indexSelected;
 
     /**
      * Status to indicate using pre-aggregation or not.
      */
-    private final PreAggStatus preAggStatus;
+    protected final PreAggStatus preAggStatus;
 
     /**
      * When the SlotReference is generated through fromColumn,
@@ -81,7 +81,7 @@ public class LogicalOlapScan extends LogicalCatalogRelation implements OlapScan 
      * causing the slotId of the base to change when the output is recalculated.
      * This structure is responsible for storing the generated SlotReference
      */
-    private final Map<Pair<Long, String>, Slot> cacheSlotWithSlotName;
+    protected final Map<Pair<Long, String>, Slot> cacheSlotWithSlotName;
 
     ///////////////////////////////////////////////////////////////////////////
     // Members for tablet ids.
@@ -90,13 +90,13 @@ public class LogicalOlapScan extends LogicalCatalogRelation implements OlapScan 
     /**
      * Selected tablet ids to read data from.
      */
-    private final List<Long> selectedTabletIds;
+    protected final List<Long> selectedTabletIds;
 
     /**
      * Selected tablet ids to read data from, this would be set if user query with tablets manually
      * Such as select * from  orders TABLET(100);
      */
-    private final List<Long> manuallySpecifiedTabletIds;
+    protected final List<Long> manuallySpecifiedTabletIds;
 
     ///////////////////////////////////////////////////////////////////////////
     // Members for partition ids.
@@ -105,22 +105,22 @@ public class LogicalOlapScan extends LogicalCatalogRelation implements OlapScan 
      * Status to indicate partitions are pruned or not.
      * todo: should be pulled up to base class?
      */
-    private final boolean partitionPruned;
-    private final List<Long> manuallySpecifiedPartitions;
+    protected final boolean partitionPruned;
+    protected final List<Long> manuallySpecifiedPartitions;
 
-    private final List<Long> selectedPartitionIds;
+    protected final List<Long> selectedPartitionIds;
 
     ///////////////////////////////////////////////////////////////////////////
     // Members for hints.
     ///////////////////////////////////////////////////////////////////////////
-    private final List<String> hints;
+    protected final List<String> hints;
 
-    private final Optional<TableSample> tableSample;
+    protected final Optional<TableSample> tableSample;
 
-    private final boolean directMvScan;
+    protected final boolean directMvScan;
 
-    private final Map<String, Set<List<String>>> colToSubPathsMap;
-    private final Map<Slot, Map<List<String>, SlotReference>> subPathToSlotMap;
+    protected final Map<String, Set<List<String>>> colToSubPathsMap;
+    protected final Map<Slot, Map<List<String>, SlotReference>> subPathToSlotMap;
 
     public LogicalOlapScan(RelationId id, OlapTable table) {
         this(id, table, ImmutableList.of());
@@ -423,7 +423,7 @@ public class LogicalOlapScan extends LogicalCatalogRelation implements OlapScan 
         return slots;
     }
 
-    private List<Slot> generateUniqueSlot(OlapTable table, Column column, boolean isBaseIndex, long indexId) {
+    protected List<Slot> generateUniqueSlot(OlapTable table, Column column, boolean isBaseIndex, long indexId) {
         String name = isBaseIndex || directMvScan ? column.getName()
                 : AbstractSelectMaterializedIndexRule.parseMvColumnToMvName(column.getName(),
                         column.isAggregated() ? Optional.of(column.getAggregationType().toSql()) : Optional.empty());
@@ -466,7 +466,7 @@ public class LogicalOlapScan extends LogicalCatalogRelation implements OlapScan 
         return preAggStatus.isUnset();
     }
 
-    private List<SlotReference> createSlotsVectorized(List<Column> columns) {
+    protected List<SlotReference> createSlotsVectorized(List<Column> columns) {
         List<String> qualified = qualified();
         SlotReference[] slots = new SlotReference[columns.size()];
         for (int i = 0; i < columns.size(); i++) {

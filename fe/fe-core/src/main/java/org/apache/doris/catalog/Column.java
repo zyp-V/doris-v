@@ -73,6 +73,10 @@ public class Column implements Writable, GsonPostProcessable {
     public static final int COLUMN_UNIQUE_ID_INIT_VALUE = -1;
     private static final String COLUMN_MAP_KEY = "key";
     private static final String COLUMN_MAP_VALUE = "value";
+    public static final Column STREAM_SEQ_VIRTUAL_COLUMN =
+            new Column(STREAM_SEQ_COL, Type.BIGINT, false, null, false, null, false);
+    public static final Column STREAM_CHANGE_TYPE_VIRTUAL_COLUMN =
+            new Column(STREAM_CHANGE_TYPE_COL, Type.STRING, false, null, false, null, false);
 
     public static final Column UNSUPPORTED_COLUMN = new Column("unknown", Type.UNSUPPORTED, true, null, true, -1,
             null, "invalid", true, null, -1, null);
@@ -185,6 +189,12 @@ public class Column implements Writable, GsonPostProcessable {
             String defaultValue, String comment) {
         this(name, type, isKey, aggregateType, isAllowNull, -1, defaultValue, comment, true, null,
                 COLUMN_UNIQUE_ID_INIT_VALUE, defaultValue, false, null);
+    }
+
+    public Column(String name, Type type, boolean isKey, AggregateType aggregateType, boolean isAllowNull,
+                  String comment, boolean visible) {
+        this(name, type, isKey, aggregateType, isAllowNull, -1, null, comment, visible, null,
+                COLUMN_UNIQUE_ID_INIT_VALUE, null, false, null, null, Sets.newHashSet(), null);
     }
 
     public Column(String name, Type type, boolean isKey, AggregateType aggregateType, boolean isAllowNull,

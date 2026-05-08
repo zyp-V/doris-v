@@ -57,7 +57,10 @@ import org.apache.doris.catalog.PartitionType;
 import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.Tablet;
+import org.apache.doris.catalog.stream.OlapTableStreamUpdate;
+import org.apache.doris.catalog.stream.OlapTableStreamWrapper;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Pair;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
@@ -745,6 +748,10 @@ public class OlapScanNode extends ScanNode {
     private void addScanRangeLocations(Partition partition,
             List<Tablet> tablets, Map<Long, Set<Long>> backendAlivePathHashs) throws UserException {
         long visibleVersion = partition.getVisibleVersion();
+        // if partition offset is set, use the next offset to set the visible version
+        if (olapTable instanceof OlapTableStreamWrapper) {
+            visibleVersion = ((OlapTableStreamWrapper) olapTable).getStreamUpdate(partition.getId()).second;
+        }
         String visibleVersionStr = String.valueOf(visibleVersion);
 
         Set<Tag> allowedTags = Sets.newHashSet();
@@ -1876,5 +1883,19 @@ public class OlapScanNode extends ScanNode {
             return olapTable.getCatalogId();
         }
         return super.getCatalogId();
+    }
+
+    public OlapTableStreamUpdate getStreamUpdate() {
+        Map<Long, Long> prev = Maps.newHashMap();
+        Map<Long, Long> next = Maps.newHashMap();
+        for (Long partitionId : getSelectedPartitionIds()) {
+            Pair<Long, Long> streamUpdate = ((OlapTableStreamWrapper) olapTable).getStreamUpdate(partitionId);
+            if (streamUpdate.first != null) {
+                // prev could be null, ignore
+                prev.put(partitionId, streamUpdate.first);
+            }
+            next.put(partitionId, streamUpdate.second);
+        }
+        return new OlapTableStreamUpdate(prev, next);
     }
 }

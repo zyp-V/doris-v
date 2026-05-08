@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MTMV;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.View;
+import org.apache.doris.catalog.stream.BaseTableStream;
 import org.apache.doris.mtmv.BaseTableInfo;
 import org.apache.doris.nereids.CTEContext;
 import org.apache.doris.nereids.CascadesContext;
@@ -194,6 +195,10 @@ public class CollectRelation implements AnalysisRuleFactory {
         if (table instanceof View) {
             parseAndCollectFromView(tableQualifier, (View) table, cascadesContext);
         }
+        // we need to collect stream table's base table as well
+        if (table instanceof BaseTableStream) {
+            collectFromTableStream((BaseTableStream) table, cascadesContext, tableFrom);
+        }
     }
 
     private void collectMTMVCandidates(TableIf table, CascadesContext cascadesContext) {
@@ -250,5 +255,11 @@ public class CollectRelation implements AnalysisRuleFactory {
         viewContext.keepOrShowPlanProcess(parentContext.showPlanProcess(),
                 () -> viewContext.newTableCollector().collect());
         parentContext.addPlanProcesses(viewContext.getPlanProcesses());
+    }
+
+    private void collectFromTableStream(BaseTableStream tableStream, CascadesContext cascadesContext,
+            TableFrom tableFrom) {
+        List<String> tableQualifier = tableStream.getBaseTableFullQualifiers();
+        cascadesContext.getConnectContext().getStatementContext().getAndCacheTable(tableQualifier, tableFrom);
     }
 }

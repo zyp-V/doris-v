@@ -49,7 +49,9 @@ import org.apache.doris.catalog.constraint.Constraint;
 import org.apache.doris.catalog.constraint.ForeignKeyConstraint;
 import org.apache.doris.catalog.constraint.PrimaryKeyConstraint;
 import org.apache.doris.catalog.constraint.UniqueConstraint;
+import org.apache.doris.catalog.stream.AbstractTableStreamUpdate;
 import org.apache.doris.catalog.stream.OlapTableStream;
+import org.apache.doris.catalog.stream.OlapTableStreamUpdate;
 import org.apache.doris.common.util.RangeUtils;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.datasource.ExternalDatabase;
@@ -307,6 +309,11 @@ public class GsonUtils {
             .registerSubtype(FrontendHbResponse.class, FrontendHbResponse.class.getSimpleName())
             .registerSubtype(BrokerHbResponse.class, BrokerHbResponse.class.getSimpleName());
 
+    // runtime adapter for class "AbstractTableStreamUpdate"
+    private static RuntimeTypeAdapterFactory<AbstractTableStreamUpdate> streamUpdateTypeAdapterFactory
+            = RuntimeTypeAdapterFactory.of(AbstractTableStreamUpdate.class, "clazz")
+            .registerSubtype(OlapTableStreamUpdate.class, OlapTableStreamUpdate.class.getSimpleName());
+
     // the builder of GSON instance.
     // Add any other adapters if necessary.
     private static final GsonBuilder GSON_BUILDER = new GsonBuilder().addSerializationExclusionStrategy(
@@ -330,6 +337,7 @@ public class GsonUtils {
             .registerTypeAdapterFactory(jobExecutorRuntimeTypeAdapterFactory)
             .registerTypeAdapterFactory(mtmvSnapshotTypeAdapterFactory)
             .registerTypeAdapterFactory(constraintTypeAdapterFactory)
+            .registerTypeAdapterFactory(streamUpdateTypeAdapterFactory)
             .registerTypeAdapter(ImmutableMap.class, new ImmutableMapDeserializer())
             .registerTypeAdapter(AtomicBoolean.class, new AtomicBooleanAdapter())
             .registerTypeAdapter(PartitionKey.class, new PartitionKey.PartitionKeySerializer())

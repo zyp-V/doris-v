@@ -19,6 +19,7 @@ package org.apache.doris.nereids.trees.plans.commands.insert;
 
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.TableIf;
+import org.apache.doris.catalog.stream.TableStreamUpdateInfo;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
@@ -38,6 +39,7 @@ import org.apache.doris.thrift.TQueryType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -62,6 +64,7 @@ public abstract class AbstractInsertExecutor {
     protected Optional<InsertCommandContext> insertCtx;
     protected final boolean emptyInsert;
     protected long txnId = INVALID_TXN_ID;
+    protected List<TableStreamUpdateInfo> streamUpdateInfos;
 
     /**
      * Constructor
@@ -207,5 +210,13 @@ public abstract class AbstractInsertExecutor {
 
     public boolean isEmptyInsert() {
         return emptyInsert;
+    }
+
+    public void setStreamUpdateInfos(List<TableStreamUpdateInfo> streamUpdateInfos) {
+        this.streamUpdateInfos = streamUpdateInfos;
+    }
+
+    public List<TableStreamUpdateInfo> getStreamUpdateInfos() {
+        return streamUpdateInfos;
     }
 }

@@ -33,6 +33,8 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.Tablet;
 import org.apache.doris.catalog.TabletInvertedIndex;
 import org.apache.doris.catalog.TabletMeta;
+import org.apache.doris.catalog.stream.BaseTableStream;
+import org.apache.doris.catalog.stream.TableStreamUpdateInfo;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DuplicatedRequestException;
@@ -91,6 +93,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
@@ -790,6 +793,9 @@ public class DatabaseTransactionMgr {
                 }
             }
         }
+
+        // check table stream offset if necessary
+        checkStreamOffset(transactionState);
 
         Set<Long> errorReplicaIds = Sets.newHashSet();
         Set<Long> totalInvolvedBackends = Sets.newHashSet();
@@ -2029,6 +2035,10 @@ public class DatabaseTransactionMgr {
                 partition.setNextVersion(partition.getNextVersion() + 1);
             }
         }
+        // update table stream offset if necessary
+        if (!CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
+            updateStreamOffset(transactionState, transactionState.getCommitTime());
+        }
     }
 
     private boolean updateCatalogAfterVisible(TransactionState transactionState, Database db,
@@ -2247,6 +2257,7 @@ public class DatabaseTransactionMgr {
         if (shouldAddTableListLock) {
             db = env.getInternalCatalog().getDbOrMetaException(transactionState.getDbId());
             tableList = db.getTablesOnIdOrderIfExist(transactionState.getTableIdList());
+            tableList = buildLockTableListNoException(tableList, transactionState);
             tableList = MetaLockUtils.writeLockTablesIfExist(tableList);
         }
         writeLock();
@@ -2407,5 +2418,54 @@ public class DatabaseTransactionMgr {
             return;
         }
         idToRunningTransactionState.get(transactionId).setTableIdList(tableIds);
+    }
+
+    private List<? extends TableIf> buildLockTableListNoException(List<? extends TableIf> tableList,
+            TransactionState transactionState) {
+        if (transactionState == null || CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
+            return tableList;
+        }
+        TreeSet<Pair<Long, Long>> tableIfs = new TreeSet<>(new Pair.PairComparator<>());
+        tableList.forEach(table -> tableIfs.add(Pair.of(table.getDatabase().getId(), table.getId())));
+        transactionState.getStreamUpdateInfos()
+                .forEach(info -> tableIfs.add(Pair.of(info.getDbId(), info.getStreamId())));
+        List<Table> newTableList = new ArrayList<>(tableIfs.size());
+        for (Pair<Long, Long> p : tableIfs) {
+            Database db = env.getInternalCatalog().getDbNullable(p.first);
+            if (db == null) {
+                continue;
+            }
+            Table table = db.getTableNullable(p.second);
+            if (table == null) {
+                continue;
+            }
+            newTableList.add(table);
+        }
+        return newTableList;
+    }
+
+    private void checkStreamOffset(TransactionState transactionState) throws UserException {
+        if (CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
+            return;
+        }
+        for (TableStreamUpdateInfo info : transactionState.getStreamUpdateInfos()) {
+            Database db = env.getInternalCatalog().getDbOrMetaException(info.getDbId());
+            TableIf tableIf = db.getTableOrMetaException(info.getStreamId());
+            ((BaseTableStream) tableIf).unprotectedCheckStreamUpdate(info.getUpdate());
+        }
+    }
+
+    private void updateStreamOffset(TransactionState transactionState, Long ts) {
+        for (TableStreamUpdateInfo info : transactionState.getStreamUpdateInfos()) {
+            Database db = env.getInternalCatalog().getDbNullable(info.getDbId());
+            if (db == null) {
+                continue;
+            }
+            TableIf tableIf = db.getTableNullable(info.getStreamId());
+            if (tableIf == null) {
+                continue;
+            }
+            ((BaseTableStream) tableIf).unprotectedUpdateStreamUpdate(info.getUpdate(), ts);
+        }
     }
 }

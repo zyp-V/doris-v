@@ -355,6 +355,10 @@ public enum RuleType {
     DEFER_MATERIALIZE_TOP_N_RESULT(RuleTypeClass.REWRITE),
     // short circuit rule
     SHOR_CIRCUIT_POINT_QUERY(RuleTypeClass.REWRITE),
+
+    // table stream scan rewrite
+    NORMALIZE_OLAP_TABLE_STREAM_SCAN(RuleTypeClass.REWRITE),
+
     // exploration rules
     REORDER_INTERSECT(RuleTypeClass.EXPLORATION),
     TEST_EXPLORATION(RuleTypeClass.EXPLORATION),
@@ -476,6 +480,7 @@ public enum RuleType {
     LOGICAL_GENERATE_TO_PHYSICAL_GENERATE(RuleTypeClass.IMPLEMENTATION),
     LOGICAL_WINDOW_TO_PHYSICAL_WINDOW_RULE(RuleTypeClass.IMPLEMENTATION),
     IMPLEMENTATION_SENTINEL(RuleTypeClass.IMPLEMENTATION),
+
 
     // sentinel, use to count rules
     SENTINEL(RuleTypeClass.SENTINEL),

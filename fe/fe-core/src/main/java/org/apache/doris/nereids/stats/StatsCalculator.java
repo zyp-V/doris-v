@@ -84,6 +84,7 @@ import org.apache.doris.nereids.trees.plans.logical.LogicalJoin;
 import org.apache.doris.nereids.trees.plans.logical.LogicalLimit;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOdbcScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOlapScan;
+import org.apache.doris.nereids.trees.plans.logical.LogicalOlapTableStreamScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOneRowRelation;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPartitionTopN;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
@@ -427,6 +428,11 @@ public class StatsCalculator extends DefaultPlanVisitor<Statistics, Void> {
     @Override
     public Statistics visitLogicalOlapScan(LogicalOlapScan olapScan, Void context) {
         return computeCatalogRelation(olapScan);
+    }
+
+    @Override
+    public Statistics visitLogicalOlapTableStreamScan(LogicalOlapTableStreamScan olapTableStreamScan, Void context) {
+        return computeCatalogRelation(olapTableStreamScan);
     }
 
     @Override

@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MaterializedIndexMeta;
 import org.apache.doris.catalog.OlapTable;
+import org.apache.doris.catalog.stream.TableStreamUpdateInfo;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.FeMetaVersion;
 import org.apache.doris.common.UserException;
@@ -223,6 +224,13 @@ public class TransactionState implements Writable {
     private long preCommitTime;
     @SerializedName(value = "commitTime")
     private long commitTime;
+
+    // stream update infos of this transaction
+    @Getter
+    @Setter
+    @SerializedName(value = "sui")
+    private List<TableStreamUpdateInfo> streamUpdateInfos;
+
     @SerializedName(value = "finishTime")
     private long finishTime;
     @SerializedName(value = "reason")

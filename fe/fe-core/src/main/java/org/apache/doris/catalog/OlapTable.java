@@ -235,7 +235,7 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
         this.tableProperty = null;
     }
 
-    private TableProperty getOrCreatTableProperty() {
+    protected TableProperty getOrCreatTableProperty() {
         if (tableProperty == null) {
             tableProperty = new TableProperty(new HashMap<>());
         }
