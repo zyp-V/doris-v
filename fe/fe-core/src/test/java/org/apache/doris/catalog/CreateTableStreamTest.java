@@ -51,23 +51,23 @@ public class CreateTableStreamTest extends TestWithFeService {
         ExceptionChecker
                 .expectThrowsNoException(() ->
                         createTable("create stream if not exists test_stream.s1 on table test_stream.tbl1\n"
-                                + "properties('type' = 'default', 'show_initial_rows' = 'true'); "));
+                                + "properties('type' = 'default', 'show_initial_rows' = 'true'); ", true));
         // create append_only stream
         ExceptionChecker
                 .expectThrowsNoException(() ->
                         createTable("create stream if not exists test_stream.s2 on table test_stream.tbl1\n"
-                                + "properties('type' = 'append_only', 'show_initial_rows' = 'true'); "));
+                                + "properties('type' = 'append_only', 'show_initial_rows' = 'true'); ", true));
         // create min_delta stream
         ExceptionChecker
                 .expectThrowsNoException(() ->
                         createTable("create stream if not exists test_stream.s3 on table test_stream.tbl1\n"
-                                + "properties('type' = 'min_delta', 'show_initial_rows' = 'true'); "));
+                                + "properties('type' = 'min_delta', 'show_initial_rows' = 'true'); ", true));
 
         // create stream already exist
         ExceptionChecker
                 .expectThrowsNoException(() ->
                         createTable("create stream if not exists test_stream.s1 on table test_stream.tbl1\n"
-                                + "properties('type' = 'default', 'show_initial_rows' = 'true'); "));
+                                + "properties('type' = 'default', 'show_initial_rows' = 'true'); ", true));
         dropDatabase("test_stream");
     }
 
@@ -82,23 +82,23 @@ public class CreateTableStreamTest extends TestWithFeService {
         ExceptionChecker
                 .expectThrowsNoException(() ->
                         createTable("create stream if not exists test_stream.s1 on table test_stream.tbl1\n"
-                                + "properties('type' = 'default', 'show_initial_rows' = 'true'); "));
+                                + "properties('type' = 'default', 'show_initial_rows' = 'true'); ", true));
         // base table not exist
         ExceptionChecker.expectThrowsWithMsg(DdlException.class, "Unknown table 'tbl2'",
                 () -> createTable("create stream if not exists test_stream.s2 on table test_stream.tbl2\n"
-                                      + "properties('type' = 'min_delta', 'show_initial_rows' = 'true'); "));
+                                      + "properties('type' = 'min_delta', 'show_initial_rows' = 'true'); ", true));
         // stream already exist
         ExceptionChecker.expectThrowsWithMsg(DdlException.class, "Table 's1' already exists",
                 () -> createTable("create stream test_stream.s1 on table test_stream.tbl1\n"
-                                      + "properties('type' = 'min_delta', 'show_initial_rows' = 'true'); "));
+                                      + "properties('type' = 'min_delta', 'show_initial_rows' = 'true'); ", true));
         // type not exist
         ExceptionChecker.expectThrowsWithMsg(DdlException.class, "not supported type: non_existent_type",
                 () -> createTable("create stream if not exists test_stream.s2 on table test_stream.tbl1\n"
-                                      + "properties('type' = 'non_existent_type', 'show_initial_rows' = 'true'); "));
+                                      + "properties('type' = 'non_existent_type', 'show_initial_rows' = 'true'); ", true));
         // properties not exist
         ExceptionChecker.expectThrowsWithMsg(DdlException.class, "Unknown properties: {non_existent_property=a}",
                 () -> createTable("create stream if not exists test_stream.s2 on table test_stream.tbl1\n"
-                                      + "properties('non_existent_property' = 'a'); "));
+                                      + "properties('non_existent_property' = 'a'); ", true));
         dropDatabase("test_stream");
     }
 }

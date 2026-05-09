@@ -68,6 +68,7 @@ import org.apache.doris.nereids.trees.expressions.StatementScopeIdGenerator;
 import org.apache.doris.nereids.trees.plans.commands.AddConstraintCommand;
 import org.apache.doris.nereids.trees.plans.commands.AlterMTMVCommand;
 import org.apache.doris.nereids.trees.plans.commands.CreateMTMVCommand;
+import org.apache.doris.nereids.trees.plans.commands.CreateStreamCommand;
 import org.apache.doris.nereids.trees.plans.commands.CreateTableCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropConstraintCommand;
 import org.apache.doris.nereids.trees.plans.commands.DropMTMVCommand;
@@ -739,6 +740,8 @@ public abstract class TestWithFeService {
                 StmtExecutor stmtExecutor = new StmtExecutor(connectContext, sql);
                 if (parsed instanceof CreateTableCommand) {
                     ((CreateTableCommand) parsed).run(connectContext, stmtExecutor);
+                } else if (parsed instanceof CreateStreamCommand) {
+                    ((CreateStreamCommand) parsed).run(connectContext, stmtExecutor);
                 }
             }
         } else {
