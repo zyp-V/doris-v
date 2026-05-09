@@ -352,7 +352,7 @@ public class ShowExecutorTest {
             }
         };
 
-        StmtExecutor executor = Deencapsulation.newInstance(StmtExecutor.class);
+        StmtExecutor executor = new StmtExecutor(ctx, "show streams");
         ShowStreamsCommand command = new ShowStreamsCommand("testDb", null, null, null);
         command.run(ctx, executor);
 
