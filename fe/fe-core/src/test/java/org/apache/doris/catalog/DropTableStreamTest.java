@@ -49,10 +49,10 @@ public class DropTableStreamTest extends TestWithFeService {
 
         String createStreamStr1 =  "create stream test_stream.s1 on table test_stream.tbl1\n"
                 + "properties('type' = 'default', 'show_initial_rows' = 'true'); ";
-        createTable(createStreamStr1);
+        createTable(createStreamStr1, true);
         String createStreamStr2 =  "create stream test_stream.s2 on table test_stream.tbl1\n"
                 + "properties('type' = 'append_only', 'show_initial_rows' = 'true'); ";
-        createTable(createStreamStr2);
+        createTable(createStreamStr2, true);
     }
 
     private void dropStream(String sql) throws Exception {
