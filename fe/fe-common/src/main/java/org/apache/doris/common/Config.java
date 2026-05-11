@@ -77,7 +77,7 @@ public class Config extends ConfigBase {
                     + "BRIEF is asynchronous output without location information. "
                     + "The performance of the three log output modes increases in turn"},
             options = {"NORMAL", "ASYNC", "BRIEF"})
-    public static String sys_log_mode = "NORMAL";
+    public static String sys_log_mode = "ASYNC";
 
     @ConfField(description = {"FE 在 sys_log_roll_interval （日志滚动间隔）内允许保留的最大日志文件数。"
             + "默认值为 10，意味着在每个日志滚动周期内，系统最多会保留 10 个日志文件。",
