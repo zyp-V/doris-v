@@ -161,7 +161,7 @@ private:
 private:
     RowsetWriterContext* _context;
 
-    mutable SpinLock _lock; // protect following vectors.
+    mutable SpinLock _lock; // protect _file_writers.
     std::unordered_map<int32_t, io::FileWriterPtr> _file_writers;
 
     // written rows by add_block/add_row

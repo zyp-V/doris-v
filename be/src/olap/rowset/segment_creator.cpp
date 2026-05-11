@@ -307,10 +307,12 @@ Status SegmentFlusher::create_writer(std::unique_ptr<SegmentFlusher::Writer>& wr
 }
 
 io::FileWriter* SegmentFlusher::get_file_writer(int32_t segment_id) {
-    if (!_file_writers.contains(segment_id)) {
+    std::lock_guard<SpinLock> l(_lock);
+    auto it = _file_writers.find(segment_id);
+    if (it == _file_writers.end()) {
         return nullptr;
     }
-    return _file_writers[segment_id].get();
+    return it->second.get();
 }
 
 SegmentFlusher::Writer::Writer(SegmentFlusher* flusher,
