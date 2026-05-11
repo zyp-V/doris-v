@@ -386,6 +386,10 @@ public class Rewriter extends AbstractBatchJobExecutor {
                 // TODO: these rules should be implementation rules, and generate alternative physical plans.
                 topic("Table/Physical optimization",
                         topDown(
+                                // Mark short-circuit point query before pruning empty partitions,
+                                // otherwise PRUNE_EMPTY_PARTITION may replace LogicalOlapScan with LogicalEmptyRelation
+                                // and short-circuit flag can never be set.
+                                new LogicalResultSinkToShortCircuitPointQuery(),
                                 new PruneOlapScanPartition(),
                                 new PruneEmptyPartition(),
                                 new PruneFileScanPartition(),
@@ -409,8 +413,6 @@ public class Rewriter extends AbstractBatchJobExecutor {
                 topic("adjust preagg status",
                         topDown(new AdjustPreAggStatus())
                 ),
-                topic("Point query short circuit",
-                        topDown(new LogicalResultSinkToShortCircuitPointQuery())),
                 topic("eliminate",
                         // SORT_PRUNING should be applied after mergeLimit
                         custom(RuleType.ELIMINATE_SORT, EliminateSort::new),
