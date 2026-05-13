@@ -19,6 +19,7 @@ package org.apache.doris.catalog;
 
 import org.apache.doris.alter.AlterCancelException;
 import org.apache.doris.catalog.constraint.Constraint;
+import org.apache.doris.catalog.stream.BaseTableStream;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
@@ -76,6 +77,7 @@ public abstract class Table extends MetaObject implements Writable, TableIf {
     protected long id;
     @SerializedName(value = "name")
     protected volatile String name;
+    @SerializedName(value = "qualifiedDbName")
     protected volatile String qualifiedDbName;
     @SerializedName(value = "type")
     protected TableType type;
@@ -440,6 +442,10 @@ public abstract class Table extends MetaObject implements Writable, TableIf {
             table = new HiveTable();
         } else if (type == TableType.JDBC) {
             table = new JdbcTable();
+        } else if (type == TableType.STREAM) {
+            table = BaseTableStream.read(in);
+            table.setTypeRead(true);
+            return table;
         } else {
             throw new IOException("Unknown table type: " + type.name());
         }

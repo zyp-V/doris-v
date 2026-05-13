@@ -23,13 +23,12 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.PropertyAnalyzer;
-import org.apache.doris.persist.gson.GsonUtils;
 import org.apache.doris.thrift.TRow;
 
 import com.google.common.collect.ImmutableList;
 import com.google.gson.annotations.SerializedName;
 
-import java.io.DataOutput;
+import java.io.DataInput;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -154,13 +153,16 @@ public abstract class BaseTableStream extends Table {
                 .append("\" = \"").append(showInitialRows).append("\"\n");
     }
 
-    @Override
-    public void write(DataOutput out) throws IOException {
-        Text.writeString(out, GsonUtils.GSON.toJson(this));
-    }
-
     // fill table_stream_consumption info
     // @param dataBatch the data batch to fill
     // DB_NAME, STREAM_NAME, STREAM_ID, UNIT, CONSUMPTION_STATUS, LAG, LAST_CONSUMPTION_TIME
     abstract void fillTableStreamConsumptionInfo(List<TRow> dataBatch);
+
+    public static BaseTableStream read(DataInput in) throws IOException {
+        String streamClassName = Text.readString(in);
+        if (streamClassName.equals((OlapTableStream.class.getName()))) {
+            return OlapTableStream.read(in);
+        }
+        throw new IOException("Unknown stream class: " + streamClassName);
+    }
 }

@@ -29,6 +29,8 @@ import org.apache.doris.thrift.TRow;
 
 import com.google.common.base.Preconditions;
 import com.google.gson.annotations.SerializedName;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -39,6 +41,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class OlapTableStream extends BaseTableStream {
+    private static final Logger LOG = LogManager.getLogger(OlapTableStream.class);
 
     @SerializedName("po")
     private Map<Long, Long> partitionOffset;
@@ -88,15 +91,6 @@ public class OlapTableStream extends BaseTableStream {
             ((OlapTable) baseTable).getPartitions()
                     .forEach(p -> partitionOffset.put(p.getId(), p.getVisibleVersion()));
         }
-    }
-
-    public static OlapTableStream read(DataInput in) throws IOException {
-        return GsonUtils.GSON.fromJson(Text.readString(in), OlapTableStream.class);
-    }
-
-    @Override
-    public void write(DataOutput out) throws IOException {
-        Text.writeString(out, GsonUtils.GSON.toJson(this));
     }
 
     @Override
@@ -153,5 +147,24 @@ public class OlapTableStream extends BaseTableStream {
                 table.readUnlock();
             }
         }
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        // write type first
+        Text.writeString(out, type.name());
+        Text.writeString(out, OlapTableStream.class.getCanonicalName());
+        String json = GsonUtils.GSON.toJson(this);
+        Text.writeString(out, json);
+    }
+
+    @Override
+    public void readFields(DataInput in) throws IOException {
+        LOG.warn("read fields not supported in stream");
+    }
+
+    public static BaseTableStream read(DataInput in) throws IOException {
+        String json = Text.readString(in);
+        return GsonUtils.GSON.fromJson(json, OlapTableStream.class);
     }
 }
