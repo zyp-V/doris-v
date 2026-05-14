@@ -89,7 +89,7 @@ public class ExplainTableStreamPlanTest extends TestWithFeService {
 
         String createStream = "create stream if not exists test_stream.s1 on table test_stream.tbl_stream_base\n"
                 + "properties('type' = 'default', 'show_initial_rows' = 'true')";
-        createTable(createStream);
+        createTable(createStream, true);
 
         // Make base table visible versions differ from stream offsets, so we can verify
         // scan range version uses stream partitionOffset rather than partition visibleVersion.

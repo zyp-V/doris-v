@@ -73,7 +73,7 @@ public class TableStreamOffsetTransactionTest extends TestWithFeService {
 
         String createStream = "create stream if not exists test_stream.s1 on table test_stream.tbl_stream_base\n"
                 + "properties('type' = 'default', 'show_initial_rows' = 'true')";
-        createTable(createStream);
+        createTable(createStream, true);
     }
 
     @Test
