@@ -148,6 +148,9 @@ public class LogicalOlapTableStreamScan extends LogicalOlapScan {
                 manuallySpecifiedTabletIds, cachedOutput, isIncrementalScan);
     }
 
+    /**
+     * Return a new scan with specified selected tablet ids.
+     */
     public LogicalOlapTableStreamScan withSelectedTabletIds(List<Long> selectedTabletIds) {
         return new LogicalOlapTableStreamScan(relationId, (Table) table, qualifier,
                 Optional.empty(), Optional.of(getLogicalProperties()),
@@ -157,6 +160,9 @@ public class LogicalOlapTableStreamScan extends LogicalOlapScan {
                 manuallySpecifiedTabletIds, cachedOutput, isIncrementalScan);
     }
 
+    /**
+     * Return a new scan with cached output slots.
+     */
     public LogicalOlapTableStreamScan withCachedOutput(List<Slot> outputSlots) {
         return new LogicalOlapTableStreamScan(relationId, (Table) table, qualifier,
                 Optional.empty(), Optional.empty(),
@@ -166,6 +172,9 @@ public class LogicalOlapTableStreamScan extends LogicalOlapScan {
                 manuallySpecifiedTabletIds, Optional.of(outputSlots), isIncrementalScan);
     }
 
+    /**
+     * Return a new scan with specified pre-aggregation status.
+     */
     public LogicalOlapTableStreamScan withPreAggStatus(PreAggStatus preAggStatus) {
         return new LogicalOlapTableStreamScan(relationId, (Table) table, qualifier,
                 Optional.empty(), Optional.of(getLogicalProperties()),
