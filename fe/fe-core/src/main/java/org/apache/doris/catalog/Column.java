@@ -36,7 +36,6 @@ import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TColumnType;
 
 import com.google.common.base.Strings;
-import com.google.common.collect.Sets;
 import com.google.gson.annotations.SerializedName;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -193,9 +192,9 @@ public class Column implements Writable, GsonPostProcessable {
     }
 
     public Column(String name, Type type, boolean isKey, AggregateType aggregateType, boolean isAllowNull,
-                  String comment, boolean visible) {
+            String comment, boolean visible) {
         this(name, type, isKey, aggregateType, isAllowNull, -1, null, comment, visible, null,
-                COLUMN_UNIQUE_ID_INIT_VALUE, null, false, null, null, Sets.newHashSet(), null);
+                COLUMN_UNIQUE_ID_INIT_VALUE, null, false, null);
     }
 
     public Column(String name, Type type, boolean isKey, AggregateType aggregateType, boolean isAllowNull,
