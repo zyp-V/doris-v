@@ -36,6 +36,7 @@ import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TColumnType;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Sets;
 import com.google.gson.annotations.SerializedName;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
