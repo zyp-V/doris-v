@@ -525,9 +525,9 @@ public class Rewriter extends AbstractBatchJobExecutor {
             () -> {
                 List<RewriteJob> rewriteJobs = Lists.newArrayListWithExpectedSize(300);
 
-                rewriteJobs.add(topic("normalize olap table stream scan",
+                rewriteJobs.addAll(jobs(topic("normalize olap table stream scan",
                         custom(RuleType.NORMALIZE_OLAP_TABLE_STREAM_SCAN, NormalizeOlapTableStreamScan::new)
-                ));
+                )));
 
                 rewriteJobs.addAll(jobs(
                         topic("cte inline and pull up all cte anchor",
