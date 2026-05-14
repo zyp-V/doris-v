@@ -72,6 +72,7 @@ import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -189,7 +190,8 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
 
             List<ScanNode> tableStreamScanNodes =
                     buildResult.planner.getScanNodes().stream()
-                            .filter(s -> s.getTableIf() instanceof OlapTableStreamWrapper).collect(Collectors.toList());
+                            .filter(s -> s.getTupleDesc().getTable() instanceof OlapTableStreamWrapper)
+                            .collect(Collectors.toList());
 
             if (!tableStreamScanNodes.isEmpty()) {
                 // stream id -> <partition id, offset>
@@ -199,7 +201,8 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                     // only support OlapScanNode currently
                     Preconditions.checkArgument(scanNode instanceof OlapScanNode);
                     OlapScanNode olapScanNode = (OlapScanNode) scanNode;
-                    OlapTableStreamWrapper wrapper = (OlapTableStreamWrapper) scanNode.getTableIf();
+                    OlapTableStreamWrapper wrapper =
+                            (OlapTableStreamWrapper) scanNode.getTupleDesc().getTable();
                     if (!distinctUpdate.containsKey(
                             Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId()))) {
                         distinctUpdate.put(Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId()),
@@ -213,16 +216,6 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                         key.second, value)));
                 // put offset into executor
                 insertExecutor.setStreamUpdateInfos(infos);
-                insertExecutor.registerListener(new InsertExecutorListener() {
-                    @Override
-                    public void beforeComplete(AbstractInsertExecutor insertExecutor, StmtExecutor executor,
-                                               long jobId) throws Exception {
-                        TransactionState transactionState = Env.getCurrentGlobalTransactionMgr()
-                                .getTransactionState(insertExecutor.getDatabase().getId(),
-                                        insertExecutor.getTxnId());
-                        transactionState.setStreamUpdateInfos(insertExecutor.getStreamUpdateInfos());
-                    }
-                });
             }
 
             // lock after plan and check does table's schema changed to ensure we lock table order by id.
@@ -249,6 +242,13 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                 }
                 if (!insertExecutor.isEmptyInsert()) {
                     insertExecutor.beginTransaction();
+                    if (insertExecutor.getStreamUpdateInfos() != null
+                            && !insertExecutor.getStreamUpdateInfos().isEmpty()) {
+                        TransactionState transactionState = Env.getCurrentGlobalTransactionMgr()
+                                .getTransactionState(insertExecutor.getDatabase().getId(),
+                                        insertExecutor.getTxnId());
+                        transactionState.setStreamUpdateInfos(insertExecutor.getStreamUpdateInfos());
+                    }
                     insertExecutor.finalizeSink(
                             buildResult.planner.getFragments().get(0), buildResult.dataSink,
                             buildResult.physicalSink

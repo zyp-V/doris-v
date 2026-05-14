@@ -184,6 +184,10 @@ public abstract class BaseTableStream extends Table {
         return streamTableInfo.getFullQualifiers();
     }
 
+    public String getDBName() {
+        return streamTableInfo.getDbName();
+    }
+
     public abstract void unprotectedCheckStreamUpdate(AbstractTableStreamUpdate update) throws UserException;
 
     public abstract void unprotectedUpdateStreamUpdate(AbstractTableStreamUpdate update, Long ts);

@@ -64,12 +64,12 @@ public class NormalizeOlapTableStreamScan implements CustomRewriter {
             List<Slot> originSlots = scan.getLogicalProperties().getOutput();
             List<Slot> newSlots = originSlots.stream()
                     .filter(slot -> !(slot instanceof SlotReference
-                            && ((SlotReference) slot).getOriginalColumn().isPresent()
-                            && ((SlotReference) slot).getOriginalColumn().get()
+                            && ((SlotReference) slot).getColumn().isPresent()
+                            && ((SlotReference) slot).getColumn().get()
                             .equals(Column.STREAM_CHANGE_TYPE_VIRTUAL_COLUMN)))
                     .filter(slot -> !(slot instanceof SlotReference
-                            && ((SlotReference) slot).getOriginalColumn().isPresent()
-                            && ((SlotReference) slot).getOriginalColumn().get()
+                            && ((SlotReference) slot).getColumn().isPresent()
+                            && ((SlotReference) slot).getColumn().get()
                             .equals(Column.STREAM_SEQ_VIRTUAL_COLUMN)))
                     .collect(Collectors.toList());
 
@@ -101,15 +101,15 @@ public class NormalizeOlapTableStreamScan implements CustomRewriter {
                     .map(NamedExpression.class::cast).collect(Collectors.toList());
             for (Slot slot : originSlots) {
                 if (slot instanceof SlotReference
-                        && ((SlotReference) slot).getOriginalColumn().isPresent()
-                        && ((SlotReference) slot).getOriginalColumn().get()
+                        && ((SlotReference) slot).getColumn().isPresent()
+                        && ((SlotReference) slot).getColumn().get()
                         .equals(Column.STREAM_CHANGE_TYPE_VIRTUAL_COLUMN)) {
                     project.add(new Alias(slot.getExprId(), new VarcharLiteral("APPEND"),
                             Column.STREAM_CHANGE_TYPE_COL));
                 }
                 if (slot instanceof SlotReference
-                        && ((SlotReference) slot).getOriginalColumn().isPresent()
-                        && ((SlotReference) slot).getOriginalColumn().get()
+                        && ((SlotReference) slot).getColumn().isPresent()
+                        && ((SlotReference) slot).getColumn().get()
                         .equals(Column.STREAM_SEQ_VIRTUAL_COLUMN)) {
                     project.add(new Alias(slot.getExprId(), new BigIntLiteral(-1), Column.STREAM_SEQ_COL));
                 }

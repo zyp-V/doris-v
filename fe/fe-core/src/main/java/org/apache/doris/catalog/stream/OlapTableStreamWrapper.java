@@ -144,11 +144,6 @@ public class OlapTableStreamWrapper extends OlapTable {
     }
 
     @Override
-    public boolean isMorTable() {
-        return baseTable.isMorTable();
-    }
-
-    @Override
     public Collection<Partition> getPartitions() {
         return baseTable.getPartitions();
     }

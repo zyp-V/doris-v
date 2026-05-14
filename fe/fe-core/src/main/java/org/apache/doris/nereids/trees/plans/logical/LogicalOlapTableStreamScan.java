@@ -23,11 +23,8 @@ import org.apache.doris.catalog.Table;
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.trees.TableSample;
-import org.apache.doris.nereids.trees.expressions.Alias;
 import org.apache.doris.nereids.trees.expressions.Slot;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
-import org.apache.doris.nereids.trees.expressions.literal.BigIntLiteral;
-import org.apache.doris.nereids.trees.expressions.literal.VarcharLiteral;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PreAggStatus;
 import org.apache.doris.nereids.trees.plans.RelationId;
@@ -123,12 +120,8 @@ public class LogicalOlapTableStreamScan extends LogicalOlapScan {
 
         if (!isIncrementalScan) {
             // Inject virtual stream hidden columns.
-            SlotReference seqColRef = (SlotReference) new Alias(new BigIntLiteral(-1L), Column.STREAM_SEQ_COL).toSlot();
-            slots.add(seqColRef.withColumn(Column.STREAM_SEQ_VIRTUAL_COLUMN));
-
-            SlotReference changeTypeColRef = (SlotReference) new Alias(new VarcharLiteral("APPEND"),
-                    Column.STREAM_CHANGE_TYPE_COL).toSlot();
-            slots.add(changeTypeColRef.withColumn(Column.STREAM_CHANGE_TYPE_VIRTUAL_COLUMN));
+            slots.add(SlotReference.fromColumn(table, Column.STREAM_SEQ_VIRTUAL_COLUMN, qualified()));
+            slots.add(SlotReference.fromColumn(table, Column.STREAM_CHANGE_TYPE_VIRTUAL_COLUMN, qualified()));
         }
 
         return slots.build();
