@@ -216,6 +216,16 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                         key.second, value)));
                 // put offset into executor
                 insertExecutor.setStreamUpdateInfos(infos);
+                insertExecutor.registerListener(new AbstractInsertExecutor.InsertExecutorListener() {
+                    @Override
+                    public void beforeComplete(AbstractInsertExecutor insertExecutor, StmtExecutor executor,
+                            long jobId) throws Exception {
+                        TransactionState transactionState = Env.getCurrentGlobalTransactionMgr()
+                                .getTransactionState(insertExecutor.getDatabase().getId(),
+                                        insertExecutor.getTxnId());
+                        transactionState.setStreamUpdateInfos(insertExecutor.getStreamUpdateInfos());
+                    }
+                });
             }
 
             // lock after plan and check does table's schema changed to ensure we lock table order by id.
@@ -242,13 +252,6 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                 }
                 if (!insertExecutor.isEmptyInsert()) {
                     insertExecutor.beginTransaction();
-                    if (insertExecutor.getStreamUpdateInfos() != null
-                            && !insertExecutor.getStreamUpdateInfos().isEmpty()) {
-                        TransactionState transactionState = Env.getCurrentGlobalTransactionMgr()
-                                .getTransactionState(insertExecutor.getDatabase().getId(),
-                                        insertExecutor.getTxnId());
-                        transactionState.setStreamUpdateInfos(insertExecutor.getStreamUpdateInfos());
-                    }
                     insertExecutor.finalizeSink(
                             buildResult.planner.getFragments().get(0), buildResult.dataSink,
                             buildResult.physicalSink
