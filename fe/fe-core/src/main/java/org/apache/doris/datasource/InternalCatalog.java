@@ -112,6 +112,7 @@ import org.apache.doris.catalog.TabletInvertedIndex;
 import org.apache.doris.catalog.TabletMeta;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.catalog.View;
+import org.apache.doris.catalog.stream.BaseTableStream;
 import org.apache.doris.clone.DynamicPartitionScheduler;
 import org.apache.doris.cluster.Cluster;
 import org.apache.doris.cluster.ClusterNamespace;
@@ -140,6 +141,7 @@ import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.es.EsRepository;
 import org.apache.doris.event.DropPartitionEvent;
 import org.apache.doris.mtmv.MTMVUtil;
+import org.apache.doris.nereids.trees.plans.commands.info.CreateStreamInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.DropMTMVInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.TableNameInfo;
 import org.apache.doris.persist.AlterDatabasePropertyInfo;
@@ -853,7 +855,7 @@ public class InternalCatalog implements CatalogIf<Database> {
     public void createTableStream(
             org.apache.doris.nereids.trees.plans.commands.CreateStreamCommand command)
             throws org.apache.doris.common.DdlException {
-        org.apache.doris.nereids.trees.plans.commands.info.CreateStreamInfo info = command.getCreateStreamInfo();
+        CreateStreamInfo info = command.getCreateStreamInfo();
 
         // stream db/name
         String dbName = info.getStreamName().getDb();
@@ -881,9 +883,9 @@ public class InternalCatalog implements CatalogIf<Database> {
                 : new java.util.HashMap<>(info.getProperties());
         String typeName = properties.get(org.apache.doris.common.util.PropertyAnalyzer.PROPERTIES_STREAM_TYPE);
         if (typeName != null) {
-            org.apache.doris.catalog.stream.BaseTableStream.StreamConsumeType consumeType =
-                    org.apache.doris.catalog.stream.BaseTableStream.StreamConsumeType.getType(typeName);
-            if (consumeType == org.apache.doris.catalog.stream.BaseTableStream.StreamConsumeType.UNKNOWN) {
+            BaseTableStream.StreamConsumeType consumeType =
+                    BaseTableStream.StreamConsumeType.getType(typeName);
+            if (consumeType == BaseTableStream.StreamConsumeType.UNKNOWN) {
                 throw new org.apache.doris.common.DdlException("not supported type: " + typeName);
             }
         }
@@ -891,11 +893,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         // build stream under base table read lock
         baseTable.readLock();
         try {
-            org.apache.doris.catalog.stream.BaseTableStream stream =
-                    new org.apache.doris.catalog.stream.TableStreamBuildFactory()
-                            .withName(streamName)
-                            .withBaseTable(baseTable)
-                            .build();
+            BaseTableStream stream = new org.apache.doris.catalog.stream.TableStreamBuildFactory()
+                    .withName(streamName)
+                    .withBaseTable(baseTable)
+                    .build();
             stream.setId(Env.getCurrentEnv().getNextId());
             stream.setComment(info.getComment());
 

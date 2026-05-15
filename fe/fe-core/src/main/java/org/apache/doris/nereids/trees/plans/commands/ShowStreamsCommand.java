@@ -17,8 +17,10 @@
 
 package org.apache.doris.nereids.trees.plans.commands;
 
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.CaseSensibility;
@@ -27,6 +29,7 @@ import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.PatternMatcher;
 import org.apache.doris.common.PatternMatcherWrapper;
 import org.apache.doris.common.util.Util;
+import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.nereids.trees.plans.PlanType;
 import org.apache.doris.nereids.trees.plans.visitor.PlanVisitor;
@@ -77,7 +80,7 @@ public class ShowStreamsCommand extends Command implements NoForward {
         if (Strings.isNullOrEmpty(catalog)) {
             catalog = ctx.getDefaultCatalog();
             if (Strings.isNullOrEmpty(catalog)) {
-                catalog = org.apache.doris.datasource.InternalCatalog.INTERNAL_CATALOG_NAME;
+                catalog = InternalCatalog.INTERNAL_CATALOG_NAME;
             }
         }
         Util.prohibitExternalCatalog(catalog, this.getClass().getSimpleName());
@@ -89,8 +92,7 @@ public class ShowStreamsCommand extends Command implements NoForward {
 
     public ShowResultSetMetaData getMetaData() {
         return ShowResultSetMetaData.builder()
-                .addColumn(new org.apache.doris.catalog.Column("Streams_in_" + db,
-                        org.apache.doris.catalog.ScalarType.createVarchar(20)))
+                .addColumn(new Column("Streams_in_" + db, ScalarType.createVarchar(50)))
                 .build();
     }
 
