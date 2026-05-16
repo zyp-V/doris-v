@@ -188,6 +188,12 @@ Status SegmentWriter::init(const std::vector<uint32_t>& col_ids, bool has_key) {
         _opts.compression_type = _tablet_schema->compression_type();
     }
     auto create_column_writer = [&](uint32_t cid, const auto& column) -> auto {
+        _olap_data_convertor->add_column_data_convertor(column);
+        if (_tablet_schema->row_store_only() && !column.is_row_store_column()) {
+            _column_writers.push_back(nullptr);
+            return Status::OK();
+        }
+
         ColumnWriterOptions opts;
         opts.meta = _footer.add_columns();
 
@@ -269,8 +275,6 @@ Status SegmentWriter::init(const std::vector<uint32_t>& col_ids, bool has_key) {
         RETURN_IF_ERROR(ColumnWriter::create(opts, &column, _file_writer, &writer));
         RETURN_IF_ERROR(writer->init());
         _column_writers.push_back(std::move(writer));
-
-        _olap_data_convertor->add_column_data_convertor(column);
         return Status::OK();
     };
 
@@ -378,6 +382,12 @@ Status SegmentWriter::partial_update_preconditions_check(size_t row_pos) {
                 _tablet->tablet_id());
         DCHECK(false) << msg;
         return Status::InternalError<false>(msg);
+    }
+    if (_tablet_schema->row_store_only()) {
+        return Status::NotSupported(
+                "partial update is not supported for row_store_only table in milestone 1, "
+                "tablet_id={}",
+                _tablet->tablet_id());
     }
     if (row_pos != 0) {
         auto msg = fmt::format("row_pos should be 0, but found {}, tablet_id={}", row_pos,
@@ -799,7 +809,8 @@ Status SegmentWriter::append_block(const vectorized::Block* block, size_t row_po
     // or it's schema change write(since column data type maybe changed, so we should reubild)
     if (_tablet_schema->store_row_column() &&
         (_opts.write_type == DataWriteType::TYPE_DIRECT ||
-         _opts.write_type == DataWriteType::TYPE_SCHEMA_CHANGE)) {
+         _opts.write_type == DataWriteType::TYPE_SCHEMA_CHANGE ||
+         _tablet_schema->row_store_only())) {
         _serialize_block_to_row_column(*const_cast<vectorized::Block*>(block));
     }
 
@@ -836,6 +847,9 @@ Status SegmentWriter::append_block(const vectorized::Block* block, size_t row_po
         } else if (_has_key && _tablet_schema->has_sequence_col() &&
                    cid == _tablet_schema->sequence_col_idx()) {
             seq_column = converted_result.second;
+        }
+        if (_column_writers[id] == nullptr) {
+            continue;
         }
         RETURN_IF_ERROR(_column_writers[id]->append(converted_result.second->get_nullmap(),
                                                     converted_result.second->get_data(), num_rows));
@@ -972,6 +986,9 @@ std::string SegmentWriter::_encode_keys(
 template <typename RowType>
 Status SegmentWriter::append_row(const RowType& row) {
     for (size_t cid = 0; cid < _column_writers.size(); ++cid) {
+        if (_column_writers[cid] == nullptr) {
+            continue;
+        }
         auto cell = row.cell(cid);
         RETURN_IF_ERROR(_column_writers[cid]->append(cell));
     }
@@ -1009,6 +1026,9 @@ uint64_t SegmentWriter::estimate_segment_size() {
     // footer_size(4) + checksum(4) + segment_magic(4)
     uint64_t size = 12;
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         size += column_writer->estimate_buffer_size();
     }
     if (_tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write) {
@@ -1045,6 +1065,9 @@ Status SegmentWriter::finalize_columns_data() {
     _num_rows_written = 0;
 
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->finish());
     }
     RETURN_IF_ERROR(_write_data());
@@ -1124,6 +1147,9 @@ Status SegmentWriter::finalize(uint64_t* segment_file_size, uint64_t* index_size
 
 void SegmentWriter::clear() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         column_writer.reset();
     }
     _column_writers.clear();
@@ -1134,6 +1160,9 @@ void SegmentWriter::clear() {
 // write column data to file one by one
 Status SegmentWriter::_write_data() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_data());
     }
     return Status::OK();
@@ -1142,6 +1171,9 @@ Status SegmentWriter::_write_data() {
 // write ordinal index after data has been written
 Status SegmentWriter::_write_ordinal_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_ordinal_index());
     }
     return Status::OK();
@@ -1149,6 +1181,9 @@ Status SegmentWriter::_write_ordinal_index() {
 
 Status SegmentWriter::_write_zone_map() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_zone_map());
     }
     return Status::OK();
@@ -1156,6 +1191,9 @@ Status SegmentWriter::_write_zone_map() {
 
 Status SegmentWriter::_write_bitmap_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_bitmap_index());
     }
     return Status::OK();
@@ -1163,6 +1201,9 @@ Status SegmentWriter::_write_bitmap_index() {
 
 Status SegmentWriter::_write_inverted_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_inverted_index());
     }
     return Status::OK();
@@ -1170,6 +1211,9 @@ Status SegmentWriter::_write_inverted_index() {
 
 Status SegmentWriter::_write_bloom_filter_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_bloom_filter_index());
     }
     return Status::OK();

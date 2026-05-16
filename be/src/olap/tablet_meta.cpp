@@ -312,6 +312,9 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id
     if (tablet_schema.__isset.store_row_column) {
         schema->set_store_row_column(tablet_schema.store_row_column);
     }
+    if (tablet_schema.__isset.row_store_only) {
+        schema->set_row_store_only(tablet_schema.row_store_only);
+    }
     if (tablet_schema.__isset.row_store_page_size) {
         schema->set_row_store_page_size(tablet_schema.row_store_page_size);
     }

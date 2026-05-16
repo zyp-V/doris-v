@@ -2127,7 +2127,8 @@ public class InternalCatalog implements CatalogIf<Database> {
                             tbl.getTimeSeriesCompactionTimeThresholdSeconds(),
                             tbl.getTimeSeriesCompactionEmptyRowsetsThreshold(),
                             tbl.getTimeSeriesCompactionLevelThreshold(),
-                            tbl.storeRowColumn(), binlogConfig, objectPool, tbl.rowStorePageSize());
+                            tbl.storeRowColumn(), tbl.rowStoreOnly(), binlogConfig, objectPool,
+                            tbl.rowStorePageSize());
 
                     task.setStorageFormat(tbl.getStorageFormat());
                     task.setInvertedIndexStorageFormat(tbl.getInvertedIndexStorageFormat());
@@ -2694,8 +2695,21 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
 
         boolean storeRowColumn = false;
+        boolean rowStoreOnly = false;
         try {
             storeRowColumn = PropertyAnalyzer.analyzeStoreRowColumn(properties);
+            rowStoreOnly = PropertyAnalyzer.analyzeRowStoreOnly(properties);
+            if (rowStoreOnly) {
+                if (keysType != KeysType.UNIQUE_KEYS || !enableUniqueKeyMergeOnWrite) {
+                    throw new DdlException(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY
+                            + " property is only supported for unique merge-on-write table");
+                }
+                if (!storeRowColumn) {
+                    throw new DdlException(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY
+                            + " property requires " + PropertyAnalyzer.PROPERTIES_STORE_ROW_COLUMN
+                            + " property to be true");
+                }
+            }
             if (storeRowColumn && !enableLightSchemaChange) {
                 throw new DdlException(
                         "Row store column rely on light schema change, enable light schema change first");
@@ -2704,6 +2718,7 @@ public class InternalCatalog implements CatalogIf<Database> {
             throw new DdlException(e.getMessage());
         }
         olapTable.setStoreRowColumn(storeRowColumn);
+        olapTable.setRowStoreOnly(rowStoreOnly);
 
         // set skip inverted index on load
         boolean skipWriteIndexOnLoad = PropertyAnalyzer.analyzeSkipWriteIndexOnLoad(properties);

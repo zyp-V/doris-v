@@ -143,6 +143,11 @@ void VerticalSegmentWriter::_init_column_meta(ColumnMetaPB* meta, uint32_t colum
 
 Status VerticalSegmentWriter::_create_column_writer(uint32_t cid, const TabletColumn& column,
                                                     const TabletSchemaSPtr& tablet_schema) {
+    _olap_data_convertor->add_column_data_convertor(column);
+    if (_tablet_schema->row_store_only() && !column.is_row_store_column()) {
+        return Status::OK();
+    }
+
     ColumnWriterOptions opts;
     opts.meta = _footer.add_columns();
 
@@ -224,9 +229,10 @@ Status VerticalSegmentWriter::_create_column_writer(uint32_t cid, const TabletCo
     std::unique_ptr<ColumnWriter> writer;
     RETURN_IF_ERROR(ColumnWriter::create(opts, &column, _file_writer, &writer));
     RETURN_IF_ERROR(writer->init());
-    _column_writers.push_back(std::move(writer));
-
-    _olap_data_convertor->add_column_data_convertor(column);
+    if (cid >= _column_writers.size()) {
+        _column_writers.resize(cid + 1);
+    }
+    _column_writers[cid] = std::move(writer);
     return Status::OK();
 };
 
@@ -237,7 +243,7 @@ Status VerticalSegmentWriter::init() {
     }
     _olap_data_convertor = std::make_unique<vectorized::OlapBlockDataConvertor>();
     _olap_data_convertor->reserve(_tablet_schema->num_columns());
-    _column_writers.reserve(_tablet_schema->columns().size());
+    _column_writers.resize(_tablet_schema->num_columns());
     // we don't need the short key index for unique key merge on write table.
     if (_tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write) {
         size_t seq_col_length = 0;
@@ -327,6 +333,12 @@ Status VerticalSegmentWriter::_partial_update_preconditions_check(size_t row_pos
                 _tablet->tablet_id());
         DCHECK(false) << msg;
         return Status::InternalError<false>(msg);
+    }
+    if (_tablet_schema->row_store_only()) {
+        return Status::NotSupported(
+                "partial update is not supported for row_store_only table in milestone 1, "
+                "tablet_id={}",
+                _tablet->tablet_id());
     }
     if (row_pos != 0) {
         auto msg = fmt::format("row_pos should be 0, but found {}, tablet_id={}", row_pos,
@@ -854,6 +866,12 @@ Status VerticalSegmentWriter::write_batch() {
         _opts.rowset_ctx->partial_update_info->is_partial_update &&
         _opts.write_type == DataWriteType::TYPE_DIRECT &&
         !_opts.rowset_ctx->is_transient_rowset_writer) {
+        if (_tablet_schema->row_store_only()) {
+            return Status::NotSupported(
+                    "partial update is not supported for row_store_only table in milestone 1, "
+                    "tablet_id={}",
+                    _tablet->tablet_id());
+        }
         for (uint32_t cid = 0; cid < _tablet_schema->num_columns(); ++cid) {
             RETURN_IF_ERROR(
                     _create_column_writer(cid, _tablet_schema->column(cid), _tablet_schema));
@@ -867,6 +885,9 @@ Status VerticalSegmentWriter::write_batch() {
             RETURN_IF_ERROR(_append_block_with_variant_subcolumns(full_rows_block));
         }
         for (auto& column_writer : _column_writers) {
+            if (column_writer == nullptr) {
+                continue;
+            }
             RETURN_IF_ERROR(column_writer->finish());
             RETURN_IF_ERROR(column_writer->write_data());
         }
@@ -876,7 +897,7 @@ Status VerticalSegmentWriter::write_batch() {
     // or it's schema change write(since column data type maybe changed, so we should reubild)
     if (_tablet_schema->store_row_column() &&
         (_opts.write_type == DataWriteType::TYPE_DIRECT ||
-         _opts.write_type == DataWriteType::TYPE_SCHEMA_CHANGE)) {
+         _opts.write_type == DataWriteType::TYPE_SCHEMA_CHANGE || _tablet_schema->row_store_only())) {
         for (auto& data : _batched_blocks) {
             // TODO: maybe we should pass range to this method
             _serialize_block_to_row_column(*const_cast<vectorized::Block*>(data.block));
@@ -902,17 +923,22 @@ Status VerticalSegmentWriter::write_batch() {
                        cid == _tablet_schema->sequence_col_idx()) {
                 seq_column = column;
             }
-            RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
-                                                         data.num_rows));
+            if (!_tablet_schema->row_store_only() ||
+                _tablet_schema->column(cid).is_row_store_column()) {
+                RETURN_IF_ERROR(_column_writers[cid]->append(
+                        column->get_nullmap(), column->get_data(), data.num_rows));
+            }
             _olap_data_convertor->clear_source_content();
         }
-        if (_data_dir != nullptr &&
-            _data_dir->reach_capacity_limit(_column_writers[cid]->estimate_buffer_size())) {
-            return Status::Error<DISK_REACH_CAPACITY_LIMIT>("disk {} exceed capacity limit.",
-                                                            _data_dir->path_hash());
+        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+            if (_data_dir != nullptr &&
+                _data_dir->reach_capacity_limit(_column_writers[cid]->estimate_buffer_size())) {
+                return Status::Error<DISK_REACH_CAPACITY_LIMIT>("disk {} exceed capacity limit.",
+                                                                _data_dir->path_hash());
+            }
+            RETURN_IF_ERROR(_column_writers[cid]->finish());
+            RETURN_IF_ERROR(_column_writers[cid]->write_data());
         }
-        RETURN_IF_ERROR(_column_writers[cid]->finish());
-        RETURN_IF_ERROR(_column_writers[cid]->write_data());
     }
 
     for (auto& data : _batched_blocks) {
@@ -959,8 +985,8 @@ Status VerticalSegmentWriter::write_batch() {
         _num_rows_written += data.num_rows;
     }
 
-    if (_opts.write_type == DataWriteType::TYPE_DIRECT ||
-        _opts.write_type == DataWriteType::TYPE_SCHEMA_CHANGE) {
+    if (!_tablet_schema->row_store_only() && (_opts.write_type == DataWriteType::TYPE_DIRECT ||
+                                             _opts.write_type == DataWriteType::TYPE_SCHEMA_CHANGE)) {
         size_t original_writers_cnt = _column_writers.size();
         // handle variant dynamic sub columns
         for (auto& data : _batched_blocks) {
@@ -1117,6 +1143,9 @@ Status VerticalSegmentWriter::finalize(uint64_t* segment_file_size, uint64_t* in
 
 void VerticalSegmentWriter::clear() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         column_writer.reset();
     }
     _column_writers.clear();
@@ -1126,6 +1155,9 @@ void VerticalSegmentWriter::clear() {
 // write ordinal index after data has been written
 Status VerticalSegmentWriter::_write_ordinal_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_ordinal_index());
     }
     return Status::OK();
@@ -1133,6 +1165,9 @@ Status VerticalSegmentWriter::_write_ordinal_index() {
 
 Status VerticalSegmentWriter::_write_zone_map() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_zone_map());
     }
     return Status::OK();
@@ -1140,6 +1175,9 @@ Status VerticalSegmentWriter::_write_zone_map() {
 
 Status VerticalSegmentWriter::_write_bitmap_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_bitmap_index());
     }
     return Status::OK();
@@ -1147,6 +1185,9 @@ Status VerticalSegmentWriter::_write_bitmap_index() {
 
 Status VerticalSegmentWriter::_write_inverted_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_inverted_index());
     }
     if (_inverted_index_file_writer != nullptr) {
@@ -1157,6 +1198,9 @@ Status VerticalSegmentWriter::_write_inverted_index() {
 
 Status VerticalSegmentWriter::_write_bloom_filter_index() {
     for (auto& column_writer : _column_writers) {
+        if (column_writer == nullptr) {
+            continue;
+        }
         RETURN_IF_ERROR(column_writer->write_bloom_filter_index());
     }
     return Status::OK();

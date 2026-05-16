@@ -2471,6 +2471,20 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
         return false;
     }
 
+    public void setRowStoreOnly(boolean rowStoreOnly) {
+        TableProperty tableProperty = getOrCreatTableProperty();
+        tableProperty.modifyTableProperties(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY,
+                Boolean.valueOf(rowStoreOnly).toString());
+        tableProperty.buildStoreRowColumn();
+    }
+
+    public Boolean rowStoreOnly() {
+        if (tableProperty != null) {
+            return tableProperty.rowStoreOnly();
+        }
+        return false;
+    }
+
     public void setSkipWriteIndexOnLoad(boolean skipWriteIndexOnLoad) {
         TableProperty tableProperty = getOrCreatTableProperty();
         tableProperty.modifyTableProperties(PropertyAnalyzer.PROPERTIES_SKIP_WRITE_INDEX_ON_LOAD,

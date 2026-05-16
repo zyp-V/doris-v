@@ -347,6 +347,8 @@ public:
     bool enable_single_replica_compaction() const { return _enable_single_replica_compaction; }
     void set_store_row_column(bool store_row_column) { _store_row_column = store_row_column; }
     bool store_row_column() const { return _store_row_column; }
+    void set_row_store_only(bool row_store_only) { _row_store_only = row_store_only; }
+    bool row_store_only() const { return _row_store_only; }
     void set_skip_write_index_on_load(bool skip) { _skip_write_index_on_load = skip; }
     bool skip_write_index_on_load() const { return _skip_write_index_on_load; }
     int32_t delete_sign_idx() const { return _delete_sign_idx; }
@@ -525,6 +527,7 @@ private:
     bool _enable_single_replica_compaction = false;
     int64_t _mem_size = 0;
     bool _store_row_column = false;
+    bool _row_store_only = false;
     bool _skip_write_index_on_load = false;
     InvertedIndexStorageFormatPB _inverted_index_storage_format = InvertedIndexStorageFormatPB::V1;
 

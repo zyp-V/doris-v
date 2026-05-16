@@ -143,6 +143,9 @@ public class ModifyTablePropertiesClause extends AlterTableClause {
             throw new AnalysisException("Can not change enable_duplicate_without_keys_by_default");
         } else if (properties.containsKey(PropertyAnalyzer.PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE)) {
             // do nothing, will be alter in SchemaChangeHandler.updateTableProperties
+        } else if (properties.containsKey(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY)) {
+            throw new AnalysisException(
+                    "Property " + PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY + " is not allowed to change");
         } else if (properties.containsKey(PropertyAnalyzer.PROPERTIES_IS_BEING_SYNCED)) {
             this.needTableStable = false;
             setIsBeingSynced(Boolean.parseBoolean(properties.getOrDefault(

@@ -283,6 +283,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                                     tbl.getTimeSeriesCompactionEmptyRowsetsThreshold(),
                                     tbl.getTimeSeriesCompactionLevelThreshold(),
                                     tbl.storeRowColumn(),
+                                    tbl.rowStoreOnly(),
                                     binlogConfig, objectPool,
                                     tbl.rowStorePageSize());
 

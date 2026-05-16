@@ -91,6 +91,8 @@ public class TableProperty implements Writable {
 
     private boolean storeRowColumn = false;
 
+    private boolean rowStoreOnly = false;
+
     private boolean skipWriteIndexOnLoad = false;
 
     private long rowStorePageSize = PropertyAnalyzer.ROW_STORE_PAGE_SIZE_DEFAULT_VALUE;
@@ -257,6 +259,8 @@ public class TableProperty implements Writable {
     public TableProperty buildStoreRowColumn() {
         storeRowColumn = Boolean.parseBoolean(
                 properties.getOrDefault(PropertyAnalyzer.PROPERTIES_STORE_ROW_COLUMN, "false"));
+        rowStoreOnly = Boolean.parseBoolean(
+                properties.getOrDefault(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY, "false"));
         // Remove deprecated prefix and try again
         String deprecatedPrefix = "deprecated_";
         if (!storeRowColumn && PropertyAnalyzer.PROPERTIES_STORE_ROW_COLUMN.startsWith(deprecatedPrefix)) {
@@ -269,6 +273,10 @@ public class TableProperty implements Writable {
 
     public boolean storeRowColumn() {
         return storeRowColumn;
+    }
+
+    public boolean rowStoreOnly() {
+        return rowStoreOnly;
     }
 
     public TableProperty buildRowStorePageSize() {

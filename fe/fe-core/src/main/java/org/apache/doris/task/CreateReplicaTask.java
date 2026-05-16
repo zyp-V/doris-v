@@ -122,6 +122,8 @@ public class CreateReplicaTask extends AgentTask {
 
     private boolean storeRowColumn;
 
+    private boolean rowStoreOnly;
+
     private BinlogConfig binlogConfig;
     private List<Integer> clusterKeyIndexes;
 
@@ -148,6 +150,7 @@ public class CreateReplicaTask extends AgentTask {
                              long timeSeriesCompactionEmptyRowsetsThreshold,
                              long timeSeriesCompactionLevelThreshold,
                              boolean storeRowColumn,
+                             boolean rowStoreOnly,
                              BinlogConfig binlogConfig,
                              Map<Object, Object> objectPool,
                              long rowStorePageSize) {
@@ -193,6 +196,7 @@ public class CreateReplicaTask extends AgentTask {
         this.timeSeriesCompactionEmptyRowsetsThreshold = timeSeriesCompactionEmptyRowsetsThreshold;
         this.timeSeriesCompactionLevelThreshold = timeSeriesCompactionLevelThreshold;
         this.storeRowColumn = storeRowColumn;
+        this.rowStoreOnly = rowStoreOnly;
         this.binlogConfig = binlogConfig;
         this.objectPool = objectPool;
         this.rowStorePageSize = rowStorePageSize;
@@ -355,6 +359,7 @@ public class CreateReplicaTask extends AgentTask {
         tSchema.setEnableSingleReplicaCompaction(enableSingleReplicaCompaction);
         tSchema.setSkipWriteIndexOnLoad(skipWriteIndexOnLoad);
         tSchema.setStoreRowColumn(storeRowColumn);
+        tSchema.setRowStoreOnly(rowStoreOnly);
         tSchema.setRowStorePageSize(rowStorePageSize);
         createTabletReq.setTabletSchema(tSchema);
 

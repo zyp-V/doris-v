@@ -269,6 +269,7 @@ message TabletSchemaPB {
     // column unique ids for row store columns
     repeated int32 row_store_column_unique_ids = 26;
     optional int64 row_store_page_size = 27 [default=16384];
+    optional bool row_store_only = 28 [default=false]; // only store row column and primary key index
 }
 
 enum TabletStatePB {

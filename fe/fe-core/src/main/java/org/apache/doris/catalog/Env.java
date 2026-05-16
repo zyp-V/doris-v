@@ -3481,6 +3481,11 @@ public class Env {
             sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_STORE_ROW_COLUMN).append("\" = \"");
             sb.append(olapTable.storeRowColumn()).append("\"");
 
+            if (olapTable.rowStoreOnly()) {
+                sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY).append("\" = \"");
+                sb.append(olapTable.rowStoreOnly()).append("\"");
+            }
+
             // row store page size
             sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_ROW_STORE_PAGE_SIZE).append("\" = \"");
             sb.append(olapTable.rowStorePageSize()).append("\"");

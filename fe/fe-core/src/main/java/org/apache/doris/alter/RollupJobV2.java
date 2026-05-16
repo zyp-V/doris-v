@@ -294,6 +294,7 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                                 tbl.getTimeSeriesCompactionEmptyRowsetsThreshold(),
                                 tbl.getTimeSeriesCompactionLevelThreshold(),
                                 tbl.storeRowColumn(),
+                                tbl.rowStoreOnly(),
                                 binlogConfig, objectPool,
                                 tbl.rowStorePageSize());
                         createReplicaTask.setBaseTablet(tabletIdMap.get(rollupTabletId), baseSchemaHash);

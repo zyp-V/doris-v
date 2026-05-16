@@ -935,6 +935,7 @@ public class ReportHandler extends Daemon {
                                             olapTable.getTimeSeriesCompactionEmptyRowsetsThreshold(),
                                             olapTable.getTimeSeriesCompactionLevelThreshold(),
                                             olapTable.storeRowColumn(),
+                                            olapTable.rowStoreOnly(),
                                             binlogConfig, objectPool,
                                             olapTable.rowStorePageSize());
 
