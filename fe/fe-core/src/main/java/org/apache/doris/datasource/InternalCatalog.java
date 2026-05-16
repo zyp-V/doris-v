@@ -113,6 +113,7 @@ import org.apache.doris.catalog.TabletMeta;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.catalog.View;
 import org.apache.doris.catalog.stream.BaseTableStream;
+import org.apache.doris.catalog.stream.TableStreamBuildFactory;
 import org.apache.doris.clone.DynamicPartitionScheduler;
 import org.apache.doris.cluster.Cluster;
 import org.apache.doris.cluster.ClusterNamespace;
@@ -867,33 +868,33 @@ public class InternalCatalog implements CatalogIf<Database> {
         String baseTbl = info.getBaseTableName().getTbl();
 
         // get base table (may throw AnalysisException, convert to DdlException)
-        org.apache.doris.catalog.TableIf baseTable;
+        TableIf baseTable;
         try {
-            baseTable = org.apache.doris.catalog.Env.getCurrentEnv().getCatalogMgr()
+            baseTable = Env.getCurrentEnv().getCatalogMgr()
                     .getCatalogOrAnalysisException(baseCtl)
                     .getDbOrAnalysisException(baseDb)
                     .getTableOrAnalysisException(baseTbl);
-        } catch (org.apache.doris.common.AnalysisException e) {
-            throw new org.apache.doris.common.DdlException(e.getMessage());
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage());
         }
 
         // pre-check stream consume type to align unit-test expected message
         java.util.Map<String, String> properties = info.getProperties() == null
                 ? new java.util.HashMap<>()
                 : new java.util.HashMap<>(info.getProperties());
-        String typeName = properties.get(org.apache.doris.common.util.PropertyAnalyzer.PROPERTIES_STREAM_TYPE);
+        String typeName = properties.get(PropertyAnalyzer.PROPERTIES_STREAM_TYPE);
         if (typeName != null) {
             BaseTableStream.StreamConsumeType consumeType =
                     BaseTableStream.StreamConsumeType.getType(typeName);
             if (consumeType == BaseTableStream.StreamConsumeType.UNKNOWN) {
-                throw new org.apache.doris.common.DdlException("not supported type: " + typeName);
+                throw new DdlException("not supported type: " + typeName);
             }
         }
 
         // build stream under base table read lock
         baseTable.readLock();
         try {
-            BaseTableStream stream = new org.apache.doris.catalog.stream.TableStreamBuildFactory()
+            BaseTableStream stream = new TableStreamBuildFactory()
                     .withName(streamName)
                     .withBaseTable(baseTable)
                     .build();
@@ -902,20 +903,20 @@ public class InternalCatalog implements CatalogIf<Database> {
 
             try {
                 stream.setProperties(properties);
-            } catch (org.apache.doris.common.AnalysisException e) {
-                throw new org.apache.doris.common.DdlException(e.getMessage());
+            } catch (AnalysisException e) {
+                throw new DdlException(e.getMessage());
             }
             if (!properties.isEmpty()) {
-                throw new org.apache.doris.common.DdlException("Unknown properties: " + properties);
+                throw new DdlException("Unknown properties: " + properties);
             }
 
-            org.apache.doris.catalog.Database db = getDbOrDdlException(dbName);
-            org.apache.doris.common.Pair<Boolean, Boolean> result =
-                    db.createTableWithLock((org.apache.doris.catalog.Table) stream, false, info.isIfNotExists());
+            Database db = getDbOrDdlException(dbName);
+            Pair<Boolean, Boolean> result =
+                    db.createTableWithLock(stream, false, info.isIfNotExists());
             if (!result.first) {
                 // existed and not IF NOT EXISTS
-                org.apache.doris.common.ErrorReport.reportDdlException(
-                        org.apache.doris.common.ErrorCode.ERR_TABLE_EXISTS_ERROR, streamName);
+                ErrorReport.reportDdlException(
+                        ErrorCode.ERR_TABLE_EXISTS_ERROR, streamName);
             }
         } finally {
             baseTable.readUnlock();
@@ -923,12 +924,10 @@ public class InternalCatalog implements CatalogIf<Database> {
     }
 
     public void dropStream(String dbName, String streamName, boolean ifExists, boolean forceDrop)
-            throws org.apache.doris.common.DdlException {
+            throws DdlException {
         // reuse existing dropTable logic
-        dropTable(new org.apache.doris.analysis.DropTableStmt(
-                ifExists,
-                new org.apache.doris.analysis.TableName(InternalCatalog.INTERNAL_CATALOG_NAME, dbName, streamName),
-                forceDrop));
+        dropTable(new DropTableStmt(
+                ifExists, new TableName(InternalCatalog.INTERNAL_CATALOG_NAME, dbName, streamName), forceDrop));
     }
 
     // Drop table
