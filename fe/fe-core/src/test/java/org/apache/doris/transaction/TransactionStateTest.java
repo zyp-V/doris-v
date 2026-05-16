@@ -17,6 +17,8 @@
 
 package org.apache.doris.transaction;
 
+import org.apache.doris.catalog.stream.OlapTableStreamUpdate;
+import org.apache.doris.catalog.stream.TableStreamUpdateInfo;
 import org.apache.doris.common.FeMetaVersion;
 import org.apache.doris.meta.MetaContext;
 import org.apache.doris.thrift.TUniqueId;
@@ -36,6 +38,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -87,6 +91,34 @@ public class TransactionStateTest {
 
         Assert.assertEquals(transactionState.getCoordinator().ip, readTransactionState.getCoordinator().ip);
         Assert.assertTrue(readTransactionState.getTxnExtraInfo().isEmpty());
+    }
+
+    @Test
+    public void testStreamUpdateInfosStoredInTxnExtraInfo() throws IOException {
+        setMetaVersion(FeMetaVersion.VERSION_CURRENT);
+
+        TransactionState transactionState = newTransactionState();
+        OlapTableStreamUpdate update = new OlapTableStreamUpdate(
+                Collections.singletonMap(10L, 100L), Collections.singletonMap(10L, 101L));
+        transactionState.setStreamUpdateInfos(Collections.singletonList(
+                new TableStreamUpdateInfo(1000L, 2000L, update)));
+
+        Assert.assertTrue(transactionState.getTxnExtraInfo().containsKey("sui"));
+
+        writeTransactionState(transactionState);
+        TransactionState readTransactionState = readTransactionState();
+
+        Assert.assertTrue(readTransactionState.getTxnExtraInfo().containsKey("sui"));
+        List<TableStreamUpdateInfo> readStreamUpdateInfos = readTransactionState.getStreamUpdateInfos();
+        Assert.assertNotNull(readStreamUpdateInfos);
+        Assert.assertEquals(1, readStreamUpdateInfos.size());
+        TableStreamUpdateInfo readInfo = readStreamUpdateInfos.get(0);
+        Assert.assertEquals(1000L, readInfo.getDbId());
+        Assert.assertEquals(2000L, readInfo.getStreamId());
+        Assert.assertTrue(readInfo.getUpdate() instanceof OlapTableStreamUpdate);
+        OlapTableStreamUpdate readUpdate = (OlapTableStreamUpdate) readInfo.getUpdate();
+        Assert.assertEquals(update.getPrev(), readUpdate.getPrev());
+        Assert.assertEquals(update.getNext(), readUpdate.getNext());
     }
 
     private void setMetaVersion(int version) {

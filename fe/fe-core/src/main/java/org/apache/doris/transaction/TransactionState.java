@@ -60,7 +60,10 @@ import java.util.concurrent.TimeUnit;
 
 public class TransactionState implements Writable {
     private static final Logger LOG = LogManager.getLogger(TransactionState.class);
+    private static final String STREAM_UPDATE_INFOS_KEY = "sui";
     private static final Type TXN_EXTRA_INFO_TYPE = new TypeToken<Map<String, String>>() {
+    }.getType();
+    private static final Type STREAM_UPDATE_INFOS_TYPE = new TypeToken<List<TableStreamUpdateInfo>>() {
     }.getType();
 
     // compare the TransactionState by txn id, desc
@@ -224,13 +227,6 @@ public class TransactionState implements Writable {
     private long preCommitTime;
     @SerializedName(value = "commitTime")
     private long commitTime;
-
-    // stream update infos of this transaction
-    @Getter
-    @Setter
-    @SerializedName(value = "sui")
-    private List<TableStreamUpdateInfo> streamUpdateInfos;
-
     @SerializedName(value = "finishTime")
     private long finishTime;
     @SerializedName(value = "reason")
@@ -662,6 +658,22 @@ public class TransactionState implements Writable {
 
     public void setTxnExtraInfo(Map<String, String> txnExtraInfo) {
         this.txnExtraInfo = txnExtraInfo == null ? Maps.newHashMap() : txnExtraInfo;
+    }
+
+    public List<TableStreamUpdateInfo> getStreamUpdateInfos() {
+        String streamUpdateInfos = getTxnExtraInfo().get(STREAM_UPDATE_INFOS_KEY);
+        if (Strings.isNullOrEmpty(streamUpdateInfos)) {
+            return null;
+        }
+        return GsonUtils.GSON.fromJson(streamUpdateInfos, STREAM_UPDATE_INFOS_TYPE);
+    }
+
+    public void setStreamUpdateInfos(List<TableStreamUpdateInfo> streamUpdateInfos) {
+        if (streamUpdateInfos == null || streamUpdateInfos.isEmpty()) {
+            getTxnExtraInfo().remove(STREAM_UPDATE_INFOS_KEY);
+            return;
+        }
+        getTxnExtraInfo().put(STREAM_UPDATE_INFOS_KEY, GsonUtils.GSON.toJson(streamUpdateInfos));
     }
 
     @Override
