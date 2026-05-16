@@ -383,12 +383,6 @@ Status SegmentWriter::partial_update_preconditions_check(size_t row_pos) {
         DCHECK(false) << msg;
         return Status::InternalError<false>(msg);
     }
-    if (_tablet_schema->row_store_only()) {
-        return Status::NotSupported(
-                "partial update is not supported for row_store_only table in milestone 1, "
-                "tablet_id={}",
-                _tablet->tablet_id());
-    }
     if (row_pos != 0) {
         auto msg = fmt::format("row_pos should be 0, but found {}, tablet_id={}", row_pos,
                                _tablet->tablet_id());
@@ -434,10 +428,11 @@ Status SegmentWriter::append_block_with_partial_content(const vectorized::Block*
     // write including columns
     std::vector<vectorized::IOlapColumnDataAccessor*> key_columns;
     vectorized::IOlapColumnDataAccessor* seq_column = nullptr;
-    size_t segment_start_pos;
+    auto segment_start_cid = _tablet_schema->row_store_only()
+                                     ? _tablet_schema->field_index(BeConsts::ROW_STORE_COL)
+                                     : including_cids.front();
+    size_t segment_start_pos = _column_writers[segment_start_cid]->get_next_rowid();
     for (auto cid : including_cids) {
-        // here we get segment column row num before append data.
-        segment_start_pos = _column_writers[cid]->get_next_rowid();
         // olap data convertor alway start from id = 0
         auto converted_result = _olap_data_convertor->convert_column_data(cid);
         if (!converted_result.first.ok()) {
@@ -450,9 +445,11 @@ Status SegmentWriter::append_block_with_partial_content(const vectorized::Block*
             seq_column = converted_result.second;
             have_input_seq_column = true;
         }
-        RETURN_IF_ERROR(_column_writers[cid]->append(converted_result.second->get_nullmap(),
-                                                     converted_result.second->get_data(),
-                                                     num_rows));
+        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+            RETURN_IF_ERROR(_column_writers[cid]->append(converted_result.second->get_nullmap(),
+                                                         converted_result.second->get_data(),
+                                                         num_rows));
+        }
     }
 
     bool has_default_or_nullable = false;
@@ -624,9 +621,11 @@ Status SegmentWriter::append_block_with_partial_content(const vectorized::Block*
             DCHECK_EQ(seq_column, nullptr);
             seq_column = converted_result.second;
         }
-        RETURN_IF_ERROR(_column_writers[cid]->append(converted_result.second->get_nullmap(),
-                                                     converted_result.second->get_data(),
-                                                     num_rows));
+        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+            RETURN_IF_ERROR(_column_writers[cid]->append(converted_result.second->get_nullmap(),
+                                                         converted_result.second->get_data(),
+                                                         num_rows));
+        }
     }
 
     _num_rows_updated += num_rows_updated;

@@ -334,12 +334,6 @@ Status VerticalSegmentWriter::_partial_update_preconditions_check(size_t row_pos
         DCHECK(false) << msg;
         return Status::InternalError<false>(msg);
     }
-    if (_tablet_schema->row_store_only()) {
-        return Status::NotSupported(
-                "partial update is not supported for row_store_only table in milestone 1, "
-                "tablet_id={}",
-                _tablet->tablet_id());
-    }
     if (row_pos != 0) {
         auto msg = fmt::format("row_pos should be 0, but found {}, tablet_id={}", row_pos,
                                _tablet->tablet_id());
@@ -375,10 +369,11 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
     // write including columns
     std::vector<vectorized::IOlapColumnDataAccessor*> key_columns;
     vectorized::IOlapColumnDataAccessor* seq_column = nullptr;
-    size_t segment_start_pos;
+    auto segment_start_cid = _tablet_schema->row_store_only()
+                                     ? _tablet_schema->field_index(BeConsts::ROW_STORE_COL)
+                                     : including_cids.front();
+    size_t segment_start_pos = _column_writers[segment_start_cid]->get_next_rowid();
     for (auto cid : including_cids) {
-        // here we get segment column row num before append data.
-        segment_start_pos = _column_writers[cid]->get_next_rowid();
         // olap data convertor alway start from id = 0
         auto [status, column] = _olap_data_convertor->convert_column_data(cid);
         if (!status.ok()) {
@@ -391,8 +386,10 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
             seq_column = column;
             have_input_seq_column = true;
         }
-        RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
-                                                     data.num_rows));
+        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+            RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
+                                                         data.num_rows));
+        }
     }
 
     bool has_default_or_nullable = false;
@@ -544,6 +541,7 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
     auto mutable_full_columns = full_block.mutate_columns();
     RETURN_IF_ERROR(_fill_missing_columns(mutable_full_columns, use_default_or_null_flag,
                                           has_default_or_nullable, segment_start_pos, data.block));
+    full_block.set_columns(std::move(mutable_full_columns));
 
     // row column should be filled here
     if (_tablet_schema->store_row_column()) {
@@ -565,8 +563,10 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
             DCHECK_EQ(seq_column, nullptr);
             seq_column = column;
         }
-        RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
-                                                     data.num_rows));
+        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+            RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
+                                                         data.num_rows));
+        }
     }
 
     _num_rows_updated += num_rows_updated;
@@ -866,12 +866,6 @@ Status VerticalSegmentWriter::write_batch() {
         _opts.rowset_ctx->partial_update_info->is_partial_update &&
         _opts.write_type == DataWriteType::TYPE_DIRECT &&
         !_opts.rowset_ctx->is_transient_rowset_writer) {
-        if (_tablet_schema->row_store_only()) {
-            return Status::NotSupported(
-                    "partial update is not supported for row_store_only table in milestone 1, "
-                    "tablet_id={}",
-                    _tablet->tablet_id());
-        }
         for (uint32_t cid = 0; cid < _tablet_schema->num_columns(); ++cid) {
             RETURN_IF_ERROR(
                     _create_column_writer(cid, _tablet_schema->column(cid), _tablet_schema));
@@ -882,7 +876,9 @@ Status VerticalSegmentWriter::write_batch() {
         }
         for (auto& data : _batched_blocks) {
             RowsInBlock full_rows_block {&full_block, data.row_pos, data.num_rows};
-            RETURN_IF_ERROR(_append_block_with_variant_subcolumns(full_rows_block));
+            if (!_tablet_schema->row_store_only()) {
+                RETURN_IF_ERROR(_append_block_with_variant_subcolumns(full_rows_block));
+            }
         }
         for (auto& column_writer : _column_writers) {
             if (column_writer == nullptr) {
