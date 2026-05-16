@@ -286,6 +286,8 @@ public class TransactionState implements Writable {
     private Map<Long, Set<Long>> loadedTblIndexes = Maps.newHashMap();
     @SerializedName(value = "txnExtraInfo")
     private Map<String, String> txnExtraInfo = Maps.newHashMap();
+    // for speed up, dont serialize this
+    private List<TableStreamUpdateInfo> streamUpdateInfos;
 
     /**
      * the value is the num delta rows of all replicas in each table
@@ -665,7 +667,10 @@ public class TransactionState implements Writable {
         if (Strings.isNullOrEmpty(streamUpdateInfos)) {
             return null;
         }
-        return GsonUtils.GSON.fromJson(streamUpdateInfos, STREAM_UPDATE_INFOS_TYPE);
+        if (this.streamUpdateInfos == null) {
+            this.streamUpdateInfos = GsonUtils.GSON.fromJson(streamUpdateInfos, STREAM_UPDATE_INFOS_TYPE);
+        }
+        return this.streamUpdateInfos;
     }
 
     public void setStreamUpdateInfos(List<TableStreamUpdateInfo> streamUpdateInfos) {
@@ -674,6 +679,7 @@ public class TransactionState implements Writable {
             return;
         }
         getTxnExtraInfo().put(STREAM_UPDATE_INFOS_KEY, GsonUtils.GSON.toJson(streamUpdateInfos));
+        this.streamUpdateInfos = streamUpdateInfos;
     }
 
     @Override
