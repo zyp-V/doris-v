@@ -34,15 +34,23 @@ import org.apache.doris.catalog.PartitionType;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.AuthenticationException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.FeConstants;
+import org.apache.doris.common.LabelAlreadyUsedException;
+import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.ExternalCatalog;
+import org.apache.doris.datasource.doris.FeServiceClient;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
+import org.apache.doris.datasource.doris.RemoteDorisExternalDatabase;
+import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
+import org.apache.doris.datasource.doris.RemoteOlapTable;
 import org.apache.doris.datasource.jdbc.JdbcExternalCatalog;
 import org.apache.doris.datasource.jdbc.JdbcExternalDatabase;
 import org.apache.doris.datasource.jdbc.JdbcExternalTable;
@@ -55,13 +63,18 @@ import org.apache.doris.planner.ExportSink;
 import org.apache.doris.planner.GroupCommitBlockSink;
 import org.apache.doris.planner.GroupCommitPlanner;
 import org.apache.doris.planner.OlapTableSink;
+import org.apache.doris.planner.RemoteOlapTableSink;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.SqlModeHelper;
 import org.apache.doris.rewrite.ExprRewriter;
 import org.apache.doris.service.ExecuteEnv;
 import org.apache.doris.service.FrontendOptions;
+import org.apache.doris.thrift.TBeginRemoteTxnRequest;
+import org.apache.doris.thrift.TBeginRemoteTxnResult;
 import org.apache.doris.thrift.TQueryOptions;
+import org.apache.doris.thrift.TStatusCode;
 import org.apache.doris.thrift.TUniqueId;
+import org.apache.doris.transaction.BeginTransactionException;
 import org.apache.doris.transaction.TransactionState;
 import org.apache.doris.transaction.TransactionState.LoadJobSourceType;
 import org.apache.doris.transaction.TransactionState.TxnCoordinator;
@@ -399,10 +412,19 @@ public class NativeInsertStmt extends InsertStmt {
         long timeoutSecond = ConnectContext.get().getExecTimeout();
         if (label == null || Strings.isNullOrEmpty(label.getLabelName())) {
             label = new LabelName(db.getFullName(),
-                    insertType.labePrefix + DebugUtil.printId(analyzer.getContext().queryId()).replace("-", "_"));
+                    String.format("%s%s_%s", insertType.labePrefix, targetTable instanceof RemoteOlapTable ? "remote_"
+                                    + Env.getCurrentEnv().getClusterId() : "",
+                            DebugUtil.printId(analyzer.getContext().queryId()).replace("-", "_")));
+        }
+        if (targetTable instanceof RemoteOlapTable) {
+            if (isGroupCommitStreamLoadSql) {
+                throw new AnalysisException("remote insert do not support group commit");
+            }
         }
         if (!isExplain() && !isTransactionBegin && !isGroupCommitStreamLoadSql) {
-            if (targetTable instanceof OlapTable) {
+            if (targetTable instanceof RemoteOlapTable) {
+                transactionId = beginRemoteTransaction(timeoutSecond);
+            } else if (targetTable instanceof OlapTable) {
                 LoadJobSourceType sourceType = LoadJobSourceType.INSERT_STREAMING;
                 transactionId = Env.getCurrentGlobalTransactionMgr().beginTransaction(db.getId(),
                         Lists.newArrayList(targetTable.getId()), label.getLabelName(),
@@ -415,14 +437,20 @@ public class NativeInsertStmt extends InsertStmt {
         }
 
         // init data sink
-        if (!isExplain() && targetTable instanceof OlapTable) {
-            OlapTableSink sink = (OlapTableSink) dataSink;
+        if (!isExplain()) {
             TUniqueId loadId = analyzer.getContext().queryId();
             int sendBatchParallelism = analyzer.getContext().getSessionVariable().getSendBatchParallelism();
             boolean isInsertStrict = analyzer.getContext().getSessionVariable().getEnableInsertStrict()
                     && !isFromDeleteOrUpdateStmt;
-            sink.init(loadId, transactionId, db.getId(), timeoutSecond,
-                    sendBatchParallelism, false, isInsertStrict);
+            if (targetTable instanceof RemoteOlapTable) {
+                RemoteOlapTableSink remoteOlapTableSink = (RemoteOlapTableSink) dataSink;
+                remoteOlapTableSink.init(loadId, transactionId, db.getId(),
+                        timeoutSecond, sendBatchParallelism, false, isInsertStrict);
+            } else if (targetTable instanceof OlapTable) {
+                OlapTableSink sink = (OlapTableSink) dataSink;
+                sink.init(loadId, transactionId, db.getId(), timeoutSecond,
+                        sendBatchParallelism, false, isInsertStrict);
+            }
         }
     }
 
@@ -435,6 +463,14 @@ public class NativeInsertStmt extends InsertStmt {
             } else if (db instanceof JdbcExternalDatabase) {
                 JdbcExternalTable jdbcTable = (JdbcExternalTable) db.getTableOrAnalysisException(tblName.getTbl());
                 targetTable = jdbcTable.getJdbcTable();
+            } else if (db instanceof RemoteDorisExternalDatabase) {
+                RemoteDorisExternalTable dorisExternalTable
+                        = (RemoteDorisExternalTable) db.getTableOrAnalysisException(tblName.getTbl());
+                if (dorisExternalTable.useArrowFlight()) {
+                    throw new AnalysisException("insert remote doris only support"
+                            + " when catalog use_arrow_flight is false");
+                }
+                targetTable = dorisExternalTable.getOlapTable();
             } else {
                 throw new AnalysisException("Not support insert target table.");
             }
@@ -1040,11 +1076,24 @@ public class NativeInsertStmt extends InsertStmt {
         if (dataSink != null) {
             return dataSink;
         }
-        if (targetTable instanceof OlapTable) {
+        if (targetTable instanceof RemoteOlapTable) {
+            RemoteOlapTableSink sink;
+            final boolean enableSingleReplicaLoad =
+                    analyzer.getContext().getSessionVariable().isEnableMemtableOnSinkNode()
+                            ? false : analyzer.getContext().getSessionVariable().isEnableSingleReplicaInsert();
+            if (isGroupCommitStreamLoadSql) {
+                throw new AnalysisException("remote insert do not support group commit");
+            }
+            sink = new RemoteOlapTableSink((RemoteOlapTable) targetTable, olapTuple, targetPartitionIds,
+                    enableSingleReplicaLoad);
+            dataSink = sink;
+            sink.setPartialUpdateInputColumns(isPartialUpdate, partialUpdateCols);
+            dataPartition = dataSink.getOutputPartition();
+        } else if (targetTable instanceof OlapTable) {
             OlapTableSink sink;
             final boolean enableSingleReplicaLoad =
                     analyzer.getContext().getSessionVariable().isEnableMemtableOnSinkNode()
-                    ? false : analyzer.getContext().getSessionVariable().isEnableSingleReplicaInsert();
+                            ? false : analyzer.getContext().getSessionVariable().isEnableSingleReplicaInsert();
             if (isGroupCommitStreamLoadSql) {
                 sink = new GroupCommitBlockSink((OlapTable) targetTable, olapTuple,
                         targetPartitionIds, enableSingleReplicaLoad,
@@ -1099,14 +1148,20 @@ public class NativeInsertStmt extends InsertStmt {
             // ATTN! here's bug for iot+auto partition. we decide not to fix it for legacy planner.
             if (!isGroupCommitStreamLoadSql) {
                 // add table indexes to transaction state
-                TransactionState txnState = Env.getCurrentGlobalTransactionMgr()
-                        .getTransactionState(db.getId(), transactionId);
-                if (txnState == null) {
-                    throw new DdlException("txn does not exist: " + transactionId);
-                }
-                txnState.addTableIndexes((OlapTable) targetTable);
-                if (isPartialUpdate) {
-                    txnState.setSchemaForPartialUpdate((OlapTable) targetTable);
+                if (targetTable instanceof RemoteOlapTable) {
+                    RemoteDorisExternalCatalog remoteCatalog = ((RemoteOlapTable) targetTable).getCatalog();
+                    FeServiceClient client = remoteCatalog.getFeServiceClient();
+                    client.legacyUpsertUpsertTxnState(transactionId, (RemoteOlapTable) targetTable, isPartialUpdate);
+                } else {
+                    TransactionState txnState = Env.getCurrentGlobalTransactionMgr()
+                            .getTransactionState(db.getId(), transactionId);
+                    if (txnState == null) {
+                        throw new DdlException("txn does not exist: " + transactionId);
+                    }
+                    txnState.addTableIndexes((OlapTable) targetTable);
+                    if (isPartialUpdate) {
+                        txnState.setSchemaForPartialUpdate((OlapTable) targetTable);
+                    }
                 }
             }
         }
@@ -1424,5 +1479,48 @@ public class NativeInsertStmt extends InsertStmt {
     public boolean containTargetColumnName(String columnName) {
         return targetColumnNames != null && targetColumnNames.stream()
                 .anyMatch(col -> col.equalsIgnoreCase(columnName));
+    }
+
+    private long beginRemoteTransaction(long timeoutSeconds) throws UserException {
+        RemoteDorisExternalCatalog remoteCatalog = ((RemoteOlapTable) targetTable).getCatalog();
+        FeServiceClient client = remoteCatalog.getFeServiceClient();
+        String remoteDbName = db.getFullName();
+        String remoteTableName = targetTable.getName();
+
+        TBeginRemoteTxnRequest request = new TBeginRemoteTxnRequest();
+        request.setCatalog(db.getCatalog().getName());
+        request.setDb(remoteDbName);
+        request.setTbl(remoteTableName);
+        request.setLabel(label.getLabelName());
+        if (timeoutSeconds > 0) {
+            request.setTimeoutMs(timeoutSeconds * 1000L);
+        }
+
+        try {
+            TBeginRemoteTxnResult result = client.beginRemoteTxn(request);
+            if (result.getStatus().getStatusCode() != TStatusCode.OK) {
+                switch (result.getStatus().getStatusCode()) {
+                    case NOT_AUTHORIZED:
+                        throw new AuthenticationException(result.getStatus().getErrorMsgs().get(0));
+                    case LABEL_ALREADY_EXISTS:
+                        throw new LabelAlreadyUsedException(result.getStatus().getErrorMsgs().get(0));
+                    case TOO_MANY_TASKS:
+                        throw new BeginTransactionException(result.getStatus().getErrorMsgs().get(0));
+                    case NOT_FOUND:
+                        throw new MetaNotFoundException(result.getStatus().getErrorMsgs().get(0));
+                    case ANALYSIS_ERROR:
+                    case INTERNAL_ERROR:
+                    default:
+                        throw new AnalysisException(result.getStatus().getErrorMsgs().get(0));
+                }
+            }
+            LOG.info("begin remote txn success, catalog={}, db={}, table={}, label={}, txnId={}",
+                    db.getCatalog().getName(), remoteDbName, remoteTableName, label.getLabelName(), result.getTxnId());
+            return result.getTxnId();
+        } catch (Exception e) {
+            LOG.info("begin remote txn failed, catalog={}, db={}, table={}, label={}, errMsg={}",
+                    db.getCatalog().getName(), remoteDbName, remoteTableName, label.getLabelName(), e.getMessage());
+            throw new AnalysisException(Util.getRootCauseMessage(e), e);
+        }
     }
 }

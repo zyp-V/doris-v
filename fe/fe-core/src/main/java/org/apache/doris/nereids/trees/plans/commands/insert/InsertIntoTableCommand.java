@@ -30,6 +30,8 @@ import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.ProfileManager.ProfileType;
+import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
+import org.apache.doris.datasource.doris.RemoteOlapTable;
 import org.apache.doris.datasource.hive.HMSExternalTable;
 import org.apache.doris.datasource.iceberg.IcebergExternalTable;
 import org.apache.doris.datasource.jdbc.JdbcExternalTable;
@@ -306,7 +308,9 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
         DataSink sink = planner.getFragments().get(0).getSink();
         // Transaction insert should reuse the label in the transaction.
         String label = this.labelName.orElse(
-                ctx.isTxnModel() ? null : String.format("label_%x_%x", ctx.queryId().hi, ctx.queryId().lo));
+                    ctx.isTxnModel() ? null : String.format("label%s_%x_%x",
+                            (targetTableIf instanceof RemoteDorisExternalTable) ? "_remote_"
+                                    + Env.getCurrentEnv().getClusterId() : "", ctx.queryId().hi, ctx.queryId().lo));
 
         if (physicalSink instanceof PhysicalOlapTableSink) {
             if (GroupCommitInserter.groupCommit(ctx, sink, physicalSink)) {
@@ -314,10 +318,18 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                 throw new AnalysisException("group commit is not supported in Nereids now");
             }
             boolean emptyInsert = childIsEmptyRelation(physicalSink);
-            OlapTable olapTable = (OlapTable) targetTableIf;
+            OlapTable olapTable;
             // the insertCtx contains some variables to adjust SinkNode
-            insertExecutor = new OlapInsertExecutor(ctx, olapTable, label, planner, insertCtx, emptyInsert);
-
+            if (targetTableIf instanceof RemoteDorisExternalTable) {
+                olapTable = ((RemoteDorisExternalTable) targetTableIf).getOlapTable();
+                insertExecutor =
+                        new RemoteOlapInsertExecutor(ctx, (RemoteOlapTable) olapTable, label,
+                                planner, insertCtx, emptyInsert);
+            } else {
+                olapTable = (OlapTable) targetTableIf;
+                insertExecutor = new OlapInsertExecutor(ctx, olapTable, label, planner, insertCtx,
+                        emptyInsert);
+            }
             boolean isEnableMemtableOnSinkNode =
                     olapTable.getTableProperty().getUseSchemaLightChange()
                             && insertExecutor.getCoordinator().getQueryOptions().isEnableMemtableOnSinkNode();

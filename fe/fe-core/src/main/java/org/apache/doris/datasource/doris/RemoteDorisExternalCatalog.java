@@ -186,7 +186,7 @@ public class RemoteDorisExternalCatalog extends ExternalCatalog {
 
     public boolean useArrowFlight() {
         return Boolean.parseBoolean(catalogProperty.getOrDefault(RemoteDorisProperties.USE_ARROW_FLIGHT,
-                "true"));
+                "false"));
     }
 
     @Override

@@ -25,10 +25,13 @@ import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.InternalDatabaseUtil;
+import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
+import org.apache.doris.datasource.doris.RemoteOlapTable;
 import org.apache.doris.datasource.hive.HMSExternalTable;
 import org.apache.doris.datasource.iceberg.IcebergExternalTable;
-import org.apache.doris.insertoverwrite.InsertOverwriteManager;
+import org.apache.doris.insertoverwrite.AbstractInsertOverwriteManager;
 import org.apache.doris.insertoverwrite.InsertOverwriteUtil;
+import org.apache.doris.insertoverwrite.RemoteInsertOverwriteManager;
 import org.apache.doris.mtmv.MTMVUtil;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.nereids.NereidsPlanner;
@@ -122,7 +125,7 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
         TableIf targetTableIf = InsertUtils.getTargetTable(logicalQuery, ctx);
         //check allow insert overwrite
         if (!allowInsertOverwrite(targetTableIf)) {
-            String errMsg = "insert into overwrite only support OLAP and HMS/ICEBERG table."
+            String errMsg = "insert into overwrite only support OLAP/Remote OLAP and HMS/ICEBERG table."
                     + " But current table type is " + targetTableIf.getType();
             LOG.error(errMsg);
             throw new AnalysisException(errMsg);
@@ -150,21 +153,25 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
         Preconditions.checkArgument(plan.isPresent(), "insert into command must contain OlapTableSinkNode");
         PhysicalTableSink<?> physicalTableSink = ((PhysicalTableSink<?>) plan.get());
         TableIf targetTable = physicalTableSink.getTargetTable();
+        targetTable = (targetTable instanceof RemoteDorisExternalTable)
+                        ? ((RemoteDorisExternalTable) targetTable).getOlapTable() : targetTable;
         List<String> partitionNames;
         boolean wholeTable = false;
         if (physicalTableSink instanceof PhysicalOlapTableSink) {
-            InternalDatabaseUtil
-                    .checkDatabase(((OlapTable) targetTable).getQualifiedDbName(), ConnectContext.get());
-            // check auth
-            if (!Env.getCurrentEnv().getAccessManager()
-                    .checkTblPriv(ConnectContext.get(), targetTable.getDatabase().getCatalog().getName(),
-                            ((OlapTable) targetTable).getQualifiedDbName(),
-                            targetTable.getName(), PrivPredicate.LOAD)) {
-                ErrorReport.reportAnalysisException(ErrorCode.ERR_TABLEACCESS_DENIED_ERROR, "LOAD",
-                        ConnectContext.get().getQualifiedUser(), ConnectContext.get().getRemoteIP(),
-                        ((OlapTable) targetTable).getQualifiedDbName() + ": " + targetTable.getName());
+            if (targetTable instanceof OlapTable && !(targetTable instanceof RemoteOlapTable)) {
+                InternalDatabaseUtil
+                        .checkDatabase(((OlapTable) targetTable).getQualifiedDbName(), ConnectContext.get());
+                // check auth
+                if (!Env.getCurrentEnv().getAccessManager()
+                        .checkTblPriv(ConnectContext.get(), targetTable.getDatabase().getCatalog().getName(),
+                                ((OlapTable) targetTable).getQualifiedDbName(),
+                                targetTable.getName(), PrivPredicate.LOAD)) {
+                    ErrorReport.reportAnalysisException(ErrorCode.ERR_TABLEACCESS_DENIED_ERROR, "LOAD",
+                            ConnectContext.get().getQualifiedUser(), ConnectContext.get().getRemoteIP(),
+                            ((OlapTable) targetTable).getQualifiedDbName() + ": " + targetTable.getName());
+                }
+                ConnectContext.get().setSkipAuth(true);
             }
-            ConnectContext.get().setSkipAuth(true);
             partitionNames = ((UnboundTableSink<?>) logicalQuery).getPartitions();
             // If not specific partition to overwrite, means it's a command to overwrite the table.
             // not we execute as overwrite every partitions.
@@ -176,14 +183,18 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
             // Do not create temp partition on FE
             partitionNames = new ArrayList<>();
         }
-        InsertOverwriteManager insertOverwriteManager = Env.getCurrentEnv().getInsertOverwriteManager();
+        AbstractInsertOverwriteManager insertOverwriteManager =
+                (targetTable instanceof RemoteOlapTable)
+                        ? new RemoteInsertOverwriteManager(
+                        ((RemoteOlapTable) targetTable).getCatalog())
+                        : Env.getCurrentEnv().getInsertOverwriteManager();
         insertOverwriteManager.recordRunningTableOrException(targetTable.getDatabase(), targetTable);
         isRunning.set(true);
         long taskId = 0;
         try {
             if (isAutoDetectOverwrite()) {
                 // taskId here is a group id. it contains all replace tasks made and registered in rpc process.
-                taskId = insertOverwriteManager.registerTaskGroup();
+                taskId = insertOverwriteManager.registerTaskGroup(targetTable);
                 // When inserting, BE will call to replace partition by FrontendService. FE will register new temp
                 // partitions and return. for transactional, the replacement will really occur when insert successed,
                 // i.e. `insertInto` finished. then we call taskGroupSuccess to make replacement.
@@ -197,8 +208,7 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
                             ctx.getQueryIdentifier());
                     return;
                 }
-                taskId = insertOverwriteManager
-                        .registerTask(targetTable.getDatabase().getId(), targetTable.getId(), tempPartitionNames);
+                taskId = insertOverwriteManager.registerTask(targetTable, tempPartitionNames);
                 if (isCancelled.get()) {
                     LOG.info("insert overwrite is cancelled before addTempPartitions, queryId: {}",
                             ctx.getQueryIdentifier());
@@ -212,6 +222,7 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
                     insertOverwriteManager.taskFail(taskId);
                     return;
                 }
+                // todo: need to refresh remote target table after add temp partitions
                 insertIntoPartitions(ctx, executor, tempPartitionNames, wholeTable);
                 if (isCancelled.get()) {
                     LOG.info("insert overwrite is cancelled before replacePartition, queryId: {}",
@@ -238,8 +249,7 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
             }
         } finally {
             ConnectContext.get().setSkipAuth(false);
-            insertOverwriteManager
-                    .dropRunningRecord(targetTable.getDatabase().getId(), targetTable.getId());
+            insertOverwriteManager.dropRunningRecord(targetTable.getDatabase(), targetTable);
             isRunning.set(false);
         }
     }
@@ -265,7 +275,7 @@ public class InsertOverwriteTableCommand extends Command implements ForwardWithS
     }
 
     private boolean allowInsertOverwrite(TableIf targetTable) {
-        if (targetTable instanceof OlapTable) {
+        if (targetTable instanceof OlapTable || targetTable instanceof RemoteDorisExternalTable) {
             return true;
         } else {
             return targetTable instanceof HMSExternalTable || targetTable instanceof IcebergExternalTable;

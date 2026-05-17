@@ -49,7 +49,7 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class InsertOverwriteManager extends MasterDaemon implements Writable {
+public class InsertOverwriteManager extends MasterDaemon implements Writable, AbstractInsertOverwriteManager {
     private static final Logger LOG = LogManager.getLogger(InsertOverwriteManager.class);
 
     private static final long CLEAN_INTERVAL_SECOND = 10;
@@ -96,6 +96,11 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
         return taskId;
     }
 
+    @Override
+    public long registerTask(TableIf targetTable, List<String> tempPartitionNames) throws Exception {
+        return registerTask(targetTable.getDatabase().getId(), targetTable.getId(), tempPartitionNames);
+    }
+
     /**
      * register insert overwrite task group for auto detect partition.
      * it may have many tasks by FrontendService rpc deal.
@@ -111,9 +116,15 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
         return groupId;
     }
 
+    @Override
+    public long registerTaskGroup(TableIf table) {
+        return registerTaskGroup();
+    }
+
     /**
      * for iot auto detect. register task first. then put in group.
      */
+    @Override
     public void registerTaskInGroup(long groupId, long taskId) {
         LOG.info("register task " + taskId + " in group " + groupId);
         taskGroups.get(groupId).add(taskId);
@@ -159,6 +170,7 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
 
     // When goes into failure, some BE may still not know and send new request.
     // it will cause ConcurrentModification or NullPointer.
+    @Override
     public void taskGroupFail(long groupId) {
         LOG.info("insert overwrite auto detect partition task group [" + groupId + "] failed");
         ReentrantLock lock = getLock(groupId);
@@ -175,6 +187,7 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
     }
 
     // here we will make all raplacement of this group visiable. if someone fails, nothing happen.
+    @Override
     public void taskGroupSuccess(long groupId, OlapTable targetTable) throws DdlException {
         try {
             Map<Long, Long> relations = partitionPairs.get(groupId);
@@ -210,6 +223,7 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
      *
      * @param taskId
      */
+    @Override
     public void taskFail(long taskId) {
         LOG.info("insert overwrite task [" + taskId + "] failed");
         boolean rollback = rollback(taskId);
@@ -228,6 +242,7 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
      *
      * @param taskId
      */
+    @Override
     public void taskSuccess(long taskId) {
         LOG.info("insert overwrite task [" + taskId + "] succeed");
         removeTask(taskId);
@@ -289,6 +304,7 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
      * @param db Run the db for insert overwrite
      * @param table Run the table for insert overwrite
      */
+    @Override
     public void recordRunningTableOrException(DatabaseIf db, TableIf table) {
         // The logic of OlapTable executing insert overwrite is to create temporary partitions,
         // replace partitions, etc.
@@ -335,6 +351,11 @@ public class InsertOverwriteManager extends MasterDaemon implements Writable {
         } finally {
             runningLock.writeLock().unlock();
         }
+    }
+
+    @Override
+    public void dropRunningRecord(DatabaseIf db, TableIf targetTable) {
+        dropRunningRecord(db.getId(), targetTable.getId());
     }
 
     /**

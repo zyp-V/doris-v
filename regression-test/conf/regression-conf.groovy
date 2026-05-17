@@ -246,6 +246,8 @@ txYunSk="***********"
 //arrow flight sql test config
 extArrowFlightSqlHost = "127.0.0.1"
 extArrowFlightSqlPort = 8080
+extArrowFlightHttpPort = 8030
+extFeThriftPort = 9020
 extArrowFlightSqlUser = "root"
 extArrowFlightSqlPassword= ""
 

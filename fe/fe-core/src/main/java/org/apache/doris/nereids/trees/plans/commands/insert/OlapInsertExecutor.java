@@ -29,6 +29,10 @@ import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
+import org.apache.doris.common.util.Util;
+import org.apache.doris.datasource.doris.FeServiceClient;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
+import org.apache.doris.datasource.doris.RemoteOlapTable;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.nereids.NereidsPlanner;
 import org.apache.doris.nereids.exceptions.AnalysisException;
@@ -41,6 +45,7 @@ import org.apache.doris.planner.ExchangeNode;
 import org.apache.doris.planner.MultiCastDataSink;
 import org.apache.doris.planner.OlapTableSink;
 import org.apache.doris.planner.PlanFragment;
+import org.apache.doris.planner.RemoteOlapTableSink;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.QueryState.MysqlStateType;
 import org.apache.doris.qe.StmtExecutor;
@@ -176,15 +181,35 @@ public class OlapInsertExecutor extends AbstractInsertExecutor {
             throw new AnalysisException(e.getMessage(), e);
         }
         if (!isGroupCommitHttpStream()) {
-            TransactionState state = Env.getCurrentGlobalTransactionMgr().getTransactionState(database.getId(), txnId);
-            if (state == null) {
-                throw new AnalysisException("txn does not exist: " + txnId);
-            }
-            state.addTableIndexes((OlapTable) table);
-            if (physicalOlapTableSink.isPartialUpdate()) {
-                state.setSchemaForPartialUpdate((OlapTable) table);
+            if (sink instanceof RemoteOlapTableSink) {
+                RemoteDorisExternalCatalog remoteCatalog = ((RemoteOlapTable) table).getCatalog();
+                FeServiceClient client = remoteCatalog.getFeServiceClient();
+                try {
+                    client.legacyUpsertUpsertTxnState(txnId, (RemoteOlapTable) table,
+                                            physicalOlapTableSink.isPartialUpdate());
+                } catch (UserException e) {
+                    throw new AnalysisException(Util.getRootCauseMessage(e), e);
+                }
+            } else {
+                TransactionState state = Env.getCurrentGlobalTransactionMgr()
+                        .getTransactionState(database.getId(), txnId);
+                if (state == null) {
+                    throw new AnalysisException("txn does not exist: " + txnId);
+                }
+                state.addTableIndexes((OlapTable) table);
+                if (physicalOlapTableSink.isPartialUpdate()) {
+                    state.setSchemaForPartialUpdate((OlapTable) table);
+                }
             }
         }
+    }
+
+    protected void addTableIndexes(TransactionState state) {
+        state.addTableIndexes((OlapTable) table);
+    }
+
+    protected void abortTransactionOnFail() throws Exception {
+        Env.getCurrentGlobalTransactionMgr().abortTransaction(database.getId(), txnId, errMsg);
     }
 
     @Override
@@ -229,8 +254,7 @@ public class OlapInsertExecutor extends AbstractInsertExecutor {
         LOG.warn("insert [{}] with query id {} failed", labelName, queryId, t);
         if (txnId != INVALID_TXN_ID) {
             try {
-                Env.getCurrentGlobalTransactionMgr().abortTransaction(
-                        database.getId(), txnId, errMsg);
+                abortTransactionOnFail();
             } catch (Exception abortTxnException) {
                 // just print a log if abort txn failed. This failure do not need to pass to user.
                 // user only concern abort how txn failed.

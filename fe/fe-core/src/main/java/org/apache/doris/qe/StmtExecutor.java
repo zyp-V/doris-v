@@ -84,6 +84,7 @@ import org.apache.doris.analysis.UpdateStmt;
 import org.apache.doris.analysis.UseStmt;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Database;
+import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.FsBroker;
 import org.apache.doris.catalog.OlapTable;
@@ -95,6 +96,7 @@ import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.AuditLog;
+import org.apache.doris.common.AuthenticationException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
@@ -122,6 +124,9 @@ import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.common.util.UniqueIdUtils;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.FileScanNode;
+import org.apache.doris.datasource.doris.FeServiceClient;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
+import org.apache.doris.datasource.doris.RemoteOlapTable;
 import org.apache.doris.datasource.jdbc.client.JdbcClientException;
 import org.apache.doris.datasource.tvf.source.TVFScanNode;
 import org.apache.doris.load.EtlJobType;
@@ -191,6 +196,10 @@ import org.apache.doris.statistics.ResultRow;
 import org.apache.doris.statistics.util.InternalQueryBuffer;
 import org.apache.doris.system.Backend;
 import org.apache.doris.task.LoadEtlTask;
+import org.apache.doris.thrift.TAbortRemoteTxnRequest;
+import org.apache.doris.thrift.TAbortRemoteTxnResult;
+import org.apache.doris.thrift.TCommitRemoteTxnRequest;
+import org.apache.doris.thrift.TCommitRemoteTxnResult;
 import org.apache.doris.thrift.TFileFormatType;
 import org.apache.doris.thrift.TFileType;
 import org.apache.doris.thrift.TLoadTxnBeginRequest;
@@ -1173,9 +1182,36 @@ public class StmtExecutor {
                         && context.getState().getStateType() == MysqlStateType.ERR) {
                     try {
                         String errMsg = Strings.emptyToNull(context.getState().getErrorMessage());
-                        Env.getCurrentGlobalTransactionMgr().abortTransaction(
-                                insertStmt.getDbObj().getId(), insertStmt.getTransactionId(),
-                                (errMsg == null ? "unknown reason" : errMsg));
+                        if (insertStmt.getTargetTable() instanceof RemoteOlapTable) {
+                            RemoteDorisExternalCatalog remoteCatalog =
+                                    ((RemoteOlapTable) insertStmt.getTargetTable()).getCatalog();
+                            FeServiceClient client = remoteCatalog.getFeServiceClient();
+                            TAbortRemoteTxnRequest request = new TAbortRemoteTxnRequest();
+                            long txnId = insertStmt.getTransactionId();
+                            request.setTxnId(txnId);
+                            request.setCatalog(insertStmt.getDbObj().getCatalog().getName());
+                            request.setDb(insertStmt.getDbObj().getFullName());
+                            request.setReason(errMsg == null ? "unknown reason" : errMsg);
+                            try {
+                                TAbortRemoteTxnResult result = client.abortRemoteTxn(request);
+                                if (result.getStatus().getStatusCode() == TStatusCode.OK) {
+                                    LOG.info("abort remote txn success, catalog={}, txnId={} ",
+                                            remoteCatalog.getName(), txnId);
+                                } else {
+                                    LOG.warn("abort remote transaction failed. catalog={}, txnId={}, err={}",
+                                            remoteCatalog.getName(), txnId, result.getStatus().getErrorMsgs().get(0));
+                                    throw new UserException(result.getStatus().getErrorMsgs().get(0));
+                                }
+                            } catch (Exception e) {
+                                LOG.warn("abort remote transaction failed unexpectedly. catalog={}, txnId={}, err={}",
+                                        remoteCatalog.getName(), txnId, e.getMessage(), e);
+                                throw e;
+                            }
+                        } else {
+                            Env.getCurrentGlobalTransactionMgr().abortTransaction(
+                                    insertStmt.getDbObj().getId(), insertStmt.getTransactionId(),
+                                    (errMsg == null ? "unknown reason" : errMsg));
+                        }
                     } catch (Exception abortTxnException) {
                         LOG.warn("errors when abort txn. {}", context.getQueryIdentifier(), abortTxnException);
                     }
@@ -2537,14 +2573,55 @@ public class StmtExecutor {
                     return;
                 }
 
-                if (Env.getCurrentGlobalTransactionMgr().commitAndPublishTransaction(
-                        insertStmt.getDbObj(), Lists.newArrayList(insertStmt.getTargetTable()),
-                        insertStmt.getTransactionId(),
-                        TabletCommitInfo.fromThrift(coord.getCommitInfos()),
-                        context.getSessionVariable().getInsertVisibleTimeoutMs())) {
-                    txnStatus = TransactionStatus.VISIBLE;
+                if (insertStmt.getTargetTable() instanceof RemoteOlapTable) {
+                    RemoteDorisExternalCatalog remoteCatalog =
+                            ((RemoteOlapTable) insertStmt.getTargetTable()).getCatalog();
+                    DatabaseIf database = insertStmt.getTargetTable().getDatabase();
+                    FeServiceClient client = remoteCatalog.getFeServiceClient();
+                    TCommitRemoteTxnRequest request = new TCommitRemoteTxnRequest();
+                    request.setTxnId(insertStmt.getTransactionId());
+                    request.setCatalog(insertStmt.getDbObj().getCatalog().getName());
+                    request.setDb(database.getFullName());
+                    request.setTbl(table.getName());
+                    request.setCommitInfos(coord.getCommitInfos());
+                    request.setInsertVisibleTimeoutMs(context.getSessionVariable().getInsertVisibleTimeoutMs());
+                    try {
+                        TCommitRemoteTxnResult result = client.commitRemoteTxn(request);
+                        if (result.getStatus().getStatusCode() == TStatusCode.OK) {
+                            if (result.isTxnStatus()) {
+                                txnStatus = TransactionStatus.VISIBLE;
+                            } else {
+                                txnStatus = TransactionStatus.COMMITTED;
+                            }
+                            LOG.info("commit remote txn success, catalog={}, dbId={}, txnId={}, status={}",
+                                    remoteCatalog.getName(), database.getId(), insertStmt.getTransactionId(),
+                                    txnStatus);
+                        } else {
+                            switch (result.getStatus().getStatusCode()) {
+                                case NOT_AUTHORIZED:
+                                    throw new AuthenticationException(result.getStatus().getErrorMsgs().get(0));
+                                default:
+                                    throw new UserException(result.getStatus().getErrorMsgs().get(0));
+                            }
+                        }
+                    } catch (UserException e) {
+                        LOG.warn("commit remote txn failed, catalog={}, dbId={}, txnId={}, status={}, err={}",
+                                remoteCatalog.getName(), database.getId(), insertStmt.getTransactionId(), txnStatus,
+                                e.getMessage());
+                        throw e;
+                    } catch (Exception e) {
+                        throw new UserException(Util.getRootCauseMessage(e), e);
+                    }
                 } else {
-                    txnStatus = TransactionStatus.COMMITTED;
+                    if (Env.getCurrentGlobalTransactionMgr().commitAndPublishTransaction(
+                            insertStmt.getDbObj(), Lists.newArrayList(insertStmt.getTargetTable()),
+                            insertStmt.getTransactionId(),
+                            TabletCommitInfo.fromThrift(coord.getCommitInfos()),
+                            context.getSessionVariable().getInsertVisibleTimeoutMs())) {
+                        txnStatus = TransactionStatus.VISIBLE;
+                    } else {
+                        txnStatus = TransactionStatus.COMMITTED;
+                    }
                 }
 
             } catch (Throwable t) {
@@ -2579,11 +2656,19 @@ public class StmtExecutor {
             // we will record the load job info for these 2 cases
             txnId = insertStmt.getTransactionId();
             try {
-                context.getEnv().getLoadManager()
-                        .recordFinishedLoadJob(label, txnId, insertStmt.getDbName(),
-                                insertStmt.getTargetTable().getId(),
-                                EtlJobType.INSERT, createTime, throwable == null ? "" : throwable.getMessage(),
-                                coord.getTrackingUrl(), insertStmt.getUserInfo(), 0L);
+                if (insertStmt.getTargetTable() instanceof RemoteOlapTable) {
+                    DatabaseIf database = insertStmt.getTargetTable().getDatabase();
+                    ((RemoteOlapTable) insertStmt.getTargetTable()).getCatalog()
+                            .getFeServiceClient().recordFinishedLoadJob(label, txnId, database.getCatalog().getName(),
+                                    database.getFullName(), insertStmt.getTargetTable().getName(),
+                                    createTime, errMsg, coord.getTrackingUrl());
+                } else {
+                    context.getEnv().getLoadManager()
+                            .recordFinishedLoadJob(label, txnId, insertStmt.getDbName(),
+                                    insertStmt.getTargetTable().getId(),
+                                    EtlJobType.INSERT, createTime, throwable == null ? "" : throwable.getMessage(),
+                                    coord.getTrackingUrl(), insertStmt.getUserInfo(), 0L);
+                }
             } catch (MetaNotFoundException e) {
                 LOG.warn("Record info of insert load with error {}", e.getMessage(), e);
                 errMsg = "Record info of insert load with error " + e.getMessage();

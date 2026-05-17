@@ -98,28 +98,28 @@ public class OlapTableSink extends DataSink {
     private static final Logger LOG = LogManager.getLogger(OlapTableSink.class);
 
     // input variables
-    private OlapTable dstTable;
-    private TupleDescriptor tupleDescriptor;
+    protected OlapTable dstTable;
+    protected TupleDescriptor tupleDescriptor;
     // specified partition ids.
-    private List<Long> partitionIds;
+    protected List<Long> partitionIds;
     // partial update input columns
-    private boolean isPartialUpdate = false;
-    private HashSet<String> partialUpdateInputColumns;
+    protected boolean isPartialUpdate = false;
+    protected HashSet<String> partialUpdateInputColumns;
 
     // set after init called
     protected TDataSink tDataSink;
 
-    private boolean singleReplicaLoad;
+    protected boolean singleReplicaLoad;
 
-    private boolean isStrictMode = false;
-    private long txnId = -1;
+    protected boolean isStrictMode = false;
+    protected long txnId = -1;
 
     // reuse them for set DataStreamSink
-    private TOlapTableSchemaParam tOlapTableSchemaParam;
+    protected TOlapTableSchemaParam tOlapTableSchemaParam;
 
-    private TOlapTablePartitionParam tOlapTablePartitionParam;
+    protected TOlapTablePartitionParam tOlapTablePartitionParam;
 
-    private List<TOlapTableLocationParam> tOlapTableLocationParams;
+    protected List<TOlapTableLocationParam> tOlapTableLocationParams;
 
     public OlapTableSink(OlapTable dstTable, TupleDescriptor tupleDescriptor, List<Long> partitionIds,
             boolean singleReplicaLoad) {
@@ -130,7 +130,7 @@ public class OlapTableSink extends DataSink {
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS, int sendBatchParallelism,
-            boolean loadToSingleTablet, boolean isStrictMode) throws AnalysisException {
+            boolean loadToSingleTablet, boolean isStrictMode) throws UserException {
         TOlapTableSink tSink = new TOlapTableSink();
         tSink.setLoadId(loadId);
         tSink.setTxnId(txnId);

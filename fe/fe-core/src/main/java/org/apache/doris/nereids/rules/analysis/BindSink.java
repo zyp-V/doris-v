@@ -20,13 +20,13 @@ package org.apache.doris.nereids.rules.analysis;
 import org.apache.doris.analysis.ColumnDef.DefaultValue;
 import org.apache.doris.analysis.SlotRef;
 import org.apache.doris.catalog.Column;
-import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Partition;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.Pair;
+import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalDatabase;
 import org.apache.doris.datasource.hive.HMSExternalTable;
 import org.apache.doris.datasource.iceberg.IcebergExternalDatabase;
@@ -120,8 +120,8 @@ public class BindSink implements AnalysisRuleFactory {
 
     private Plan bindOlapTableSink(MatchingContext<UnboundTableSink<Plan>> ctx) {
         UnboundTableSink<?> sink = ctx.root;
-        Pair<Database, OlapTable> pair = bind(ctx.cascadesContext, sink);
-        Database database = pair.first;
+        Pair<DatabaseIf, OlapTable> pair = bind(ctx.cascadesContext, sink);
+        DatabaseIf database = pair.first;
         OlapTable table = pair.second;
         boolean isPartialUpdate = sink.isPartialUpdate() && table.getKeysType() == KeysType.UNIQUE_KEYS;
 
@@ -583,12 +583,12 @@ public class BindSink implements AnalysisRuleFactory {
         return columnToOutput;
     }
 
-    private Pair<Database, OlapTable> bind(CascadesContext cascadesContext, UnboundTableSink<? extends Plan> sink) {
+    private Pair<DatabaseIf, OlapTable> bind(CascadesContext cascadesContext, UnboundTableSink<? extends Plan> sink) {
         List<String> tableQualifier = RelationUtil.getQualifierName(cascadesContext.getConnectContext(),
                 sink.getNameParts());
         Pair<DatabaseIf<?>, TableIf> pair = RelationUtil.getDbAndTable(tableQualifier,
                 cascadesContext.getConnectContext().getEnv());
-        if (!(pair.second instanceof OlapTable)) {
+        if (!(pair.second instanceof OlapTable) && !(pair.second instanceof RemoteDorisExternalTable)) {
             try {
                 cascadesContext.getConnectContext().getSessionVariable().enableFallbackToOriginalPlannerOnce();
             } catch (Exception e) {
@@ -596,7 +596,14 @@ public class BindSink implements AnalysisRuleFactory {
             }
             throw new AnalysisException("the target table of insert into is not an OLAP table");
         }
-        return Pair.of(((Database) pair.first), (OlapTable) pair.second);
+        if (pair.second instanceof RemoteDorisExternalTable) {
+            if (((RemoteDorisExternalTable) pair.second).useArrowFlight()) {
+                throw new AnalysisException("insert remote doris only support"
+                        + " when catalog use_arrow_flight is false");
+            }
+            return Pair.of(pair.first, ((RemoteDorisExternalTable) pair.second).getOlapTable());
+        }
+        return Pair.of(pair.first, (OlapTable) pair.second);
     }
 
     private Pair<HMSExternalDatabase, HMSExternalTable> bind(CascadesContext cascadesContext,

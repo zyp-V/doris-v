@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.common.UserException;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.datasource.InternalCatalog;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
 import org.apache.doris.datasource.hive.HMSExternalCatalog;
 import org.apache.doris.datasource.iceberg.IcebergExternalCatalog;
 import org.apache.doris.datasource.jdbc.JdbcExternalCatalog;
@@ -69,7 +70,7 @@ public class UnboundTableSinkCreator {
                 boolean isPartialUpdate, DMLCommandType dmlCommandType, LogicalPlan plan) {
         String catalogName = RelationUtil.getQualifierName(ConnectContext.get(), nameParts).get(0);
         CatalogIf<?> curCatalog = Env.getCurrentEnv().getCatalogMgr().getCatalog(catalogName);
-        if (curCatalog instanceof InternalCatalog) {
+        if (curCatalog instanceof InternalCatalog || curCatalog instanceof RemoteDorisExternalCatalog) {
             return new UnboundTableSink<>(nameParts, colNames, hints, temporaryPartition, partitions,
                     isPartialUpdate, dmlCommandType, Optional.empty(),
                     Optional.empty(), plan);
@@ -103,7 +104,7 @@ public class UnboundTableSinkCreator {
 
         String catalogName = RelationUtil.getQualifierName(ConnectContext.get(), nameParts).get(0);
         CatalogIf<?> curCatalog = Env.getCurrentEnv().getCatalogMgr().getCatalog(catalogName);
-        if (curCatalog instanceof InternalCatalog) {
+        if (curCatalog instanceof InternalCatalog || curCatalog instanceof RemoteDorisExternalCatalog) {
             return new UnboundTableSink<>(nameParts, colNames, hints, temporaryPartition, partitions,
                     isAutoDetectPartition,
                     isPartialUpdate, dmlCommandType, Optional.empty(),

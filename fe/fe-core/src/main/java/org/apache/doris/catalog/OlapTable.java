@@ -1283,11 +1283,19 @@ public class OlapTable extends Table implements MTMVRelatedTableIf {
         return tempPartitions.getAllPartitions();
     }
 
+    public TempPartitions getTempPartition() {
+        return tempPartitions;
+    }
+
     // get all partitions including temp partitions
     public Collection<Partition> getAllPartitions() {
         List<Partition> partitions = Lists.newArrayList(idToPartition.values());
         partitions.addAll(tempPartitions.getAllPartitions());
         return partitions;
+    }
+
+    public void setTempPartitions(TempPartitions tempPartitions) {
+        this.tempPartitions = tempPartitions;
     }
 
     // get all partitions' name except the temp partitions

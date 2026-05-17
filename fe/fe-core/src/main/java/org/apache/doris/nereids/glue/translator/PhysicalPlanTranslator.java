@@ -48,6 +48,7 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.datasource.ExternalTable;
 import org.apache.doris.datasource.FileQueryScanNode;
+import org.apache.doris.datasource.doris.RemoteOlapTable;
 import org.apache.doris.datasource.es.EsExternalTable;
 import org.apache.doris.datasource.es.source.EsScanNode;
 import org.apache.doris.datasource.hive.HMSExternalTable;
@@ -181,6 +182,7 @@ import org.apache.doris.planner.OlapTableSink;
 import org.apache.doris.planner.PartitionSortNode;
 import org.apache.doris.planner.PlanFragment;
 import org.apache.doris.planner.PlanNode;
+import org.apache.doris.planner.RemoteOlapTableSink;
 import org.apache.doris.planner.RepeatNode;
 import org.apache.doris.planner.ResultFileSink;
 import org.apache.doris.planner.ResultSink;
@@ -427,18 +429,30 @@ public class PhysicalPlanTranslator extends DefaultPlanVisitor<PlanFragment, Pla
             slotDesc.setAutoInc(column.isAutoInc());
         }
         OlapTableSink sink;
-        // This statement is only used in the group_commit mode in the http_stream
-        if (context.getConnectContext().isGroupCommitStreamLoadSql()) {
-            sink = new GroupCommitBlockSink(olapTableSink.getTargetTable(), olapTuple,
-                olapTableSink.getTargetTable().getPartitionIds(), olapTableSink.isSingleReplicaLoad(),
-                context.getSessionVariable().getGroupCommit(), 0);
+        OlapTable targetTable = olapTableSink.getTargetTable();
+        if (targetTable instanceof RemoteOlapTable) {
+            if (context.getConnectContext().isGroupCommitStreamLoadSql()) {
+                throw new RuntimeException("remote olap table do not support group commit");
+            }
+            sink = new RemoteOlapTableSink(
+                    (RemoteOlapTable) targetTable, olapTuple,
+                    olapTableSink.getPartitionIds().isEmpty() ? null
+                            : olapTableSink.getPartitionIds(),
+                    olapTableSink.isSingleReplicaLoad());
         } else {
-            sink = new OlapTableSink(
-                olapTableSink.getTargetTable(),
-                olapTuple,
-                olapTableSink.getPartitionIds().isEmpty() ? null : olapTableSink.getPartitionIds(),
-                olapTableSink.isSingleReplicaLoad()
-            );
+            // This statement is only used in the group_commit mode in the http_stream
+            if (context.getConnectContext().isGroupCommitStreamLoadSql()) {
+                sink = new GroupCommitBlockSink(olapTableSink.getTargetTable(), olapTuple,
+                        olapTableSink.getTargetTable().getPartitionIds(),
+                        olapTableSink.isSingleReplicaLoad(),
+                        context.getSessionVariable().getGroupCommit(), 0);
+            } else {
+                sink = new OlapTableSink(olapTableSink.getTargetTable(), olapTuple,
+                        olapTableSink.getPartitionIds().isEmpty()
+                                ? null
+                                : olapTableSink.getPartitionIds(),
+                        olapTableSink.isSingleReplicaLoad());
+            }
         }
         sink.setPartialUpdateInputColumns(isPartialUpdate, partialUpdateCols);
         rootFragment.setSink(sink);

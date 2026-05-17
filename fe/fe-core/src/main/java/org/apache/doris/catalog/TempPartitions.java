@@ -31,6 +31,8 @@ import com.google.gson.annotations.SerializedName;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,6 +53,12 @@ public class TempPartitions implements Writable, GsonPostProcessable {
     private RangePartitionInfo partitionInfo = null;
 
     public TempPartitions() {
+    }
+
+    // used by remote doris catalog
+    public TempPartitions(Map<Long, Partition> idToPartition, Map<String, Partition> nameToPartition) {
+        this.idToPartition = idToPartition;
+        this.nameToPartition = nameToPartition;
     }
 
     public void addPartition(Partition partition) {
@@ -177,5 +185,13 @@ public class TempPartitions implements Writable, GsonPostProcessable {
     @Override
     public int hashCode() {
         return Objects.hash(idToPartition, nameToPartition, partitionInfo);
+    }
+
+    public List<Long> getPartitionIds() {
+        return new ArrayList<>(idToPartition.keySet());
+    }
+
+    public Collection<Partition> getPartitions() {
+        return idToPartition.values();
     }
 }
