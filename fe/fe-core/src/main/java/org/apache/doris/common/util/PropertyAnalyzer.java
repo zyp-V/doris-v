@@ -184,6 +184,12 @@ public class PropertyAnalyzer {
 
     public static final String PROPERTIES_USE_FOR_REWRITE =
             "use_for_rewrite";
+    public static final String PROPERTIES_USE_INSERT_INTO =
+            "use_insert_into";
+    public static final String PROPERTIES_NEXT_FORCE_FULL_REFRESH =
+            "next_force_full_refresh";
+    public static final String PROPERTIES_ENABLE_DML_MATERIALIZED_VIEW_REWRITE =
+            "enable_dml_materialized_view_rewrite";
     public static final String PROPERTIES_EXCLUDED_TRIGGER_TABLES = "excluded_trigger_tables";
     public static final String PROPERTIES_REFRESH_PARTITION_NUM = "refresh_partition_num";
     public static final String PROPERTIES_WORKLOAD_GROUP = "workload_group";

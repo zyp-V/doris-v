@@ -678,6 +678,12 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             return new UnsupportedCommand();
         }
         List<String> nameParts = visitMultipartIdentifier(ctx.mvName);
+        KeysType keysType = KeysType.DUP_KEYS;
+        if (ctx.keysType != null) {
+            if (ctx.keysType.getType() == DorisParser.UNIQUE) {
+                keysType = KeysType.UNIQUE_KEYS;
+            }
+        }
 
         BuildMode buildMode = visitBuildMode(ctx.buildMode());
         RefreshMethod refreshMethod = visitRefreshMethod(ctx.refreshMethod());
@@ -704,6 +710,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
 
         return new CreateMTMVCommand(new CreateMTMVInfo(ctx.EXISTS() != null, new TableNameInfo(nameParts),
                 ctx.keys != null ? visitIdentifierList(ctx.keys) : ImmutableList.of(),
+                keysType,
                 comment,
                 desc, properties, logicalPlan, querySql,
                 new MTMVRefreshInfo(buildMode, refreshMethod, refreshTriggerInfo),

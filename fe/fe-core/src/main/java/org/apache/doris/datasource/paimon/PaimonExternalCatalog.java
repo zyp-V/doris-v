@@ -97,6 +97,16 @@ public abstract class PaimonExternalCatalog extends ExternalCatalog {
         makeSureInitialized();
         try {
             return hadoopAuthenticator.doAs(() -> {
+                if (tblName.contains(Catalog.SYSTEM_TABLE_SPLITTER)) {
+                    try {
+                        getPaimonTable(dbName, tblName);
+                        return true;
+                    } catch (Exception e) {
+                        LOG.warn("Paimon system table does not exist, db: {}, table: {}, reason: {}",
+                                dbName, tblName, e.getMessage());
+                        return false;
+                    }
+                }
                 try {
                     catalog.getTable(Identifier.create(dbName, tblName));
                     return true;
@@ -131,7 +141,19 @@ public abstract class PaimonExternalCatalog extends ExternalCatalog {
     public org.apache.paimon.table.Table getPaimonTable(String dbName, String tblName) {
         makeSureInitialized();
         try {
-            return hadoopAuthenticator.doAs(() -> catalog.getTable(Identifier.create(dbName, tblName)));
+            return hadoopAuthenticator.doAs(() -> {
+                if (tblName.contains(Catalog.SYSTEM_TABLE_SPLITTER)) {
+                    // system table
+                    String[] splits = tblName.split(String.format("\\%s", Catalog.SYSTEM_TABLE_SPLITTER));
+                    if (splits.length != 2) {
+                        throw new RuntimeException("Invalid system table name: " + tblName);
+                    }
+                    org.apache.paimon.table.Table originTable = catalog.getTable(Identifier.create(dbName, splits[0]));
+                    return org.apache.paimon.table.system.SystemTableLoader.load(splits[1],
+                            (org.apache.paimon.table.FileStoreTable) originTable);
+                }
+                return catalog.getTable(Identifier.create(dbName, tblName));
+            });
         } catch (Exception e) {
             throw new RuntimeException("Failed to get Paimon table:" + getName() + "."
                     + dbName + "." + tblName + ", because " + e.getMessage(), e);

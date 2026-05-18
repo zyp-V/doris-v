@@ -215,13 +215,19 @@ public class AccessControllerManager {
         ConnectContext ctx = ConnectContext.get();
         LegacyIdentity identity = null;
         String byteUserName = null;
+        CatalogAccessController accessController = getAccessControllerOrDefault(ctl);
         if (ctx != null) {
             identity = ctx.getGdprIdentity();
             byteUserName = ctx.getByteUserName();
         }
-        if (Config.enable_gemini
-                && StringUtils.isNotEmpty(byteUserName)
-                && !ctx.getConnectType().toString().equals("MYSQL")) {
+        if (StringUtils.isEmpty(byteUserName) && identity != null && !StringUtils.isEmpty(identity.User)) {
+            byteUserName = identity.User;
+        }
+        boolean enableGemini = Config.enable_gemini;
+        if (enableGemini && ctx != null && ctx.getSessionVariable() != null) {
+            enableGemini = ctx.getSessionVariable().isEnableGemini();
+        }
+        if (enableGemini && accessController instanceof ByteHiveAccessController) {
             try {
                 if (wanted.getPrivs().containsNodePriv()) {
                     return false;
@@ -232,20 +238,21 @@ public class AccessControllerManager {
                         Privilege.ALTER_PRIV,
                         Privilege.CREATE_PRIV,
                         Privilege.DROP_PRIV)) {  // Gdpr token only check permission of these
+                    if (StringUtils.isEmpty(byteUserName)) {
+                        return false;
+                    }
                     if (StringUtils.isNotBlank(db)) {
                         // qualifiedDb = [default_cluster:dbname | dbname]
                         String[] clusterDb = db.split(":");
                         db = clusterDb.length == 2 ? clusterDb[1] : clusterDb[0];
                     }
                     checkResource = Env.getCurrentEnv().getGeminiService()
-                        .checkResource(byteUserName, db, tbl, null, wanted, GeminiService.GEMINI_AUTH_DORIS_TYPE);
-                    if (checkResource) {
-                        return true;
-                    }
-                    return false;
+                        .checkResource(byteUserName, db, tbl, null, wanted, GeminiService.GEMINI_AUTH_HIVE_TYPE);
+                    return checkResource;
                 }
             } catch (Exception e) {
                 LOG.warn("Gemini check resource permission failed,", e);
+                return false;
             }
         }
         if (Config.enable_gdpr && identity != null) {
@@ -279,9 +286,10 @@ public class AccessControllerManager {
                 }
             } catch (Exception e) {
                 LOG.warn("Gdpr check resource permission failed, empty identity", e);
+                return false;
             }
         }
-        return getAccessControllerOrDefault(ctl).checkTblPriv(hasGlobal, currentUser, ctl, db, tbl, wanted);
+        return accessController.checkTblPriv(hasGlobal, currentUser, ctl, db, tbl, wanted);
     }
 
     // ==== Column ====

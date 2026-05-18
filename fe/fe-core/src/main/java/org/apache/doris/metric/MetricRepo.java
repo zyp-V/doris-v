@@ -17,11 +17,11 @@
 
 package org.apache.doris.metric;
 
-
 import org.apache.doris.alter.Alter;
 import org.apache.doris.alter.AlterJobV2.JobType;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.MTMV;
 import org.apache.doris.catalog.TabletInvertedIndex;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
@@ -153,6 +153,23 @@ public final class MetricRepo {
 
     public static LongCounterMetric COUNTER_MYSQL_GDPR_AUTH_FAILED;
 
+    public static LongCounterMetric COUNTER_PAIMON_COMMIT_MESSAGES_TOTAL;
+    public static LongCounterMetric COUNTER_PAIMON_COMMIT_PAYLOAD_BYTES_TOTAL;
+    public static LongCounterMetric COUNTER_PAIMON_COMMIT_SUCCESS;
+    public static LongCounterMetric COUNTER_PAIMON_COMMIT_FAILED;
+    public static Histogram HISTO_PAIMON_COMMIT_DESERIALIZE_LATENCY;
+    public static Histogram HISTO_PAIMON_COMMIT_LATENCY;
+
+    public static final String MTMV_METRIC_LABEL_REPO = "db";
+    public static final String MTMV_METRIC_LABEL_MV_NAME = "mv_name";
+    public static final String MTMV_METRIC_LABEL_SEPARATOR = "@";
+    private static final String MTMV_REFRESH_FAILED_TOTAL_NAME = "mtmv_refresh_failed_total";
+    private static final String MTMV_REFRESH_TIMEOUT_TOTAL_NAME = "mtmv_refresh_timeout_total";
+    private static final String MTMV_REFRESH_SUCCESS_TIME_NAME = "mtmv_refresh_success_time";
+
+    public static AutoMappedMetric<LongCounterMetric> MTMV_REFRESH_FAILED_TOTAL;
+    public static AutoMappedMetric<LongCounterMetric> MTMV_REFRESH_TIMEOUT_TOTAL;
+    public static AutoMappedMetric<GaugeMetricImpl<Long>> MTMV_REFRESH_SUCCESS_TIME;
     public static AutoMappedMetric<LongCounterMetric> THRIFT_COUNTER_RPC_ALL;
     public static AutoMappedMetric<LongCounterMetric> THRIFT_COUNTER_RPC_LATENCY;
 
@@ -551,7 +568,59 @@ public final class MetricRepo {
             "counter of gdpr auth failed");
         COUNTER_MYSQL_GDPR_AUTH_FAILED.addLabel(new MetricLabel("access_path", "mysql"));
         DORIS_METRIC_REGISTER.addMetrics(COUNTER_MYSQL_GDPR_AUTH_FAILED);
+        COUNTER_PAIMON_COMMIT_MESSAGES_TOTAL = new LongCounterMetric("paimon_commit_messages_total",
+                MetricUnit.NOUNIT, "total paimon commit messages received from backends");
+        DORIS_METRIC_REGISTER.addMetrics(COUNTER_PAIMON_COMMIT_MESSAGES_TOTAL);
+        COUNTER_PAIMON_COMMIT_PAYLOAD_BYTES_TOTAL = new LongCounterMetric("paimon_commit_payload_bytes_total",
+                MetricUnit.BYTES, "total payload bytes of paimon commit messages received from backends");
+        DORIS_METRIC_REGISTER.addMetrics(COUNTER_PAIMON_COMMIT_PAYLOAD_BYTES_TOTAL);
+        COUNTER_PAIMON_COMMIT_SUCCESS = new LongCounterMetric("paimon_commit_total", MetricUnit.REQUESTS,
+                "total paimon commit on FE");
+        COUNTER_PAIMON_COMMIT_SUCCESS.addLabel(new MetricLabel("status", "success"));
+        DORIS_METRIC_REGISTER.addMetrics(COUNTER_PAIMON_COMMIT_SUCCESS);
+        COUNTER_PAIMON_COMMIT_FAILED = new LongCounterMetric("paimon_commit_total", MetricUnit.REQUESTS,
+                "total paimon commit on FE");
+        COUNTER_PAIMON_COMMIT_FAILED.addLabel(new MetricLabel("status", "failed"));
+        DORIS_METRIC_REGISTER.addMetrics(COUNTER_PAIMON_COMMIT_FAILED);
+        HISTO_PAIMON_COMMIT_DESERIALIZE_LATENCY = METRIC_REGISTER.histogram(
+                MetricRegistry.name("paimon", "commit", "deserialize", "latency", "ms"));
+        HISTO_PAIMON_COMMIT_LATENCY = METRIC_REGISTER.histogram(
+                MetricRegistry.name("paimon", "commit", "latency", "ms"));
 
+        MTMV_REFRESH_FAILED_TOTAL = new AutoMappedMetric<>(key -> {
+            String[] labelValues = key.split(MTMV_METRIC_LABEL_SEPARATOR, 2);
+            String repo = labelValues.length >= 1 ? labelValues[0] : "unknown";
+            String mvName = labelValues.length >= 2 ? labelValues[1] : "unknown";
+            LongCounterMetric metric = new LongCounterMetric("mtmv_refresh_failed_total", MetricUnit.REQUESTS,
+                    "total failed mtmv refresh tasks");
+            metric.addLabel(new MetricLabel(MTMV_METRIC_LABEL_REPO, repo))
+                    .addLabel(new MetricLabel(MTMV_METRIC_LABEL_MV_NAME, mvName));
+            DORIS_METRIC_REGISTER.addMetrics(metric);
+            return metric;
+        });
+        MTMV_REFRESH_TIMEOUT_TOTAL = new AutoMappedMetric<>(key -> {
+            String[] labelValues = key.split(MTMV_METRIC_LABEL_SEPARATOR, 2);
+            String repo = labelValues.length >= 1 ? labelValues[0] : "unknown";
+            String mvName = labelValues.length >= 2 ? labelValues[1] : "unknown";
+            LongCounterMetric metric = new LongCounterMetric("mtmv_refresh_timeout_total", MetricUnit.REQUESTS,
+                    "total timeout mtmv refresh tasks");
+            metric.addLabel(new MetricLabel(MTMV_METRIC_LABEL_REPO, repo))
+                    .addLabel(new MetricLabel(MTMV_METRIC_LABEL_MV_NAME, mvName));
+            DORIS_METRIC_REGISTER.addMetrics(metric);
+            return metric;
+        });
+        MTMV_REFRESH_SUCCESS_TIME = new AutoMappedMetric<>(key -> {
+            String[] labelValues = key.split(MTMV_METRIC_LABEL_SEPARATOR, 2);
+            String repo = labelValues.length >= 1 ? labelValues[0] : "unknown";
+            String mvName = labelValues.length >= 2 ? labelValues[1] : "unknown";
+            GaugeMetricImpl<Long> metric = new GaugeMetricImpl<>("mtmv_refresh_success_time", MetricUnit.MILLISECONDS,
+                    "last successful mtmv refresh time");
+            metric.setValue(0L);
+            metric.addLabel(new MetricLabel(MTMV_METRIC_LABEL_REPO, repo))
+                    .addLabel(new MetricLabel(MTMV_METRIC_LABEL_MV_NAME, mvName));
+            DORIS_METRIC_REGISTER.addMetrics(metric);
+            return metric;
+        });
         THRIFT_COUNTER_RPC_ALL = addLabeledMetrics("method", () ->
                 new LongCounterMetric("thrift_rpc_total", MetricUnit.NOUNIT, ""));
         THRIFT_COUNTER_RPC_LATENCY = addLabeledMetrics("method", () ->
@@ -860,6 +929,42 @@ public final class MetricRepo {
             MetricRepo.DORIS_METRIC_REGISTER.addMetrics(m);
             return m;
         });
+    }
+
+    public static String buildMtmvMetricKey(String repo, String mvName) {
+        return normalizeMtmvMetricLabelValue(repo) + MTMV_METRIC_LABEL_SEPARATOR
+                + normalizeMtmvMetricLabelValue(mvName);
+    }
+
+    public static void removeMtmvMetrics(MTMV mtmv) {
+        if (mtmv == null) {
+            return;
+        }
+        removeMtmvMetrics(mtmv.getQualifiedDbName(), mtmv.getName());
+    }
+
+    public static void removeMtmvMetrics(String repo, String mvName) {
+        String normalizedRepo = normalizeMtmvMetricLabelValue(repo);
+        String normalizedMvName = normalizeMtmvMetricLabelValue(mvName);
+        String metricKey = buildMtmvMetricKey(normalizedRepo, normalizedMvName);
+        List<MetricLabel> labels = Arrays.asList(
+                new MetricLabel(MTMV_METRIC_LABEL_REPO, normalizedRepo),
+                new MetricLabel(MTMV_METRIC_LABEL_MV_NAME, normalizedMvName));
+        removeMetricWithLabels(MTMV_REFRESH_FAILED_TOTAL, metricKey, MTMV_REFRESH_FAILED_TOTAL_NAME, labels);
+        removeMetricWithLabels(MTMV_REFRESH_TIMEOUT_TOTAL, metricKey, MTMV_REFRESH_TIMEOUT_TOTAL_NAME, labels);
+        removeMetricWithLabels(MTMV_REFRESH_SUCCESS_TIME, metricKey, MTMV_REFRESH_SUCCESS_TIME_NAME, labels);
+    }
+
+    private static String normalizeMtmvMetricLabelValue(String value) {
+        return (value == null || value.isEmpty()) ? "unknown" : value;
+    }
+
+    private static <M> void removeMetricWithLabels(
+            AutoMappedMetric<M> autoMappedMetric, String metricKey, String metricName, List<MetricLabel> labels) {
+        if (autoMappedMetric != null) {
+            autoMappedMetric.remove(metricKey);
+        }
+        DORIS_METRIC_REGISTER.removeMetricsByNameAndLabels(metricName, labels);
     }
 
     // update some metrics to make a ready to be visited

@@ -29,6 +29,7 @@ import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.MetaLockUtils;
+import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.datasource.mvcc.MvccSnapshot;
 import org.apache.doris.datasource.mvcc.MvccTable;
@@ -36,6 +37,7 @@ import org.apache.doris.datasource.mvcc.MvccTableInfo;
 import org.apache.doris.job.common.TaskStatus;
 import org.apache.doris.job.exception.JobException;
 import org.apache.doris.job.task.AbstractTask;
+import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mtmv.BaseTableInfo;
 import org.apache.doris.mtmv.MTMVBaseTableIf;
 import org.apache.doris.mtmv.MTMVPartitionInfo.MTMVPartitionType;
@@ -49,7 +51,9 @@ import org.apache.doris.mtmv.MTMVRelation;
 import org.apache.doris.mtmv.MTMVUtil;
 import org.apache.doris.nereids.StatementContext;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
+import org.apache.doris.nereids.trees.plans.commands.Command;
 import org.apache.doris.nereids.trees.plans.commands.UpdateMvByPartitionCommand;
+import org.apache.doris.nereids.trees.plans.commands.info.AlterMTMVPropertyInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.ColumnDefinition;
 import org.apache.doris.nereids.trees.plans.commands.info.TableNameInfo;
 import org.apache.doris.qe.AuditLogHelper;
@@ -285,7 +289,24 @@ public class MTMVTask extends AbstractTask {
         TUniqueId queryId = generateQueryId();
         lastQueryId = DebugUtil.printId(queryId);
         // if SELF_MANAGE mv, only have default partition,  will not have partitionItem, so we give empty set
-        UpdateMvByPartitionCommand command = UpdateMvByPartitionCommand
+        boolean useInsertInto = Boolean.parseBoolean(mtmv.getMvProperties().getOrDefault(
+                PropertyAnalyzer.PROPERTIES_USE_INSERT_INTO, "false"));
+        boolean nextForceFullRefresh = Boolean.parseBoolean(mtmv.getMvProperties().getOrDefault(
+                PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH, "false"));
+        String enableDmlMvRewrite = mtmv.getMvProperties().get(
+                PropertyAnalyzer.PROPERTIES_ENABLE_DML_MATERIALIZED_VIEW_REWRITE);
+        if (useInsertInto) {
+            if (nextForceFullRefresh) {
+                ctx.getSessionVariable().paimonStreamReadMode = "full";
+            } else {
+                ctx.getSessionVariable().paimonStreamReadMode = "incr";
+            }
+        }
+        if (enableDmlMvRewrite != null) {
+            ctx.getSessionVariable().enableDmlMaterializedViewRewrite = Boolean.parseBoolean(enableDmlMvRewrite);
+        }
+
+        Command command = UpdateMvByPartitionCommand
                 .from(mtmv, mtmv.getMvPartitionInfo().getPartitionType() != MTMVPartitionType.SELF_MANAGE
                         ? refreshPartitionNames : Sets.newHashSet(), tableWithPartKey);
         try {
@@ -321,6 +342,27 @@ public class MTMVTask extends AbstractTask {
     public synchronized void onFail() throws JobException {
         LOG.info("mtmv task onFail, taskId: {}", super.getTaskId());
         super.onFail();
+        recordRefreshFailMetrics(getErrMsg());
+
+        // Handle Paimon incremental fallback logic
+        if (getErrMsg() != null && getErrMsg().contains("PaimonSnapshotOutOfRangeException")) {
+            boolean nextForceFullRefresh = Boolean.parseBoolean(mtmv.getMvProperties().getOrDefault(
+                    PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH, "false"));
+            if (!nextForceFullRefresh) {
+                try {
+                    Map<String, String> properties = Maps.newHashMap();
+                    properties.put(PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH, "true");
+                    AlterMTMVPropertyInfo info = new AlterMTMVPropertyInfo(
+                            new TableNameInfo(mtmv.getQualifiedDbName(), mtmv.getName()), properties);
+                    Env.getCurrentEnv().alterMTMVProperty(info);
+                    LOG.info("PaimonSnapshotOutOfRangeException caught, altered next_force_full_refresh to true for "
+                            + "mtmv: {}",
+                            mtmv.getName());
+                } catch (Exception e) {
+                    LOG.warn("Failed to alter next_force_full_refresh for mtmv: {}", mtmv.getName(), e);
+                }
+            }
+        }
         after();
     }
 
@@ -330,6 +372,34 @@ public class MTMVTask extends AbstractTask {
             LOG.debug("mtmv task onSuccess, taskId: {}", super.getTaskId());
         }
         super.onSuccess();
+        recordRefreshSuccessMetrics();
+
+        // Reset Paimon incremental fallback logic on success
+        boolean nextForceFullRefresh = Boolean.parseBoolean(mtmv.getMvProperties().getOrDefault(
+                PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH, "false"));
+        // Only reset when this task actually performed a refresh successfully.
+        // BUILD IMMEDIATE may trigger a SYSTEM task that ends with NOT_REFRESH (no write),
+        // which should not clear next_force_full_refresh, otherwise the next task can't do the full fallback.
+        boolean performedRefresh = refreshMode != null
+                && refreshMode != MTMVTaskRefreshMode.NOT_REFRESH
+                && !CollectionUtils.isEmpty(needRefreshPartitions);
+        if (nextForceFullRefresh && performedRefresh && refreshMode == MTMVTaskRefreshMode.COMPLETE) {
+            try {
+                Map<String, String> properties = Maps.newHashMap();
+                properties.put(PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH, "false");
+                AlterMTMVPropertyInfo info = new AlterMTMVPropertyInfo(
+                        new TableNameInfo(mtmv.getQualifiedDbName(), mtmv.getName()), properties);
+                Env.getCurrentEnv().alterMTMVProperty(info);
+                LOG.info("Full fallback succeeded, reset next_force_full_refresh to false for mtmv: {}",
+                        mtmv.getName());
+            } catch (Exception e) {
+                LOG.warn("Failed to reset next_force_full_refresh for mtmv: {}", mtmv.getName(), e);
+            }
+        } else if (nextForceFullRefresh && !performedRefresh) {
+            LOG.info("Skip resetting next_force_full_refresh because task did not refresh, mv: {}, refreshMode: {}, "
+                            + "needRefreshPartitions: {}",
+                    mtmv.getName(), refreshMode, needRefreshPartitions);
+        }
         after();
     }
 
@@ -464,6 +534,60 @@ public class MTMVTask extends AbstractTask {
     private TUniqueId generateQueryId() {
         UUID taskId = UUID.randomUUID();
         return new TUniqueId(taskId.getMostSignificantBits(), taskId.getLeastSignificantBits());
+    }
+
+    private void recordRefreshFailMetrics(String errMsg) {
+        if (!MetricRepo.isInit || MetricRepo.MTMV_REFRESH_FAILED_TOTAL == null) {
+            return;
+        }
+        MTMV currentMtmv = getMtmvForMetrics();
+        if (currentMtmv == null) {
+            return;
+        }
+        String metricKey = MetricRepo.buildMtmvMetricKey(currentMtmv.getQualifiedDbName(),
+                currentMtmv.getName());
+        MetricRepo.MTMV_REFRESH_FAILED_TOTAL.getOrAdd(metricKey).increase(1L);
+
+        if (isTimeoutError(errMsg) && MetricRepo.MTMV_REFRESH_TIMEOUT_TOTAL != null) {
+            MetricRepo.MTMV_REFRESH_TIMEOUT_TOTAL.getOrAdd(metricKey).increase(1L);
+        }
+    }
+
+    private void recordRefreshSuccessMetrics() {
+        if (!MetricRepo.isInit || MetricRepo.MTMV_REFRESH_SUCCESS_TIME == null) {
+            return;
+        }
+        if (this.refreshMode == MTMVTaskRefreshMode.NOT_REFRESH) {
+            return;
+        }
+        MTMV currentMtmv = getMtmvForMetrics();
+        if (currentMtmv == null) {
+            return;
+        }
+        Long durationMs = super.getFinishTimeMs() - super.getStartTimeMs();
+        String metricKey = MetricRepo.buildMtmvMetricKey(currentMtmv.getQualifiedDbName(),
+                currentMtmv.getName());
+        MetricRepo.MTMV_REFRESH_SUCCESS_TIME.getOrAdd(metricKey).setValue(durationMs);
+    }
+
+    private MTMV getMtmvForMetrics() {
+        if (mtmv != null) {
+            return mtmv;
+        }
+        try {
+            return MTMVUtil.getMTMV(dbId, mtmvId);
+        } catch (UserException e) {
+            return null;
+        }
+    }
+
+    private boolean isTimeoutError(String errMsg) {
+        if (errMsg == null) {
+            return false;
+        }
+        String lowerCaseErrMsg = errMsg.toLowerCase();
+        return lowerCaseErrMsg.contains("timeout")
+                || lowerCaseErrMsg.contains("timed out");
     }
 
     private void after() {

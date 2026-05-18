@@ -39,7 +39,10 @@ public class MTMVPropertyUtil {
             PropertyAnalyzer.PROPERTIES_PARTITION_TIME_UNIT,
             PropertyAnalyzer.PROPERTIES_PARTITION_DATE_FORMAT,
             PropertyAnalyzer.PROPERTIES_ENABLE_NONDETERMINISTIC_FUNCTION,
-            PropertyAnalyzer.PROPERTIES_USE_FOR_REWRITE
+            PropertyAnalyzer.PROPERTIES_USE_FOR_REWRITE,
+            PropertyAnalyzer.PROPERTIES_USE_INSERT_INTO,
+            PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH,
+            PropertyAnalyzer.PROPERTIES_ENABLE_DML_MATERIALIZED_VIEW_REWRITE
     );
 
     public static void analyzeProperty(String key, String value) {
@@ -70,6 +73,15 @@ public class MTMVPropertyUtil {
                 break;
             case PropertyAnalyzer.PROPERTIES_USE_FOR_REWRITE:
                 analyzeBooleanProperty(value, PropertyAnalyzer.PROPERTIES_USE_FOR_REWRITE);
+                break;
+            case PropertyAnalyzer.PROPERTIES_USE_INSERT_INTO:
+                analyzeBooleanProperty(value, PropertyAnalyzer.PROPERTIES_USE_INSERT_INTO);
+                break;
+            case PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH:
+                analyzeBooleanProperty(value, PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH);
+                break;
+            case PropertyAnalyzer.PROPERTIES_ENABLE_DML_MATERIALIZED_VIEW_REWRITE:
+                analyzeBooleanProperty(value, PropertyAnalyzer.PROPERTIES_ENABLE_DML_MATERIALIZED_VIEW_REWRITE);
                 break;
             default:
                 throw new AnalysisException("illegal key:" + key);

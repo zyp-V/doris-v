@@ -88,6 +88,8 @@ public class HiveDDLAndDMLPlanTest extends TestWithFeService {
     protected void runBeforeAll() throws Exception {
         connectContext.getSessionVariable().enableFallbackToOriginalPlanner = false;
         connectContext.getSessionVariable().enableNereidsDML = true;
+        // This suite validates hive ddl/dml planning behaviors rather than privilege checks.
+        connectContext.setSkipAuth(true);
         Config.enable_query_hive_views = false;
         // create test internal table
         createDatabase(mockedDbName);

@@ -33,12 +33,14 @@ import org.apache.doris.catalog.stream.OlapTableStream;
 import org.apache.doris.catalog.stream.OlapTableStreamWrapper;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.ExternalTable;
 import org.apache.doris.datasource.ExternalView;
 import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalTable.DLAType;
+import org.apache.doris.datasource.paimon.source.PaimonScanNode;
 import org.apache.doris.nereids.CTEContext;
 import org.apache.doris.nereids.CascadesContext;
 import org.apache.doris.nereids.SqlCacheContext;
@@ -449,9 +451,21 @@ public class BindRelation extends OneAnalysisRuleFactory {
                 case ICEBERG_EXTERNAL_TABLE:
                 case PAIMON_EXTERNAL_TABLE:
                 case MAX_COMPUTE_EXTERNAL_TABLE:
+                    if (table.getType() == TableIf.TableType.PAIMON_EXTERNAL_TABLE
+                            && unboundRelation.getScanParams() != null
+                            && unboundRelation.getScanParams().incrementalRead()) {
+                        try {
+                            // Validate paimon incremental scan params during analysis so invalid
+                            // combinations fail before planning reaches the scan node.
+                            PaimonScanNode.validateIncrementalReadParams(unboundRelation.getScanParams().getParams());
+                        } catch (UserException e) {
+                            throw new AnalysisException(e.getMessage(), e);
+                        }
+                    }
                     return new LogicalFileScan(unboundRelation.getRelationId(), (ExternalTable) table,
                             qualifierWithoutTableName, unboundRelation.getTableSample(),
-                            unboundRelation.getTableSnapshot());
+                            unboundRelation.getTableSnapshot(),
+                            Optional.ofNullable(unboundRelation.getScanParams()));
                 case SCHEMA:
                     // schema table's name is case-insensitive, we need save its name in SQL text to get correct case.
                     return new LogicalSubQueryAlias<>(qualifiedTableName,

@@ -383,33 +383,48 @@ public abstract class ExternalDatabase<T extends ExternalTable>
             localTableName = extCatalog.fromRemoteTableName(remoteName, remoteTableName);
         }
 
-        // Step 2: Check if the table exists in the system, if the `checkExists` flag is enabled
+        // Step 2: Lightweight existence check via external catalog to avoid full table listing
         if (checkExists && (!FeConstants.runningUnitTest || this instanceof TestExternalDatabase)) {
             try {
-                List<String> tblNames = Lists.newArrayList(getTableNamesWithLock());
-                if (!tblNames.contains(localTableName)) {
-                    tblNames = listTableNames().stream()
-                            .map(Pair::value)
-                            .collect(Collectors.toList());
-                    if (!tblNames.contains(localTableName)) {
-                        LOG.warn("Table {} does not exist in the remote system. Skipping initialization.",
-                                localTableName);
-                        return null;
+                String checkRemoteTableName = remoteTableName;
+                if (Strings.isNullOrEmpty(checkRemoteTableName)) {
+                    if (extCatalog.getUseMetaCache().get()
+                            && (Boolean.parseBoolean(extCatalog.getLowerCaseMetaNames())
+                                || !Strings.isNullOrEmpty(extCatalog.getMetaNamesMapping())
+                                || this.isStoredTableNamesLowerCase())) {
+                        int splitterIndex = localTableName.indexOf("$");
+                        if (splitterIndex > 0) {
+                            String sourceTableName = localTableName.substring(0, splitterIndex);
+                            String remoteSourceTableName = metaCache.getRemoteName(sourceTableName);
+                            if (!Strings.isNullOrEmpty(remoteSourceTableName)) {
+                                checkRemoteTableName = remoteSourceTableName + localTableName.substring(splitterIndex);
+                            }
+                        } else {
+                            checkRemoteTableName = metaCache.getRemoteName(localTableName);
+                        }
+                        if (Strings.isNullOrEmpty(checkRemoteTableName)) {
+                            checkRemoteTableName = localTableName;
+                        }
+                    } else {
+                        checkRemoteTableName = localTableName;
                     }
                 }
+                if (Strings.isNullOrEmpty(checkRemoteTableName)
+                        || !checkRemoteTableExists(localTableName, checkRemoteTableName)) {
+                    LOG.warn("Table {} does not exist in the remote system. Skipping initialization.",
+                            localTableName);
+                    return null;
+                }
             } catch (RuntimeException e) {
-                // Handle "Found conflicting" exception explicitly
-                if (e.getMessage().contains(ExternalCatalog.FOUND_CONFLICTING)) {
+                if (e.getMessage() != null && e.getMessage().contains(ExternalCatalog.FOUND_CONFLICTING)) {
                     LOG.error(e.getMessage());
-                    throw e; // Rethrow to let the caller handle this critical issue
+                    throw e;
                 } else {
-                    // Any errors other than name conflicts, we default to not finding the table
                     LOG.warn("Failed to check existence of table {} in the remote system. Ignoring this table.",
                             localTableName, e);
                     return null;
                 }
             } catch (Exception e) {
-                // If connection fails, treat the table as non-existent
                 LOG.warn("Failed to check existence of table {} in the remote system. Ignoring this table.",
                         localTableName, e);
                 return null;
@@ -421,7 +436,17 @@ public abstract class ExternalDatabase<T extends ExternalTable>
             if (Boolean.parseBoolean(extCatalog.getLowerCaseMetaNames())
                     || !Strings.isNullOrEmpty(extCatalog.getMetaNamesMapping())
                     || this.isStoredTableNamesLowerCase()) {
-                remoteTableName = metaCache.getRemoteName(localTableName);
+                int splitterIndex = localTableName.indexOf("$");
+                if (splitterIndex > 0) {
+                    String sourceTableName = localTableName.substring(0, splitterIndex);
+                    String remoteSourceTableName = metaCache.getRemoteName(sourceTableName);
+                    if (remoteSourceTableName != null) {
+                        remoteTableName = remoteSourceTableName + localTableName.substring(splitterIndex);
+                    }
+                }
+                if (remoteTableName == null) {
+                    remoteTableName = metaCache.getRemoteName(localTableName);
+                }
                 if (remoteTableName == null) {
                     LOG.warn("Could not resolve remote table name for local table: {}", localTableName);
                     return null;
@@ -433,6 +458,25 @@ public abstract class ExternalDatabase<T extends ExternalTable>
 
         // Step 4: Build and return the table instance using the resolved names and other parameters
         return buildTableInternal(remoteTableName, localTableName, tblId, catalog, db);
+    }
+
+    private boolean checkRemoteTableExists(String localTableName, String remoteTableName) {
+        if (supportDirectTableExistCheck()) {
+            return extCatalog.tableExist(ConnectContext.get() == null ? null
+                    : ConnectContext.get().getSessionContext(), remoteName, remoteTableName);
+        }
+        List<String> tblNames = Lists.newArrayList(getTableNamesWithLock());
+        if (tblNames.contains(localTableName)) {
+            return true;
+        }
+        tblNames = listTableNames().stream()
+                .map(Pair::value)
+                .collect(Collectors.toList());
+        return tblNames.contains(localTableName);
+    }
+
+    private boolean supportDirectTableExistCheck() {
+        return extCatalog.logType != InitCatalogLog.Type.JDBC;
     }
 
     protected abstract T buildTableInternal(String remoteTableName, String localTableName, long tblId,

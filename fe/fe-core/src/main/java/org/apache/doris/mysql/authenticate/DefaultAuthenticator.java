@@ -52,7 +52,6 @@ public class DefaultAuthenticator implements Authenticator {
         }
         if (Config.enable_gdpr && !Config.enable_gemini) {
             try {
-                // if verify gdpr token succeed, return identity. Or throw UnauthorizedException if failed
                 ImmutablePair<LegacyIdentity, String> gdprIdentityToken = Env.getCurrentEnv().getGdprService()
                         .verifyGdprAccount(request.getGdprAccountOrUserName());
                 String gdprUser = gdprIdentityToken.getLeft().User.replace(".", "_");
@@ -64,7 +63,6 @@ public class DefaultAuthenticator implements Authenticator {
         }
         if (Config.enable_gdpr && Config.enable_gemini) {
             try {
-                // if verify gdpr token succeed, return identity. Or throw UnauthorizedException if failed
                 ImmutablePair<LegacyIdentity, String> gdprIdentityToken = Env.getCurrentEnv().getGdprService()
                         .verifyGdprAccount(request.getGdprAccountOrUserName());
                 String byteUserName = gdprIdentityToken.getLeft().User;

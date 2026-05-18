@@ -21,6 +21,8 @@ import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
 import org.apache.doris.nereids.StatementContext;
+import org.apache.doris.nereids.analyzer.UnboundRelation;
+import org.apache.doris.nereids.analyzer.UnboundResultSink;
 import org.apache.doris.nereids.exceptions.AnalysisException;
 import org.apache.doris.nereids.exceptions.ParseException;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
@@ -34,6 +36,7 @@ import org.apache.doris.nereids.trees.plans.commands.ExplainCommand;
 import org.apache.doris.nereids.trees.plans.commands.ExplainCommand.ExplainLevel;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
 import org.apache.doris.nereids.trees.plans.logical.LogicalCTE;
+import org.apache.doris.nereids.trees.plans.logical.LogicalCheckPolicy;
 import org.apache.doris.nereids.trees.plans.logical.LogicalJoin;
 import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalProject;
@@ -52,6 +55,29 @@ import java.util.Optional;
 import java.util.Set;
 
 public class NereidsParserTest extends ParserTestBase {
+
+    @Test
+    public void testParseTableScanParams() {
+        String sql = "SELECT * FROM t @incr('k'='v')";
+        NereidsParser nereidsParser = new NereidsParser();
+        LogicalPlan logicalPlan = (LogicalPlan) nereidsParser.parseSingle(sql);
+
+        if (logicalPlan instanceof UnboundResultSink) {
+            logicalPlan = (LogicalPlan) logicalPlan.child(0);
+        }
+        if (logicalPlan instanceof LogicalProject) {
+            logicalPlan = (LogicalPlan) logicalPlan.child(0);
+        }
+        if (logicalPlan instanceof LogicalCheckPolicy) {
+            logicalPlan = (LogicalPlan) logicalPlan.child(0);
+        }
+
+        Assertions.assertTrue(logicalPlan instanceof UnboundRelation);
+        UnboundRelation unboundRelation = (UnboundRelation) logicalPlan;
+        Assertions.assertNotNull(unboundRelation.getScanParams());
+        Assertions.assertEquals("incr", unboundRelation.getScanParams().getParamType());
+        Assertions.assertEquals("v", unboundRelation.getScanParams().getParams().get("k"));
+    }
 
     @Test
     public void testParseMultiple() {

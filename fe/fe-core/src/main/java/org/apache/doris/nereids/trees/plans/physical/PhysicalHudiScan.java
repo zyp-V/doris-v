@@ -57,7 +57,7 @@ public class PhysicalHudiScan extends PhysicalFileScan {
             Optional<TableSnapshot> tableSnapshot,
             Optional<TableScanParams> scanParams, Optional<IncrementalRelation> incrementalRelation) {
         super(id, PlanType.PHYSICAL_HUDI_SCAN, table, qualifier, distributionSpec, groupExpression, logicalProperties,
-                selectedPartitions, tableSample, tableSnapshot);
+                selectedPartitions, tableSample, tableSnapshot, scanParams);
         Objects.requireNonNull(scanParams, "scanParams should not null");
         Objects.requireNonNull(incrementalRelation, "incrementalRelation should not null");
         this.scanParams = scanParams;
@@ -74,7 +74,7 @@ public class PhysicalHudiScan extends PhysicalFileScan {
             Optional<TableSample> tableSample, Optional<TableSnapshot> tableSnapshot,
             Optional<TableScanParams> scanParams, Optional<IncrementalRelation> incrementalRelation) {
         super(id, PlanType.PHYSICAL_HUDI_SCAN, table, qualifier, distributionSpec, groupExpression, logicalProperties,
-                physicalProperties, statistics, selectedPartitions, tableSample, tableSnapshot);
+                physicalProperties, statistics, selectedPartitions, tableSample, tableSnapshot, scanParams);
         this.scanParams = scanParams;
         this.incrementalRelation = incrementalRelation;
     }

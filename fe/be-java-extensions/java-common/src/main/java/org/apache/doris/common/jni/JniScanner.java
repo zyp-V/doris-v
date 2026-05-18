@@ -72,6 +72,10 @@ public abstract class JniScanner {
         vectorTable.appendData(index, value);
     }
 
+    protected void appendNull(int index) {
+        vectorTable.getColumn(index).appendNull(types[index].getType());
+    }
+
     protected int getBatchSize() {
         return batchSize;
     }

@@ -19,16 +19,15 @@ package org.apache.doris.datasource.lowercase;
 
 import org.apache.doris.analysis.CreateCatalogStmt;
 import org.apache.doris.analysis.DropCatalogStmt;
-import org.apache.doris.analysis.RefreshCatalogStmt;
 import org.apache.doris.analysis.SwitchStmt;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
+import org.apache.doris.datasource.ExternalDatabase;
 import org.apache.doris.datasource.test.TestExternalCatalog;
 import org.apache.doris.qe.ConnectContext;
-import org.apache.doris.qe.DdlExecutor;
 import org.apache.doris.qe.GlobalVariable;
 import org.apache.doris.utframe.TestWithFeService;
 
@@ -82,15 +81,12 @@ public class ExternalTableNameStoredLowercaseMetaCacheTrueTest extends TestWithF
 
     @Test
     public void testGetTableWithOutList() {
-        RefreshCatalogStmt refreshCatalogStmt = new RefreshCatalogStmt("test1", null);
-        try {
-            DdlExecutor.execute(Env.getCurrentEnv(), refreshCatalogStmt);
-        } catch (Exception e) {
-            // Do nothing
-        }
-        String tblName = env.getCatalogMgr().getCatalog("test1").getDbNullable("db1").getTableNullable("TABLE1").getName();
+        ExternalDatabase<?> db = (ExternalDatabase<?>) env.getCatalogMgr().getCatalog("test1").getDbNullable("db1");
+        Assertions.assertNotNull(db);
+        Assertions.assertTrue(db.getTableNamesWithLock().contains("table1"));
+        String tblName = db.getTableNullable("TABLE1").getName();
         Assertions.assertEquals("table1", tblName);
-        String tblName3 = env.getCatalogMgr().getCatalog("test1").getDbNullable("db1").getTableNullable("table3").getName();
+        String tblName3 = db.getTableNullable("table3").getName();
         Assertions.assertEquals("table3", tblName3);
     }
 

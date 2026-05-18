@@ -29,11 +29,13 @@ import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.paimon.Snapshot;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.system.PartitionsTable;
-import org.apache.paimon.table.system.SnapshotsTable;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -43,6 +45,7 @@ import java.util.OptionalLong;
 import java.util.concurrent.ExecutorService;
 
 public class PaimonMetadataCache {
+    private static final Logger LOG = LogManager.getLogger(PaimonMetadataCache.class);
 
     private final LoadingCache<PaimonSnapshotCacheKey, PaimonSnapshotCacheValue> snapshotCache;
 
@@ -60,13 +63,21 @@ public class PaimonMetadataCache {
     private PaimonSnapshotCacheValue loadSnapshot(PaimonSnapshotCacheKey key) {
         try {
             PaimonSnapshot latestSnapshot = loadLatestSnapshot(key);
-            PaimonExternalTable table = (PaimonExternalTable) key.getCatalog().getDbOrAnalysisException(key.getDbName())
+            PaimonExternalCatalog catalog = (PaimonExternalCatalog) key.getCatalog();
+            PaimonExternalTable table = (PaimonExternalTable) catalog.getDbOrAnalysisException(key.getDbName())
                     .getTableOrAnalysisException(key.getTableName());
             List<Column> partitionColumns = table.getPaimonSchemaCacheValue(latestSnapshot.getSchemaId())
                     .getPartitionColumns();
-            PaimonPartitionInfo partitionInfo = loadPartitionInfo(key, partitionColumns);
+            PaimonPartitionInfo partitionInfo;
+            try {
+                partitionInfo = loadPartitionInfo(key, partitionColumns);
+            } catch (IOException e) {
+                LOG.warn("failed to load paimon partition info for {}.{}.{}, fallback to empty partition info",
+                        key.getCatalog().getName(), key.getDbName(), key.getTableName(), e);
+                partitionInfo = new PaimonPartitionInfo();
+            }
             return new PaimonSnapshotCacheValue(partitionInfo, latestSnapshot);
-        } catch (IOException | AnalysisException e) {
+        } catch (Exception e) {
             throw new CacheException("failed to loadSnapshot for: %s.%s.%s",
                     e, key.getCatalog().getName(), key.getDbName(), key.getTableName());
         }
@@ -83,8 +94,9 @@ public class PaimonMetadataCache {
 
     private List<PaimonPartition> loadPartitions(PaimonSnapshotCacheKey key)
             throws IOException {
+        String tableName = getBaseTableName(key.getTableName());
         Table table = ((PaimonExternalCatalog) key.getCatalog()).getPaimonTable(key.getDbName(),
-                key.getTableName() + Catalog.SYSTEM_TABLE_SPLITTER + PartitionsTable.PARTITIONS);
+                tableName + Catalog.SYSTEM_TABLE_SPLITTER + PartitionsTable.PARTITIONS);
         List<InternalRow> rows = PaimonUtil.read(table, null, null);
         List<PaimonPartition> res = Lists.newArrayListWithCapacity(rows.size());
         for (InternalRow row : rows) {
@@ -94,20 +106,18 @@ public class PaimonMetadataCache {
     }
 
     private PaimonSnapshot loadLatestSnapshot(PaimonSnapshotCacheKey key) throws IOException {
-        Table table = ((PaimonExternalCatalog) key.getCatalog()).getPaimonTable(key.getDbName(),
-                key.getTableName() + Catalog.SYSTEM_TABLE_SPLITTER + SnapshotsTable.SNAPSHOTS);
-        // snapshotId and schemaId
-        List<InternalRow> rows = PaimonUtil.read(table, new int[] {0, 1}, null);
-        long latestSnapshotId = 0L;
-        long latestSchemaId = 0L;
-        for (InternalRow row : rows) {
-            long snapshotId = row.getLong(0);
-            if (snapshotId > latestSnapshotId) {
-                latestSnapshotId = snapshotId;
-                latestSchemaId = row.getLong(1);
-            }
+        String tableName = getBaseTableName(key.getTableName());
+        Table table = ((PaimonExternalCatalog) key.getCatalog()).getPaimonTable(key.getDbName(), tableName);
+        Snapshot latestSnapshot = table.latestSnapshot().orElse(null);
+        if (latestSnapshot == null) {
+            return new PaimonSnapshot(0L, 0L);
         }
-        return new PaimonSnapshot(latestSnapshotId, latestSchemaId);
+        return new PaimonSnapshot(latestSnapshot.id(), latestSnapshot.schemaId());
+    }
+
+    private String getBaseTableName(String tableName) {
+        int index = tableName.indexOf(Catalog.SYSTEM_TABLE_SPLITTER);
+        return index > 0 ? tableName.substring(0, index) : tableName;
     }
 
     public void invalidateCatalogCache(long catalogId) {

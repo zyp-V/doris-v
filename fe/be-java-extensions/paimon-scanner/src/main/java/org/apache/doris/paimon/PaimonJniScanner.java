@@ -44,6 +44,7 @@ import java.util.stream.Collectors;
 
 public class PaimonJniScanner extends JniScanner {
     private static final Logger LOG = LoggerFactory.getLogger(PaimonJniScanner.class);
+    private static final String PAIMON_ROW_KIND_COLUMN = "__paimon_row_kind";
     @Deprecated
     private static final String PAIMON_OPTION_PREFIX = "paimon.";
     @Deprecated
@@ -77,6 +78,8 @@ public class PaimonJniScanner extends JniScanner {
     private RecordReader.RecordIterator<InternalRow> recordIterator = null;
     private final ClassLoader classLoader;
     private PreExecutionAuthenticator preExecutionAuthenticator;
+    private int[] fieldToPaimonIndex;
+    private int[] fieldToDataTypeIndex;
 
     public PaimonJniScanner(int batchSize, Map<String, String> params) {
         this.classLoader = this.getClass().getClassLoader();
@@ -133,15 +136,10 @@ public class PaimonJniScanner extends JniScanner {
 
     private void initReader() throws IOException {
         ReadBuilder readBuilder = table.newReadBuilder();
-        if (this.fields.length > this.paimonAllFieldNames.size()) {
-            throw new IOException(
-                    String.format(
-                            "The jni reader fields' size {%s} is not matched with paimon fields' size {%s}."
-                                    + " Please refresh table and try again",
-                            fields.length, paimonAllFieldNames.size()));
-        }
         int[] projected = getProjected();
-        readBuilder.withProjection(projected);
+        if (projected.length > 0) {
+            readBuilder.withProjection(projected);
+        }
         readBuilder.withFilter(getPredicates());
         reader = readBuilder.newRead().executeFilter().createReader(getSplit());
         paimonDataTypeList =
@@ -149,7 +147,24 @@ public class PaimonJniScanner extends JniScanner {
     }
 
     private int[] getProjected() {
-        return Arrays.stream(fields).mapToInt(paimonAllFieldNames::indexOf).toArray();
+        fieldToPaimonIndex = new int[fields.length];
+        fieldToDataTypeIndex = new int[fields.length];
+        Arrays.fill(fieldToPaimonIndex, -1);
+        Arrays.fill(fieldToDataTypeIndex, -1);
+        List<Integer> projected = new java.util.ArrayList<>();
+        int dataTypeIndex = 0;
+        for (int i = 0; i < fields.length; i++) {
+            if (PAIMON_ROW_KIND_COLUMN.equalsIgnoreCase(fields[i])) {
+                continue;
+            }
+            int paimonIndex = paimonAllFieldNames.indexOf(fields[i].toLowerCase());
+            fieldToPaimonIndex[i] = paimonIndex;
+            if (paimonIndex >= 0) {
+                projected.add(paimonIndex);
+                fieldToDataTypeIndex[i] = dataTypeIndex++;
+            }
+        }
+        return projected.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private List<Predicate> getPredicates() {
@@ -203,7 +218,18 @@ public class PaimonJniScanner extends JniScanner {
                 while ((record = recordIterator.next()) != null) {
                     columnValue.setOffsetRow(record);
                     for (int i = 0; i < fields.length; i++) {
-                        columnValue.setIdx(i, types[i], paimonDataTypeList.get(i));
+                        if (PAIMON_ROW_KIND_COLUMN.equalsIgnoreCase(fields[i])) {
+                            columnValue.setString(record.getRowKind().shortString());
+                            appendData(i, columnValue);
+                            continue;
+                        }
+                        int paimonIndex = fieldToPaimonIndex[i];
+                        if (paimonIndex < 0) {
+                            appendNull(i);
+                            continue;
+                        }
+                        int projectedIndex = fieldToDataTypeIndex[i];
+                        columnValue.setIdx(projectedIndex, types[i], paimonDataTypeList.get(projectedIndex));
                         appendData(i, columnValue);
                     }
                     rows++;
@@ -261,4 +287,3 @@ public class PaimonJniScanner extends JniScanner {
     }
 
 }
-

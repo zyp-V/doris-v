@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -46,6 +47,8 @@ public class PaimonColumnValue implements ColumnValue {
     private DataGetters record;
     private ColumnType dorisType;
     private DataType dataType;
+    private String stringValue;
+    private boolean useLiteralString;
 
     public PaimonColumnValue() {
     }
@@ -61,10 +64,16 @@ public class PaimonColumnValue implements ColumnValue {
         this.idx = idx;
         this.dorisType = dorisType;
         this.dataType = dataType;
+        this.useLiteralString = false;
     }
 
     public void setOffsetRow(InternalRow record) {
         this.record = record;
+    }
+
+    public void setString(String value) {
+        this.stringValue = value;
+        this.useLiteralString = true;
     }
 
     @Override
@@ -119,11 +128,17 @@ public class PaimonColumnValue implements ColumnValue {
 
     @Override
     public String getString() {
+        if (useLiteralString) {
+            return stringValue;
+        }
         return record.getString(idx).toString();
     }
 
     @Override
     public byte[] getStringAsBytes() {
+        if (useLiteralString) {
+            return stringValue.getBytes(StandardCharsets.UTF_8);
+        }
         return record.getString(idx).toBytes();
     }
 

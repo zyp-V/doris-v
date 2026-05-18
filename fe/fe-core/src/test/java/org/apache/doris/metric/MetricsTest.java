@@ -163,4 +163,45 @@ public class MetricsTest {
         Assert.assertTrue(jsonResult.contains("\"metric\":\"doris_fe_internal_database_num\""));
         Assert.assertTrue(jsonResult.contains("\"metric\":\"doris_fe_internal_table_num\""));
     }
+
+    @Test
+    public void testRemoveMtmvMetrics() {
+        String dbName = "test_db_metrics";
+        String mvName = "test_mtmv_metrics";
+        String metricKey = MetricRepo.buildMtmvMetricKey(dbName, mvName);
+
+        MetricRepo.MTMV_REFRESH_FAILED_TOTAL.getOrAdd(metricKey).increase(1L);
+        MetricRepo.MTMV_REFRESH_TIMEOUT_TOTAL.getOrAdd(metricKey).increase(1L);
+        MetricRepo.MTMV_REFRESH_SUCCESS_TIME.getOrAdd(metricKey).setValue(100L);
+
+        Assert.assertTrue(containsMtmvMetric("mtmv_refresh_failed_total", dbName, mvName));
+        Assert.assertTrue(containsMtmvMetric("mtmv_refresh_timeout_total", dbName, mvName));
+        Assert.assertTrue(containsMtmvMetric("mtmv_refresh_success_time", dbName, mvName));
+
+        MetricRepo.removeMtmvMetrics(dbName, mvName);
+
+        Assert.assertFalse(containsMtmvMetric("mtmv_refresh_failed_total", dbName, mvName));
+        Assert.assertFalse(containsMtmvMetric("mtmv_refresh_timeout_total", dbName, mvName));
+        Assert.assertFalse(containsMtmvMetric("mtmv_refresh_success_time", dbName, mvName));
+    }
+
+    private boolean containsMtmvMetric(String metricName, String dbName, String mvName) {
+        for (Metric metric : MetricRepo.getMetricsByName(metricName)) {
+            boolean dbMatched = false;
+            boolean mvMatched = false;
+            for (Object labelObj : metric.getLabels()) {
+                MetricLabel label = (MetricLabel) labelObj;
+                if (MetricRepo.MTMV_METRIC_LABEL_REPO.equals(label.getKey()) && dbName.equals(label.getValue())) {
+                    dbMatched = true;
+                } else if (MetricRepo.MTMV_METRIC_LABEL_MV_NAME.equals(label.getKey())
+                        && mvName.equals(label.getValue())) {
+                    mvMatched = true;
+                }
+            }
+            if (dbMatched && mvMatched) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

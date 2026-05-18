@@ -28,6 +28,7 @@ import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.mysql.privilege.Privilege;
 import org.apache.doris.mysql.privilege.RowFilterPolicy;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.qe.SessionVariable;
 import org.apache.doris.service.GeminiService;
 
 import org.apache.commons.lang3.StringUtils;
@@ -73,24 +74,40 @@ public class ByteHiveAccessController implements CatalogAccessController {
                               PrivPredicate wanted) throws AuthorizationException {
         String byteUserName = currentUser.getByteUserName();
         boolean checkResource = true;
-        if (Config.enable_gemini && StringUtils.isNotEmpty(byteUserName)) {
-            try {
-                if (wanted.getPrivs().containsPrivs(
-                        Privilege.SELECT_PRIV,
-                        Privilege.LOAD_PRIV,
-                        Privilege.ALTER_PRIV,
-                        Privilege.CREATE_PRIV,
-                        Privilege.DROP_PRIV)) {
+        ConnectContext connectContext = ConnectContext.get();
+        if (StringUtils.isBlank(byteUserName) && connectContext != null
+                && connectContext.getGdprIdentity() != null
+                && StringUtils.isNotBlank(connectContext.getGdprIdentity().User)) {
+            byteUserName = connectContext.getGdprIdentity().User;
+        }
+        boolean enableGemini = Config.enable_gemini;
+        if (enableGemini && connectContext != null) {
+            SessionVariable sessionVariable = connectContext.getSessionVariable();
+            if (sessionVariable != null) {
+                enableGemini = sessionVariable.isEnableGemini();
+            }
+        }
+        if (enableGemini && wanted.getPrivs().containsPrivs(
+                Privilege.SELECT_PRIV,
+                Privilege.LOAD_PRIV,
+                Privilege.ALTER_PRIV,
+                Privilege.CREATE_PRIV,
+                Privilege.DROP_PRIV)) {
+            if (StringUtils.isBlank(byteUserName)) {
+                checkResource = false;
+            } else {
+                try {
                     if (StringUtils.isNotBlank(db)) {
                         String[] clusterDb = db.split(":");
                         db = clusterDb.length == 2 ? clusterDb[1] : clusterDb[0];
                     }
                     checkResource = Env.getCurrentEnv().getGeminiService()
-                        .checkResource(byteUserName, db, tbl, new ArrayList<>(cols),
-                            wanted, GeminiService.GEMINI_AUTH_HIVE_TYPE);
+                            .checkResource(byteUserName, db, tbl, new ArrayList<>(cols),
+                                    wanted, GeminiService.GEMINI_AUTH_HIVE_TYPE);
+                } catch (Exception e) {
+                    LOG.warn("Gemini check resource permission failed,", e);
+                    checkResource = false;
                 }
-            } catch (Exception e) {
-                LOG.warn("Gemini check resource permission failed,", e);
             }
         }
         if (!checkResource) {

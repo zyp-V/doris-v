@@ -28,6 +28,7 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.UserException;
+import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.datasource.ExternalTable;
 import org.apache.doris.datasource.mvcc.MvccUtil;
 import org.apache.doris.mtmv.BaseTableInfo;
@@ -48,6 +49,7 @@ import org.apache.doris.nereids.trees.expressions.literal.Literal;
 import org.apache.doris.nereids.trees.expressions.literal.NullLiteral;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.algebra.Sink;
+import org.apache.doris.nereids.trees.plans.commands.insert.InsertIntoTableCommand;
 import org.apache.doris.nereids.trees.plans.commands.insert.InsertOverwriteTableCommand;
 import org.apache.doris.nereids.trees.plans.logical.LogicalCTE;
 import org.apache.doris.nereids.trees.plans.logical.LogicalCatalogRelation;
@@ -97,7 +99,7 @@ public class UpdateMvByPartitionCommand extends InsertOverwriteTableCommand {
      * @param tableWithPartKey the partitions key for different table
      * @return command
      */
-    public static UpdateMvByPartitionCommand from(MTMV mv, Set<String> partitionNames,
+    public static Command from(MTMV mv, Set<String> partitionNames,
             Map<TableIf, String> tableWithPartKey) throws UserException {
         NereidsParser parser = new NereidsParser();
         Map<TableIf, Set<Expression>> predicates =
@@ -114,7 +116,16 @@ public class UpdateMvByPartitionCommand extends InsertOverwriteTableCommand {
             LOG.debug("MTMVTask plan for mvName: {}, partitionNames: {}, plan: {}", mv.getName(), partitionNames,
                     sink.treeString());
         }
-        return new UpdateMvByPartitionCommand(sink);
+        boolean useInsertInto = Boolean.parseBoolean(mv.getMvProperties().getOrDefault(
+                PropertyAnalyzer.PROPERTIES_USE_INSERT_INTO, "false"));
+        boolean nextForceFullRefresh = Boolean.parseBoolean(mv.getMvProperties().getOrDefault(
+                PropertyAnalyzer.PROPERTIES_NEXT_FORCE_FULL_REFRESH, "false"));
+        if (useInsertInto && !nextForceFullRefresh) {
+            return new InsertIntoTableCommand(
+                    sink, Optional.empty(), Optional.empty(), Optional.empty());
+        } else {
+            return new UpdateMvByPartitionCommand(sink);
+        }
     }
 
     private static List<String> constructPartsForMv(Set<String> partitionNames) {

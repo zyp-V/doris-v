@@ -32,6 +32,7 @@ import org.apache.doris.event.EventListener;
 import org.apache.doris.event.TableEvent;
 import org.apache.doris.job.exception.JobException;
 import org.apache.doris.job.extensions.mtmv.MTMVTask;
+import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mtmv.MTMVRefreshEnum.RefreshTrigger;
 import org.apache.doris.nereids.trees.plans.commands.info.CancelMTMVTaskInfo;
 import org.apache.doris.nereids.trees.plans.commands.info.PauseMTMVInfo;
@@ -90,6 +91,7 @@ public class MTMVService implements EventListener {
         for (MTMVHookService mtmvHookService : hooks.values()) {
             mtmvHookService.unregisterMTMV(mtmv);
         }
+        MetricRepo.removeMtmvMetrics(mtmv);
     }
 
     public void createMTMV(MTMV mtmv) throws DdlException, AnalysisException {

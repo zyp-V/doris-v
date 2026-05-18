@@ -24,6 +24,7 @@ import org.apache.doris.analysis.ListPartitionDesc;
 import org.apache.doris.analysis.PartitionDesc;
 import org.apache.doris.analysis.RangePartitionDesc;
 import org.apache.doris.analysis.TableName;
+import org.apache.doris.catalog.AggregateType;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.KeysType;
@@ -94,6 +95,7 @@ public class CreateMTMVInfo {
     private final boolean ifNotExists;
     private final TableNameInfo mvName;
     private List<String> keys;
+    private final KeysType keysType;
     private final String comment;
     private final DistributionDescriptor distribution;
     private Map<String, String> properties;
@@ -113,7 +115,7 @@ public class CreateMTMVInfo {
      * constructor for create MTMV
      */
     public CreateMTMVInfo(boolean ifNotExists, TableNameInfo mvName,
-            List<String> keys, String comment,
+            List<String> keys, KeysType keysType, String comment,
             DistributionDescriptor distribution, Map<String, String> properties,
             LogicalPlan logicalQuery, String querySql,
             MTMVRefreshInfo refreshInfo,
@@ -122,6 +124,7 @@ public class CreateMTMVInfo {
         this.ifNotExists = Objects.requireNonNull(ifNotExists, "require ifNotExists object");
         this.mvName = Objects.requireNonNull(mvName, "require mvName object");
         this.keys = Utils.copyRequiredList(keys);
+        this.keysType = keysType;
         this.comment = comment;
         this.distribution = Objects.requireNonNull(distribution, "require distribution object");
         this.properties = Objects.requireNonNull(properties, "require properties object");
@@ -160,11 +163,23 @@ public class CreateMTMVInfo {
         }
         analyzeProperties();
         analyzeQuery(ctx, this.mvProperties);
+        KeysType actualKeysType = this.keysType != null ? this.keysType : KeysType.DUP_KEYS;
+        boolean finalEnableMergeOnWrite = false;
+        if (actualKeysType == KeysType.UNIQUE_KEYS) {
+            String mowProp = properties.get(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE);
+            finalEnableMergeOnWrite = mowProp == null || Boolean.parseBoolean(mowProp);
+        }
         // analyze column
-        final boolean finalEnableMergeOnWrite = false;
         Set<String> keysSet = Sets.newTreeSet(String.CASE_INSENSITIVE_ORDER);
         keysSet.addAll(keys);
-        validateColumns(this.columns, keysSet, finalEnableMergeOnWrite);
+        if (actualKeysType == KeysType.UNIQUE_KEYS) {
+            for (ColumnDefinition col : this.columns) {
+                if (!keysSet.contains(col.getName())) {
+                    col.setAggType(AggregateType.REPLACE);
+                }
+            }
+        }
+        validateColumns(this.columns, keysSet, finalEnableMergeOnWrite, actualKeysType);
         if (distribution == null) {
             throw new AnalysisException("Create async materialized view should contain distribution desc");
         }
@@ -179,7 +194,7 @@ public class CreateMTMVInfo {
         Map<String, ColumnDefinition> columnMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         columns.forEach(c -> columnMap.put(c.getName(), c));
         distribution.updateCols(columns.get(0).getName());
-        distribution.validate(columnMap, KeysType.DUP_KEYS);
+        distribution.validate(columnMap, actualKeysType);
         refreshInfo.validate();
 
         analyzeProperties();
@@ -188,13 +203,13 @@ public class CreateMTMVInfo {
 
     /**validate column name*/
     public void validateColumns(List<ColumnDefinition> columns, Set<String> keysSet,
-            boolean finalEnableMergeOnWrite) throws UserException {
+            boolean finalEnableMergeOnWrite, KeysType keysType) throws UserException {
         Set<String> colSets = Sets.newTreeSet(String.CASE_INSENSITIVE_ORDER);
         for (ColumnDefinition col : columns) {
             if (!colSets.add(col.getName())) {
                 ErrorReport.reportAnalysisException(ErrorCode.ERR_DUP_FIELDNAME, col.getName());
             }
-            col.validate(true, keysSet, finalEnableMergeOnWrite, KeysType.DUP_KEYS);
+            col.validate(true, keysSet, finalEnableMergeOnWrite, keysType);
         }
     }
 
@@ -287,6 +302,15 @@ public class CreateMTMVInfo {
             }
         } catch (Exception e) {
             throw new AnalysisException(e.getMessage(), e.getCause());
+        }
+
+        KeysType actualKeysType = this.keysType != null ? this.keysType : KeysType.DUP_KEYS;
+        if (actualKeysType == KeysType.UNIQUE_KEYS) {
+            if (keys.isEmpty()) {
+                throw new AnalysisException("You must explicitly specify the UNIQUE KEY "
+                        + "columns when creating a UNIQUE_KEYS materialized view.");
+            }
+            return;
         }
         if (keys.isEmpty() && !enableDuplicateWithoutKeysByDefault) {
             keys = Lists.newArrayList();
@@ -397,7 +421,8 @@ public class CreateMTMVInfo {
      */
     public CreateMTMVStmt translateToLegacyStmt() {
         TableName tableName = mvName.transferToTableName();
-        KeysDesc keysDesc = new KeysDesc(KeysType.DUP_KEYS, keys);
+        KeysType actualKeysType = this.keysType != null ? this.keysType : KeysType.DUP_KEYS;
+        KeysDesc keysDesc = new KeysDesc(actualKeysType, keys);
         List<Column> catalogColumns = columns.stream()
                 .map(ColumnDefinition::translateToCatalogStyle)
                 .collect(Collectors.toList());

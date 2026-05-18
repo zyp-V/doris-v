@@ -53,12 +53,11 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.paimon.CoreOptions;
+import org.apache.paimon.Snapshot;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.predicate.PredicateBuilder;
-import org.apache.paimon.schema.TableSchema;
-import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.source.Split;
 import org.apache.paimon.table.system.PartitionsTable;
@@ -82,6 +81,7 @@ import java.util.stream.Collectors;
 public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTableIf, MTMVBaseTableIf, MvccTable {
 
     private static final Logger LOG = LogManager.getLogger(PaimonExternalTable.class);
+    public static final String PAIMON_ROW_KIND_COLUMN = "__paimon_row_kind";
 
     private Table paimonTable;
 
@@ -104,9 +104,17 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
 
     public Table getPaimonTable(Optional<MvccSnapshot> snapshot) {
         makeSureInitialized();
+        if (isSystemTableName(name)) {
+            return paimonTable;
+        }
         return paimonTable.copy(
                 Collections.singletonMap(CoreOptions.SCAN_VERSION.key(),
                         String.valueOf(getOrFetchSnapshotCacheValue(snapshot).getSnapshot().getSnapshotId())));
+    }
+
+    public Table getPaimonRawTable() {
+        makeSureInitialized();
+        return paimonTable;
     }
 
     public PaimonSchemaCacheValue getPaimonSchemaCacheValue(long schemaId) {
@@ -254,6 +262,30 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
         return getPaimonSchemaCacheValue(MvccUtil.getSnapshotFromContext(this)).getSchema();
     }
 
+    @Override
+    public List<Column> getBaseSchema() {
+        return getBaseSchema(false);
+    }
+
+    @Override
+    public List<Column> getBaseSchema(boolean full) {
+        if (full) {
+            return getFullSchema();
+        }
+        return getFullSchema().stream().filter(Column::isVisible).collect(Collectors.toList());
+    }
+
+    @Override
+    public int getBaseColumnIdxByName(String colName) {
+        int i = 0;
+        for (Column col : getBaseSchema(true)) {
+            if (col.getName().equalsIgnoreCase(colName)) {
+                return i;
+            }
+            ++i;
+        }
+        return -1;
+    }
 
     private Type paimonPrimitiveTypeToDorisType(org.apache.paimon.types.DataType dataType) {
         int tsScale = 3; // default
@@ -331,8 +363,9 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
     }
 
     private long loadLatestSnapshotId() throws IOException {
+        String tableName = getBaseTableName(name);
         Table table = ((PaimonExternalCatalog) catalog).getPaimonTable(dbName,
-                name + Catalog.SYSTEM_TABLE_SPLITTER + SnapshotsTable.SNAPSHOTS);
+                tableName + Catalog.SYSTEM_TABLE_SPLITTER + SnapshotsTable.SNAPSHOTS);
         // snapshotId
         List<InternalRow> rows = PaimonUtil.read(table, new int[]{0}, null);
         long latestSnapshotId = 0L;
@@ -368,10 +401,34 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
     @Override
     public Optional<SchemaCacheValue> initSchema() {
         Table paimonTable = ((PaimonExternalCatalog) catalog).getPaimonTable(dbName, name);
-        TableSchema schema = ((FileStoreTable) paimonTable).schema();
-        List<DataField> columns = schema.fields();
+        List<DataField> columns = paimonTable.rowType().getFields();
+        return buildSchemaCacheValue(paimonTable, columns, paimonTable.partitionKeys());
+    }
+
+    @Override
+    public Optional<SchemaCacheValue> initSchema(ExternalSchemaCache.SchemaCacheKey key) {
+        if (!(key instanceof PaimonSchemaCacheKey)) {
+            return super.initSchema(key);
+        }
+        try {
+            Table paimonTable = ((PaimonExternalCatalog) catalog).getPaimonTable(dbName, name);
+            if (isSystemTableName(name)) {
+                return buildSchemaCacheValue(
+                        paimonTable, paimonTable.rowType().getFields(), paimonTable.partitionKeys());
+            }
+            PaimonSchema paimonSchema = loadPaimonSchemaBySchemaId((PaimonSchemaCacheKey) key);
+            return buildSchemaCacheValue(paimonTable, paimonSchema.getFields(), paimonSchema.getPartitionKeys());
+        } catch (IOException e) {
+            LOG.warn("failed to init paimon schema by schema id for {}.{}.{}",
+                    catalog.getName(), dbName, name, e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<SchemaCacheValue> buildSchemaCacheValue(Table paimonTable, List<DataField> columns,
+            List<String> partitionKeys) {
         List<Column> tmpSchema = Lists.newArrayListWithCapacity(columns.size());
-        Set<String> partitionColumnNames = Sets.newHashSet(paimonTable.partitionKeys());
+        Set<String> partitionColumnNames = Sets.newHashSet(partitionKeys);
         List<Column> partitionColumns = Lists.newArrayList();
         for (DataField field : columns) {
             Column column = new Column(field.name().toLowerCase(),
@@ -383,13 +440,16 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
                 partitionColumns.add(column);
             }
         }
+        tmpSchema.add(new Column(PAIMON_ROW_KIND_COLUMN, Type.STRING, true,
+                null, true, "Paimon row kind in changelog mode", false, -1));
         try {
-            // after 0.9.0 paimon will support table.getLatestSnapshotId()
-            long latestSnapshotId = loadLatestSnapshotId();
-            PaimonPartitionInfo partitionInfo = loadPartitionInfo(partitionColumns);
+            long latestSnapshotId = isSystemTableName(name)
+                    ? loadLatestSnapshotId()
+                    : paimonTable.latestSnapshot().map(Snapshot::id).orElse(0L);
+            PaimonPartitionInfo partitionInfo = new PaimonPartitionInfo();
             return Optional.of(new PaimonSchemaCacheValue(tmpSchema, partitionColumns, paimonTable, latestSnapshotId,
                 partitionInfo));
-        } catch (IOException | AnalysisException e) {
+        } catch (Exception e) {
             LOG.warn(e);
             return Optional.empty();
         }
@@ -397,7 +457,7 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
 
     private PaimonSchema loadPaimonSchemaBySchemaId(PaimonSchemaCacheKey key) throws IOException {
         Table table = ((PaimonExternalCatalog) getCatalog()).getPaimonTable(key.getDbName(),
-                name + Catalog.SYSTEM_TABLE_SPLITTER + SchemasTable.SCHEMAS);
+                getBaseTableName(name) + Catalog.SYSTEM_TABLE_SPLITTER + SchemasTable.SCHEMAS);
         PredicateBuilder builder = new PredicateBuilder(table.rowType());
         Predicate predicate = builder.equal(0, key.getSchemaId());
         // Adding predicates will also return excess data
@@ -423,6 +483,15 @@ public class PaimonExternalTable extends ExternalTable implements MTMVRelatedTab
         } else {
             return getPaimonSnapshotCacheValue();
         }
+    }
+
+    private String getBaseTableName(String tableName) {
+        int index = tableName.indexOf(Catalog.SYSTEM_TABLE_SPLITTER);
+        return index > 0 ? tableName.substring(0, index) : tableName;
+    }
+
+    private boolean isSystemTableName(String tableName) {
+        return tableName.contains(Catalog.SYSTEM_TABLE_SPLITTER);
     }
 
     @Override

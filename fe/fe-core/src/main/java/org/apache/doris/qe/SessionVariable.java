@@ -19,6 +19,7 @@ package org.apache.doris.qe;
 
 import org.apache.doris.analysis.SetVar;
 import org.apache.doris.analysis.StringLiteral;
+import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
@@ -84,6 +85,7 @@ public class SessionVariable implements Serializable, Writable {
     public static final String SCANNER_SCALE_UP_RATIO = "scanner_scale_up_ratio";
     public static final String QUERY_TIMEOUT = "query_timeout";
     public static final String ANALYZE_TIMEOUT = "analyze_timeout";
+    public static final String ENABLE_GEMINI = "enable_gemini";
 
     public static final String MAX_EXECUTION_TIME = "max_execution_time";
     public static final String INSERT_TIMEOUT = "insert_timeout";
@@ -384,6 +386,21 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String ENABLE_SHARE_HASH_TABLE_FOR_BROADCAST_JOIN
             = "enable_share_hash_table_for_broadcast_join";
+    public static final String ENABLE_PAIMON_DISTRIBUTED_BUCKET_SHUFFLE =
+            "enable_paimon_distributed_bucket_shuffle";
+    public static final String ENABLE_PAIMON_DYNAMIC_PARTITION_OVERWRITE =
+            "enable_paimon_dynamic_partition_overwrite";
+    public static final String PAIMON_STREAM_READ_MODE = "paimon_stream_read_mode";
+    public static final String PAIMON_TARGET_FILE_SIZE = "paimon_target_file_size";
+    public static final String PAIMON_WRITE_BUFFER_SIZE = "paimon_write_buffer_size";
+    public static final String ENABLE_PAIMON_JNI_SPILL = "enable_paimon_jni_spill";
+    public static final String PAIMON_SPILL_MAX_DISK_SIZE = "paimon_spill_max_disk_size";
+    public static final String PAIMON_SPILL_SORT_BUFFER_SIZE = "paimon_spill_sort_buffer_size";
+    public static final String PAIMON_SPILL_SORT_THRESHOLD = "paimon_spill_sort_threshold";
+    public static final String PAIMON_SPILL_COMPRESSION = "paimon_spill_compression";
+    public static final String PAIMON_GLOBAL_MEMORY_POOL_SIZE = "paimon_global_memory_pool_size";
+    public static final String ENABLE_PAIMON_WRITE_GATHER_OPT = "enable_paimon_write_gather_opt";
+    public static final String ENABLE_PAIMON_WRITE_BATCHING = "enable_paimon_write_batching";
 
     // Optimize when probe side has no data for some hash join types
     public static final String ENABLE_HASH_JOIN_EARLY_START_PROBE = "enable_hash_join_early_start_probe";
@@ -804,6 +821,13 @@ public class SessionVariable implements Serializable, Writable {
     @VariableMgr.VarAttr(name = "runtime_filter_jump_threshold")
     public int runtimeFilterJumpThreshold = 2;
 
+    @VariableMgr.VarAttr(name = ENABLE_GEMINI, setter = "setEnableGemini", description = {
+            "是否在当前 session 启用 Gemini 鉴权（默认取 FE 配置 enable_gemini；仅 root/admin 可修改）",
+            "Whether to enable Gemini auth in current session (default from FE config enable_gemini; "
+                    + "only root/admin can set)"
+    })
+    public boolean enableGemini = Config.enable_gemini;
+
     // using hashset instead of group by + count can improve performance
     //        but may cause rpc failed when cluster has less BE
     // Whether this switch is turned on depends on the BE number
@@ -832,6 +856,51 @@ public class SessionVariable implements Serializable, Writable {
     @VariableMgr.VarAttr(name = RESOURCE_VARIABLE)
     public String resourceGroup = "";
 
+    @VariableMgr.VarAttr(name = "enable_paimon_jni_writer", needForward = true)
+    public boolean enablePaimonJniWriter = true;
+
+    @VariableMgr.VarAttr(name = "enable_paimon_jni_compact", needForward = true)
+    public boolean enablePaimonJniCompact = false;
+
+    @VariableMgr.VarAttr(name = ENABLE_PAIMON_DISTRIBUTED_BUCKET_SHUFFLE, needForward = true)
+    public boolean enablePaimonDistributedBucketShuffle = true;
+
+    @VariableMgr.VarAttr(name = ENABLE_PAIMON_DYNAMIC_PARTITION_OVERWRITE, needForward = true)
+    public boolean enablePaimonDynamicPartitionOverwrite = false;
+
+    @VariableMgr.VarAttr(name = PAIMON_STREAM_READ_MODE, needForward = true, checker = "checkPaimonStreamReadMode",
+            description = {"Paimon stream read mode: incr/full. Only takes effect for Paimon stream."})
+    public String paimonStreamReadMode = "incr";
+
+    @VariableMgr.VarAttr(name = PAIMON_TARGET_FILE_SIZE, needForward = true)
+    public long paimonTargetFileSize = 268435456L;
+
+    @VariableMgr.VarAttr(name = PAIMON_WRITE_BUFFER_SIZE, needForward = true)
+    public long paimonWriteBufferSize = 268435456L;
+
+    @VariableMgr.VarAttr(name = ENABLE_PAIMON_JNI_SPILL, needForward = true)
+    public boolean enablePaimonJniSpill = true;
+
+    @VariableMgr.VarAttr(name = PAIMON_SPILL_MAX_DISK_SIZE, needForward = true)
+    public long paimonSpillMaxDiskSize = 53687091200L; // 50GB
+
+    @VariableMgr.VarAttr(name = PAIMON_SPILL_SORT_BUFFER_SIZE, needForward = true)
+    public long paimonSpillSortBufferSize = 67108864L; // 64MB
+
+    @VariableMgr.VarAttr(name = PAIMON_SPILL_SORT_THRESHOLD, needForward = true)
+    public int paimonSpillSortThreshold = 10;
+
+    @VariableMgr.VarAttr(name = PAIMON_SPILL_COMPRESSION, needForward = true)
+    public String paimonSpillCompression = "zstd";
+
+    @VariableMgr.VarAttr(name = PAIMON_GLOBAL_MEMORY_POOL_SIZE, needForward = true)
+    public long paimonGlobalMemoryPoolSize = 1073741824L; // 1GB default
+
+    @VariableMgr.VarAttr(name = ENABLE_PAIMON_WRITE_GATHER_OPT, needForward = true)
+    public boolean enablePaimonWriteGatherOpt = false;
+
+    @VariableMgr.VarAttr(name = ENABLE_PAIMON_WRITE_BATCHING, needForward = true)
+    public boolean enablePaimonWriteBatching = false;
     // this is used to make mysql client happy
     // autocommit is actually a boolean value, but @@autocommit is type of BIGINT.
     // So we need to set convertBoolToLongMethod to make "select @@autocommit" happy.
@@ -2821,6 +2890,34 @@ public class SessionVariable implements Serializable, Writable {
         this.queryTimeoutS = newQueryTimeoutS;
     }
 
+    public void setEnableGemini(String value) throws DdlException {
+        boolean newValue;
+        if (value.equalsIgnoreCase("ON")
+                || value.equalsIgnoreCase("TRUE")
+                || value.equalsIgnoreCase("1")) {
+            newValue = true;
+        } else if (value.equalsIgnoreCase("OFF")
+                || value.equalsIgnoreCase("FALSE")
+                || value.equalsIgnoreCase("0")) {
+            newValue = false;
+        } else {
+            throw new DdlException("Invalid value for enable_gemini: " + value);
+        }
+
+        ConnectContext connectContext = ConnectContext.get();
+        if (connectContext != null) {
+            UserIdentity userIdentity = connectContext.getCurrentUserIdentity();
+            if (userIdentity != null && !userIdentity.isSystemUser()) {
+                throw new DdlException("Access denied; only root/admin can set enable_gemini");
+            }
+        }
+        this.enableGemini = newValue;
+    }
+
+    public boolean isEnableGemini() {
+        return enableGemini;
+    }
+
     public void setAnalyzeTimeoutS(int analyzeTimeoutS) {
         this.analyzeTimeoutS = analyzeTimeoutS;
     }
@@ -4552,6 +4649,24 @@ public class SessionVariable implements Serializable, Writable {
             IgnoreSplitType.valueOf(value);
         } catch (Exception e) {
             throw new UnsupportedOperationException("We only support `NONE`, `IGNORE_JNI` and `IGNORE_NATIVE`");
+        }
+    }
+
+    /**
+     * Validate session variable `paimon_stream_read_mode`.
+     *
+     * Allowed values:
+     * - incr: incremental read for paimon stream (default)
+     * - full: full read for paimon stream
+     */
+    public void checkPaimonStreamReadMode(String value) {
+        if (Strings.isNullOrEmpty(value)) {
+            throw new UnsupportedOperationException(
+                    "paimon_stream_read_mode can not be empty, only support `incr` or `full`");
+        }
+        String v = value.trim().toLowerCase(Locale.ROOT);
+        if (!"incr".equals(v) && !"full".equals(v)) {
+            throw new UnsupportedOperationException("paimon_stream_read_mode only support `incr` or `full`");
         }
     }
 
