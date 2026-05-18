@@ -46,6 +46,7 @@
 #include "util/runtime_profile.h"
 #include "util/slice.h"
 #include "vec/columns/column.h"
+#include "vec/columns/column_string.h"
 #include "vec/common/schema_util.h"
 #include "vec/core/block.h"
 #include "vec/core/column_with_type_and_name.h"
@@ -221,6 +222,9 @@ private:
 
     uint32_t segment_id() const { return _segment->id(); }
     uint32_t num_rows() const { return _segment->num_rows(); }
+    bool _is_row_store_only_segment() const {
+        return _segment->tablet_schema() != nullptr && _segment->tablet_schema()->row_store_only();
+    }
 
     [[nodiscard]] Status _seek_columns(const std::vector<ColumnId>& column_ids, rowid_t pos);
     // read `nrows` of columns specified by `column_ids` into `block` at `row_offset`.
@@ -229,6 +233,11 @@ private:
                                        vectorized::MutableColumns& column_block, size_t nrows);
     [[nodiscard]] Status _read_columns_by_index(uint32_t nrows_read_limit, uint32_t& nrows_read,
                                                 bool set_block_rowid);
+    [[nodiscard]] Status _read_columns_from_row_store_by_index(uint32_t nrows_read_limit,
+                                                               uint32_t& nrows_read);
+    [[nodiscard]] Status _deserialize_row_store_column(
+            const vectorized::ColumnString& row_store_column,
+            const std::vector<ColumnId>& read_column_ids);
     void _replace_version_col(size_t num_rows);
     Status _init_current_block(vectorized::Block* block,
                                std::vector<vectorized::MutableColumnPtr>& non_pred_vector,
