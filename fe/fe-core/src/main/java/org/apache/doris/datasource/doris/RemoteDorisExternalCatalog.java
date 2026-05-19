@@ -34,6 +34,7 @@ import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class RemoteDorisExternalCatalog extends ExternalCatalog {
@@ -240,5 +241,9 @@ public class RemoteDorisExternalCatalog extends ExternalCatalog {
 
     private List<String> parseArrowHosts(String hosts) {
         return Arrays.asList(hosts.trim().split(","));
+    }
+
+    public static String getCatalogType() {
+        return InitCatalogLog.Type.REMOTE_DORIS.name().toLowerCase(Locale.ROOT);
     }
 }

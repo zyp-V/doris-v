@@ -21,6 +21,7 @@ import org.apache.doris.analysis.BackupStmt.BackupContent;
 import org.apache.doris.analysis.PartitionNames;
 import org.apache.doris.analysis.TableRef;
 import org.apache.doris.backup.RestoreFileMapping.IdChain;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MaterializedIndex;
 import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
 import org.apache.doris.catalog.OdbcCatalogResource;
@@ -37,6 +38,8 @@ import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.Version;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
+import org.apache.doris.datasource.CatalogIf;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
 import org.apache.doris.persist.gson.GsonUtils;
 import org.apache.doris.thrift.TNetworkAddress;
 
@@ -62,6 +65,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /*
@@ -332,6 +336,9 @@ public class BackupJobInfo implements Writable {
         @SerializedName("odbc_resource_list")
         public List<BackupOdbcResourceInfo> odbcResourceList = Lists.newArrayList();
 
+        @SerializedName("doris_catalog_list")
+        public List<BackupDorisCatalogInfo> dorisCatalogList = Lists.newArrayList();
+
         public static BriefBackupJobInfo fromBackupJobInfo(BackupJobInfo backupJobInfo) {
             BriefBackupJobInfo briefBackupJobInfo = new BriefBackupJobInfo();
             briefBackupJobInfo.name = backupJobInfo.name;
@@ -348,6 +355,7 @@ public class BackupJobInfo implements Writable {
             briefBackupJobInfo.viewList = backupJobInfo.newBackupObjects.views;
             briefBackupJobInfo.odbcTableList = backupJobInfo.newBackupObjects.odbcTables;
             briefBackupJobInfo.odbcResourceList = backupJobInfo.newBackupObjects.odbcResources;
+            briefBackupJobInfo.dorisCatalogList = backupJobInfo.newBackupObjects.dorisCatalogs;
             return briefBackupJobInfo;
         }
     }
@@ -366,6 +374,25 @@ public class BackupJobInfo implements Writable {
         public List<BackupOdbcTableInfo> odbcTables = Lists.newArrayList();
         @SerializedName("odbc_resources")
         public List<BackupOdbcResourceInfo> odbcResources = Lists.newArrayList();
+
+        // External catalog objects for doris type.
+        // Used to restore external doris catalog definitions (e.g. CREATE CATALOG ... PROPERTIES(type=doris,...)).
+        @SerializedName("doris_catalogs")
+        public List<BackupDorisCatalogInfo> dorisCatalogs = Lists.newArrayList();
+    }
+
+    public static class BackupDorisCatalogInfo {
+        @SerializedName("name")
+        public String name;
+
+        @SerializedName("resource")
+        public String resource;
+
+        @SerializedName("comment")
+        public String comment;
+
+        @SerializedName("properties")
+        public Map<String, String> properties;
     }
 
     public static class BackupOlapTableInfo {
@@ -683,6 +710,21 @@ public class BackupJobInfo implements Writable {
                 backupOdbcResourceInfo.name = odbcCatalogResource.getName();
                 jobInfo.newBackupObjects.odbcResources.add(backupOdbcResourceInfo);
             }
+        }
+
+        // external doris catalogs
+        // NOTE: backup/restore job is database-scoped, but external catalogs are global objects.
+        // Here we persist doris external catalog definitions to allow restoring them together.
+        for (CatalogIf catalog : Env.getCurrentEnv().getCatalogMgr().listCatalogs()) {
+            if (!RemoteDorisExternalCatalog.getCatalogType().equalsIgnoreCase(catalog.getType())) {
+                continue;
+            }
+            BackupDorisCatalogInfo info = new BackupDorisCatalogInfo();
+            info.name = catalog.getName();
+            info.resource = Objects.toString(catalog.getResource(), "");
+            info.comment = Objects.toString(catalog.getComment(), "");
+            info.properties = Maps.newHashMap(catalog.getProperties());
+            jobInfo.newBackupObjects.dorisCatalogs.add(info);
         }
 
         return jobInfo;

@@ -65,8 +65,13 @@ import org.apache.doris.common.util.DebugPointUtil;
 import org.apache.doris.common.util.DynamicPartitionUtil;
 import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.common.util.TimeUtils;
+import org.apache.doris.datasource.CatalogIf;
+import org.apache.doris.datasource.CatalogLog;
 import org.apache.doris.datasource.InternalCatalog;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
 import org.apache.doris.datasource.property.S3ClientBEProperties;
+import org.apache.doris.datasource.property.constants.RemoteDorisProperties;
+import org.apache.doris.persist.OperationType;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentBoundedBatchTask;
@@ -111,6 +116,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -125,6 +132,10 @@ public class RestoreJob extends AbstractJob {
     private static final String PROP_ATOMIC_RESTORE = RestoreStmt.PROP_ATOMIC_RESTORE;
     private static final String PROP_FORCE_REPLACE = RestoreStmt.PROP_FORCE_REPLACE;
     private static final String ATOMIC_RESTORE_TABLE_PREFIX = "__doris_atomic_restore_prefix__";
+
+    // Internal property used to record created external doris catalogs during restore.
+    // Format: comma-separated catalog ids.
+    private static final String PROP_CREATED_DORIS_CATALOG_IDS = "__created_doris_catalog_ids";
 
     private static final Logger LOG = LogManager.getLogger(RestoreJob.class);
 
@@ -971,6 +982,12 @@ public class RestoreJob extends AbstractJob {
             db.readUnlock();
         }
 
+        // check and restore external doris catalogs
+        checkAndRestoreDorisCatalogs();
+        if (!status.ok()) {
+            return;
+        }
+
         // check and restore resources
         checkAndRestoreResources();
         if (!status.ok()) {
@@ -1085,11 +1102,11 @@ public class RestoreJob extends AbstractJob {
                 localTbl.writeUnlock();
             }
         }
-
         // add restored tables
         for (Table tbl : restoredTbls) {
             if (!db.writeLockIfExist()) {
-                status = new Status(ErrCode.COMMON_ERROR, "Database " + db.getFullName() + " has been dropped");
+                status = new Status(ErrCode.COMMON_ERROR, "Database " + db.getFullName()
+                        + " has been dropped");
                 return;
             }
             tbl.writeLock();
@@ -1252,6 +1269,62 @@ public class RestoreJob extends AbstractJob {
         LOG.info("finished to send snapshot tasks, num: {}. {}", batchTask.getTaskNum(), this);
     }
 
+    private void checkAndRestoreDorisCatalogs() {
+        if (jobInfo == null || jobInfo.newBackupObjects == null
+                || jobInfo.newBackupObjects.dorisCatalogs == null
+                || jobInfo.newBackupObjects.dorisCatalogs.isEmpty()) {
+            return;
+        }
+
+        for (BackupJobInfo.BackupDorisCatalogInfo dorisCatalogInfo : jobInfo.newBackupObjects.dorisCatalogs) {
+            if (dorisCatalogInfo == null || dorisCatalogInfo.name == null || dorisCatalogInfo.name.isEmpty()) {
+                continue;
+            }
+
+            String catalogName = dorisCatalogInfo.name;
+            String remoteResource = dorisCatalogInfo.resource == null ? "" : dorisCatalogInfo.resource;
+            String remoteComment = dorisCatalogInfo.comment == null ? "" : dorisCatalogInfo.comment;
+            Map<String, String> remoteProps = dorisCatalogInfo.properties == null
+                    ? Maps.newHashMap()
+                    : Maps.newHashMap(dorisCatalogInfo.properties);
+            // Ensure type is present for catalog construction.
+            remoteProps.putIfAbsent("type", "doris");
+
+            try {
+                CatalogLog createLog = new CatalogLog();
+                createLog.setCatalogName(catalogName);
+                createLog.setResource(remoteResource);
+                createLog.setComment(remoteComment);
+
+                // restore property for catalog sync from 1.2.8
+                if (Config.restore_catalog_from_old_version && remoteProps.get(RemoteDorisProperties.FE_PSM) != null) {
+                    String psm = remoteProps.get(RemoteDorisProperties.FE_PSM);
+                    Pattern pattern = Pattern.compile("(_)(emr_[^_]+|[^_]+)(_http)");
+                    Matcher m = pattern.matcher(psm);
+                    String newPsm = m.find() ? m.replaceFirst("$121_$2$3") : psm;
+                    remoteProps.put(RemoteDorisProperties.FE_PSM, newPsm);
+                    LOG.info("old psm is:{}, new psm is:{}", psm, newPsm);
+                }
+                createLog.setProps(remoteProps);
+
+                boolean created = env.getCatalogMgr().createDorisCatalogForRestoreIfAbsent(createLog);
+                if (created) {
+                    // Record created catalog ids for rollback.
+                    String existing = properties.getOrDefault(PROP_CREATED_DORIS_CATALOG_IDS, "");
+                    if (existing.isEmpty()) {
+                        properties.put(PROP_CREATED_DORIS_CATALOG_IDS, String.valueOf(createLog.getCatalogId()));
+                    } else {
+                        properties.put(PROP_CREATED_DORIS_CATALOG_IDS,
+                                existing + "," + createLog.getCatalogId());
+                    }
+                }
+            } catch (DdlException e) {
+                status = new Status(ErrCode.COMMON_ERROR, e.getMessage());
+                return;
+            }
+        }
+    }
+
     private void checkAndRestoreResources() {
         ResourceMgr resourceMgr = Env.getCurrentEnv().getResourceMgr();
         for (BackupJobInfo.BackupOdbcResourceInfo backupOdbcResourceInfo : jobInfo.newBackupObjects.odbcResources) {
@@ -1283,6 +1356,46 @@ public class RestoreJob extends AbstractJob {
                 restoredResources.add(remoteOdbcResource);
             }
         }
+    }
+
+    private void dropCreatedDorisCatalogsIfAny(boolean isReplay) {
+        String createdIds = properties.get(PROP_CREATED_DORIS_CATALOG_IDS);
+        if (createdIds == null || createdIds.isEmpty()) {
+            return;
+        }
+
+        for (String idStr : createdIds.split(",")) {
+            if (idStr == null || idStr.trim().isEmpty()) {
+                continue;
+            }
+            long id;
+            try {
+                id = Long.parseLong(idStr.trim());
+            } catch (NumberFormatException e) {
+                continue;
+            }
+
+            CatalogIf catalog = env.getCatalogMgr().getCatalog(id);
+            if (catalog == null) {
+                continue;
+            }
+            if (!RemoteDorisExternalCatalog.getCatalogType().equalsIgnoreCase(catalog.getType())) {
+                continue;
+            }
+
+            try {
+                CatalogLog dropLog = new CatalogLog();
+                dropLog.setCatalogId(id);
+                env.getCatalogMgr().replayDropCatalog(dropLog);
+                if (!isReplay) {
+                    env.getEditLog().logCatalogLog(OperationType.OP_DROP_CATALOG, dropLog);
+                }
+                LOG.info("remove restored doris catalog when cancelled: {}, id={}", catalog.getName(), id);
+            } catch (Exception e) {
+                LOG.warn("failed to remove restored doris catalog when cancelled: id={}", id, e);
+            }
+        }
+        properties.remove(PROP_CREATED_DORIS_CATALOG_IDS);
     }
 
     private boolean genFileMappingWhenBackupReplicasEqual(PartitionInfo localPartInfo, Partition localPartition,
@@ -2371,6 +2484,9 @@ public class RestoreJob extends AbstractJob {
                 resourceMgr.dropResource(resource);
             }
         }
+
+        // remove restored external doris catalogs (global objects)
+        dropCreatedDorisCatalogsIfAny(isReplay);
 
         if (!isReplay) {
             // backupMeta is useless

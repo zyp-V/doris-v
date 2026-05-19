@@ -36,10 +36,14 @@ import org.apache.doris.catalog.Resource;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.Tablet;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.MarkedCountDownLatch;
 import org.apache.doris.common.jmockit.Deencapsulation;
+import org.apache.doris.datasource.CatalogLog;
+import org.apache.doris.datasource.CatalogMgr;
 import org.apache.doris.datasource.InternalCatalog;
+import org.apache.doris.datasource.property.constants.RemoteDorisProperties;
 import org.apache.doris.fs.FileSystemFactory;
 import org.apache.doris.persist.EditLog;
 import org.apache.doris.resource.Tag;
@@ -81,6 +85,9 @@ public class RestoreJobTest {
     private Env env;
     @Mocked
     private InternalCatalog catalog;
+
+    @Mocked
+    private CatalogMgr catalogMgr;
 
     private MockBackupHandler backupHandler;
 
@@ -134,6 +141,10 @@ public class RestoreJobTest {
                 env.getInternalCatalog();
                 minTimes = 0;
                 result = catalog;
+
+                env.getCatalogMgr();
+                minTimes = 0;
+                result = catalogMgr;
 
                 catalog.getDbNullable(anyLong);
                 minTimes = 0;
@@ -303,5 +314,133 @@ public class RestoreJobTest {
         Partition localPart = remoteTbl.getPartition(partName);
         Assert.assertEquals(localPart.getVisibleVersion(), visibleVersion);
         Assert.assertEquals(localPart.getNextVersion(), visibleVersion + 1);
+    }
+
+
+    @Test
+    public void testRestoreDorisCatalogRecordRollbackIdWhenCreated() throws Exception {
+        BackupJobInfo.BackupDorisCatalogInfo dorisCatalogInfo = new BackupJobInfo.BackupDorisCatalogInfo();
+        dorisCatalogInfo.name = "DorisRemotePerf";
+        dorisCatalogInfo.resource = "";
+        dorisCatalogInfo.properties = Maps.newHashMap();
+        dorisCatalogInfo.properties.put("type", "doris");
+        dorisCatalogInfo.properties.put("user", "root");
+        dorisCatalogInfo.properties.put("password", "*XXX");
+        dorisCatalogInfo.properties.put("port", "9020");
+        jobInfo.newBackupObjects.dorisCatalogs.add(dorisCatalogInfo);
+
+        new Expectations() {
+            {
+                catalogMgr.createDorisCatalogForRestoreIfAbsent((CatalogLog) any);
+                result = new Delegate() {
+                    boolean createDorisCatalogForRestoreIfAbsent(CatalogLog log) {
+                        log.setCatalogId(60001L);
+                        return true;
+                    }
+                };
+                times = 1;
+            }
+        };
+
+        Deencapsulation.invoke(job, "checkAndRestoreDorisCatalogs");
+
+        Map<String, String> props = Deencapsulation.getField(job, "properties");
+        Assert.assertEquals("60001", props.get("__created_doris_catalog_ids"));
+    }
+
+    @Test
+    public void testRestoreDorisCatalogNoRollbackIdWhenAlreadyExists() throws Exception {
+        BackupJobInfo.BackupDorisCatalogInfo dorisCatalogInfo = new BackupJobInfo.BackupDorisCatalogInfo();
+        dorisCatalogInfo.name = "DorisRemotePerf";
+        dorisCatalogInfo.resource = "";
+        dorisCatalogInfo.properties = Maps.newHashMap();
+        dorisCatalogInfo.properties.put("type", "doris");
+        dorisCatalogInfo.properties.put("user", "root");
+        dorisCatalogInfo.properties.put("password", "*XXX");
+        dorisCatalogInfo.properties.put("port", "9020");
+        jobInfo.newBackupObjects.dorisCatalogs.add(dorisCatalogInfo);
+
+        new Expectations() {
+            {
+                catalogMgr.createDorisCatalogForRestoreIfAbsent((CatalogLog) any);
+                result = false;
+                times = 1;
+            }
+        };
+
+        Deencapsulation.invoke(job, "checkAndRestoreDorisCatalogs");
+
+        Map<String, String> props = Deencapsulation.getField(job, "properties");
+        Assert.assertFalse(props.containsKey("__created_doris_catalog_ids"));
+    }
+
+    @Test
+    public void testRestoreDorisCatalogRewritePsmWhenRestoreFromOldVersion() throws Exception {
+        BackupJobInfo.BackupDorisCatalogInfo dorisCatalogInfo = new BackupJobInfo.BackupDorisCatalogInfo();
+        dorisCatalogInfo.name = "DorisRemotePerf";
+        dorisCatalogInfo.resource = "";
+        dorisCatalogInfo.properties = Maps.newHashMap();
+        dorisCatalogInfo.properties.put("user", "root");
+        dorisCatalogInfo.properties.put(RemoteDorisProperties.FE_PSM, "toutiao_doris_emr_lf_http");
+        jobInfo.newBackupObjects.dorisCatalogs.add(dorisCatalogInfo);
+
+        final CatalogLog[] capturedLog = new CatalogLog[1];
+        new Expectations() {
+            {
+                catalogMgr.createDorisCatalogForRestoreIfAbsent((CatalogLog) any);
+                result = new Delegate() {
+                    boolean createDorisCatalogForRestoreIfAbsent(CatalogLog log) {
+                        capturedLog[0] = log;
+                        return false;
+                    }
+                };
+                times = 1;
+            }
+        };
+
+        Config.restore_catalog_from_old_version = true;
+        try {
+            Deencapsulation.invoke(job, "checkAndRestoreDorisCatalogs");
+        } finally {
+            Config.restore_catalog_from_old_version = false;
+        }
+
+        Assert.assertNotNull(capturedLog[0]);
+        Assert.assertEquals("toutiao_doris_21_emr_lf_http",
+                capturedLog[0].getProps().get(RemoteDorisProperties.FE_PSM));
+        Assert.assertEquals("doris", capturedLog[0].getProps().get("type"));
+    }
+
+    @Test
+    public void testRestoreDorisCatalogKeepPsmWhenNotRestoreFromOldVersion() throws Exception {
+        BackupJobInfo.BackupDorisCatalogInfo dorisCatalogInfo = new BackupJobInfo.BackupDorisCatalogInfo();
+        dorisCatalogInfo.name = "DorisRemotePerf";
+        dorisCatalogInfo.resource = "";
+        dorisCatalogInfo.properties = Maps.newHashMap();
+        dorisCatalogInfo.properties.put("user", "root");
+        dorisCatalogInfo.properties.put(RemoteDorisProperties.FE_PSM, "toutiao_doris_emr_test_http");
+        jobInfo.newBackupObjects.dorisCatalogs.add(dorisCatalogInfo);
+
+        final CatalogLog[] capturedLog = new CatalogLog[1];
+        new Expectations() {
+            {
+                catalogMgr.createDorisCatalogForRestoreIfAbsent((CatalogLog) any);
+                result = new Delegate() {
+                    boolean createDorisCatalogForRestoreIfAbsent(CatalogLog log) {
+                        capturedLog[0] = log;
+                        return false;
+                    }
+                };
+                times = 1;
+            }
+        };
+
+        Config.restore_catalog_from_old_version = false;
+        Deencapsulation.invoke(job, "checkAndRestoreDorisCatalogs");
+
+        Assert.assertNotNull(capturedLog[0]);
+        Assert.assertEquals("toutiao_doris_emr_test_http",
+                capturedLog[0].getProps().get(RemoteDorisProperties.FE_PSM));
+        Assert.assertEquals("doris", capturedLog[0].getProps().get("type"));
     }
 }

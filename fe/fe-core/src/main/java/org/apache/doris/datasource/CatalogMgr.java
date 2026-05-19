@@ -47,6 +47,7 @@ import org.apache.doris.common.lock.MonitoredReentrantReadWriteLock;
 import org.apache.doris.common.util.PrintableMap;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.common.util.Util;
+import org.apache.doris.datasource.doris.RemoteDorisExternalCatalog;
 import org.apache.doris.datasource.hive.HMSExternalCatalog;
 import org.apache.doris.datasource.hive.HMSExternalDatabase;
 import org.apache.doris.datasource.hive.HMSExternalTable;
@@ -71,6 +72,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -252,6 +254,78 @@ public class CatalogMgr implements Writable, GsonPostProcessable {
             }
             createCatalogInternal(catalog, false);
             Env.getCurrentEnv().getEditLog().logCatalogLog(OperationType.OP_CREATE_CATALOG, catalog.constructEditLog());
+        } finally {
+            writeUnlock();
+        }
+    }
+
+    private static Map<String, String> normalizeCatalogPropsForCompare(Map<String, String> props) {
+        if (props == null) {
+            return Maps.newHashMap();
+        }
+        Map<String, String> normalized = Maps.newHashMap(props);
+        normalized.remove(ExternalCatalog.USE_META_CACHE);
+        return normalized;
+    }
+
+    /**
+     * Create doris external catalog for restore job.
+     *
+     * <p>Restore jobs are database-scoped, but external catalogs are global objects.
+     * If multiple restore jobs run concurrently, the caller-side pre-check can race.
+     * This method performs "check-exist-and-validate" + "create-and-log" atomically under CatalogMgr lock
+     * to avoid duplicated creations.</p>
+     *
+     * @param log catalog create log. It will be filled with catalogId if created.
+     * @return true if created, false if already existed.
+     */
+    public boolean createDorisCatalogForRestoreIfAbsent(CatalogLog log) throws DdlException {
+        writeLock();
+        try {
+            String catalogName = log.getCatalogName();
+            CatalogIf existed = nameToCatalog.get(catalogName);
+            if (existed != null) {
+                if (!existed.getType().equals(RemoteDorisExternalCatalog.getCatalogType())) {
+                    throw new DdlException("The local catalog " + catalogName
+                            + " exists but its type is not doris: " + existed.getType());
+                }
+                String existedResource = Objects.toString(existed.getResource(), "");
+                String remoteResource = Objects.toString(log.getResource(), "");
+                String existedComment = Objects.toString(existed.getComment(), "");
+                String remoteComment = Objects.toString(log.getComment(), "");
+                if (!Objects.equals(existedResource, remoteResource)
+                        || !Objects.equals(existedComment, remoteComment)
+                        || !Objects.equals(normalizeCatalogPropsForCompare(existed.getProperties()),
+                                normalizeCatalogPropsForCompare(log.getProps()))) {
+                    LOG.error("Doris catalog:{} already exists but with different properties.", catalogName);
+                }
+                return false;
+            }
+
+            long id = Env.getCurrentEnv().getNextId();
+            log.setCatalogId(id);
+
+            // Restore creates a brand-new global object (catalog), not replaying existing FE meta.
+            // CatalogFactory.createFromLog() uses replay semantics (isReplay=true), which will default
+            // `use_meta_cache` to false when missing for compatibility with old meta.
+            // For restore-created catalogs, we want the same default behavior as normal CREATE CATALOG.
+            Map<String, String> props = log.getProps();
+            if (props == null) {
+                props = Maps.newHashMap();
+                log.setProps(props);
+            }
+            String useMetaCache = props.get(ExternalCatalog.USE_META_CACHE);
+            if (Strings.isNullOrEmpty(useMetaCache)) {
+                props.put(ExternalCatalog.USE_META_CACHE, String.valueOf(ExternalCatalog.DEFAULT_USE_META_CACHE));
+            }
+
+            CatalogIf catalog = CatalogFactory.createFromLog(log);
+            if (catalog instanceof ExternalCatalog) {
+                ((ExternalCatalog) catalog).checkProperties();
+            }
+            addCatalog(catalog);
+            Env.getCurrentEnv().getEditLog().logCatalogLog(OperationType.OP_CREATE_CATALOG, log);
+            return true;
         } finally {
             writeUnlock();
         }

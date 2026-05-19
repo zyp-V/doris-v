@@ -1642,6 +1642,9 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true, masterOnly = true)
     public static boolean restore_reset_index_id = false;
 
+    @ConfField(mutable = true, masterOnly = true)
+    public static boolean restore_catalog_from_old_version = false;
+
     /**
      * Control the max num of tablets per backup job involved.
      */

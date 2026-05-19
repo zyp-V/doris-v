@@ -157,6 +157,10 @@ public class BackupJobTest {
                 minTimes = 0;
                 result = catalog;
 
+                catalog.getName();
+                minTimes = 0;
+                result = InternalCatalog.INTERNAL_CATALOG_NAME;
+
                 catalog.getDbNullable(anyLong);
                 minTimes = 0;
                 result = db;

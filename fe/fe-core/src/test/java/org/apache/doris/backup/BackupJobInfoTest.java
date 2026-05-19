@@ -120,6 +120,17 @@ public class BackupJobInfoTest {
                 + "        \"views\":[{\n"
                 + "            \"name\": \"view1\",\n"
                 + "            \"id\": \"10006\"\n"
+                + "        }],\n"
+                + "        \"doris_catalogs\":[{\n"
+                + "            \"name\": \"DorisRemotePerf\",\n"
+                + "            \"resource\": \"\",\n"
+                + "            \"properties\": {\n"
+                + "                \"type\": \"doris\",\n"
+                + "                \"user\": \"root\",\n"
+                + "                \"password\": \"*XXX\",\n"
+                + "                \"psm\": \"olap.doris.doris_perf_cluster_hl2_http.service.yg\",\n"
+                + "                \"port\": \"9020\"\n"
+                + "            }\n"
                 + "        }]\n"
                 + "    }\n"
                 + "}";
@@ -166,6 +177,9 @@ public class BackupJobInfoTest {
         Assert.assertEquals(1, jobInfo.newBackupObjects.views.size());
         Assert.assertEquals("view1", jobInfo.newBackupObjects.views.get(0).name);
 
+        Assert.assertEquals(1, jobInfo.newBackupObjects.dorisCatalogs.size());
+        Assert.assertEquals("DorisRemotePerf", jobInfo.newBackupObjects.dorisCatalogs.get(0).name);
+
         File tmpFile = new File("./tmp");
         File tmpFile1 = new File("./tmp1");
         try {
@@ -184,6 +198,9 @@ public class BackupJobInfoTest {
 
             Assert.assertEquals(jobInfo.newBackupObjects.views.size(), newInfo.newBackupObjects.views.size());
             Assert.assertEquals("view1", newInfo.newBackupObjects.views.get(0).name);
+
+            Assert.assertEquals(jobInfo.newBackupObjects.dorisCatalogs.size(), newInfo.newBackupObjects.dorisCatalogs.size());
+            Assert.assertEquals("DorisRemotePerf", newInfo.newBackupObjects.dorisCatalogs.get(0).name);
 
             out = new DataOutputStream(new FileOutputStream(tmpFile1));
             newInfo.write(out);
