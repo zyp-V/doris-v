@@ -41,6 +41,7 @@ import org.apache.doris.common.Reference;
 import org.apache.doris.common.TableAliasGenerator;
 import org.apache.doris.common.TreeNode;
 import org.apache.doris.common.UserException;
+import org.apache.doris.common.util.RowStoreOnlyUtil;
 import org.apache.doris.common.util.SqlUtils;
 import org.apache.doris.common.util.ToSqlContext;
 import org.apache.doris.mysql.privilege.PrivPredicate;
@@ -719,6 +720,9 @@ public class SelectStmt extends QueryStmt {
             }
         }
         analyzeAggregation(analyzer);
+        if (RowStoreOnlyUtil.shouldBlockComplexQuery(this)) {
+            throw new AnalysisException(RowStoreOnlyUtil.ROW_STORE_ONLY_COMPLEX_QUERY_ERROR_MSG);
+        }
         createAnalyticInfo(analyzer);
         eliminatingSortNode();
         checkAndSetPointQuery();

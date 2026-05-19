@@ -484,6 +484,10 @@ Status LinkedSchemaChange::process(RowsetReaderSharedPtr rowset_reader, RowsetWr
         LOG(INFO) << "the type of rowset " << rowset_reader->rowset()->rowset_id()
                   << " in base tablet is not same as type " << rowset_writer->type()
                   << ", use direct schema change.";
+        if (base_tablet_schema->row_store_only() || new_tablet_schema->row_store_only()) {
+            return Status::Error<SCHEMA_SCHEMA_INVALID>(
+                    "row_store_only table only supports linked schema change");
+        }
         return SchemaChangeHandler::get_sc_procedure(_changer, false, true)
                 ->process(rowset_reader, rowset_writer, new_tablet, base_tablet, base_tablet_schema,
                           new_tablet_schema);
@@ -819,11 +823,8 @@ Status SchemaChangeHandler::_do_process_alter_tablet_v2(const TAlterTabletReqV2&
     // dropped column during light weight schema change.
     // But the tablet schema in base tablet maybe not the latest from FE, so that if fe pass through
     // a tablet schema, then use request schema.
-    size_t num_cols = request.columns.empty() ? base_tablet->tablet_schema()->num_columns()
-                                              : request.columns.size();
-    return_columns.resize(num_cols);
-    for (int i = 0; i < num_cols; ++i) {
-        return_columns[i] = i;
+    for (int i = 0; i < base_tablet_schema->num_columns(); ++i) {
+        return_columns.push_back(i);
     }
 
     DBUG_EXECUTE_IF("SchemaChangeJob::_do_process_alter_tablet.block", DBUG_BLOCK);
@@ -1229,12 +1230,29 @@ Status SchemaChangeHandler::_parse_request(const SchemaChangeParams& sc_params,
     DescriptorTbl desc_tbl = *sc_params.desc_tbl;
     TabletSchemaSPtr new_tablet_schema = sc_params.new_tablet_schema;
 
+    const bool has_row_store_only = base_tablet_schema->row_store_only() ||
+                                    new_tablet_schema->row_store_only();
+    if (base_tablet_schema->row_store_only() != new_tablet_schema->row_store_only()) {
+        return Status::Error<SCHEMA_SCHEMA_INVALID>(
+                "row_store_only layout conversion is not supported by schema change");
+    }
+
     // set column mapping
     for (int i = 0, new_schema_size = new_tablet_schema->num_columns(); i < new_schema_size; ++i) {
         const TabletColumn& new_column = new_tablet_schema->column(i);
         const std::string& column_name_lower = to_lower(new_column.name());
         ColumnMapping* column_mapping = changer->get_mutable_column_mapping(i);
         column_mapping->new_column = &new_column;
+
+        if (new_column.is_row_store_column()) {
+            // The row-store column is a physical column rebuilt by SegmentWriter when writing the
+            // new rowset. Do not copy it from the old rowset, because the old rowset may be a
+            // non-row_store_only layout or may contain row-store JSONB encoded with the old schema.
+            column_mapping->ref_column_idx = -1;
+            RETURN_IF_ERROR(_init_column_mapping(column_mapping, new_column,
+                                                 new_column.default_value()));
+            continue;
+        }
 
         column_mapping->ref_column_idx = base_tablet_schema->field_index(new_column.name());
 
@@ -1377,6 +1395,11 @@ Status SchemaChangeHandler::_parse_request(const SchemaChangeParams& sc_params,
                 break;
             }
         }
+    }
+
+    if (has_row_store_only && (*sc_directly || *sc_sorting)) {
+        return Status::Error<SCHEMA_SCHEMA_INVALID>(
+                "row_store_only table only supports linked schema change");
     }
 
     return Status::OK();

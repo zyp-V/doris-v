@@ -214,6 +214,12 @@ bool Compaction::should_vertical_compaction() {
     if (!config::enable_vertical_compaction) {
         return false;
     }
+    // row_store_only rowsets only persist __DORIS_ROW_STORE_COL__ and the PK index.
+    // Vertical compaction splits key/value columns into separate groups, which cannot safely
+    // rebuild the row-store column from a full logical row. Use the normal merge path instead.
+    if (_cur_tablet_schema != nullptr && _cur_tablet_schema->row_store_only()) {
+        return false;
+    }
     return true;
 }
 

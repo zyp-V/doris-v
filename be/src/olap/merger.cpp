@@ -93,12 +93,24 @@ Status Merger::vmerge_rowsets(TabletSharedPtr tablet, ReaderType reader_type,
         stats_output->rowid_conversion->set_dst_rowset_id(dst_rowset_writer->rowset_id());
     }
 
-    reader_params.return_columns.resize(cur_tablet_schema->num_columns());
-    std::iota(reader_params.return_columns.begin(), reader_params.return_columns.end(), 0);
-    reader_params.origin_return_columns = &reader_params.return_columns;
+    std::vector<uint32_t> origin_return_columns(cur_tablet_schema->num_columns());
+    std::iota(origin_return_columns.begin(), origin_return_columns.end(), 0);
+    reader_params.return_columns = origin_return_columns;
+    if (cur_tablet_schema->row_store_only()) {
+        // The output row-store column is rebuilt by SegmentWriter::append_block(). Reading it from
+        // input rowsets is unnecessary and unsafe for schema-version mixing, because old rowsets may
+        // not physically contain __DORIS_ROW_STORE_COL__ while the merged target schema does.
+        reader_params.return_columns.erase(
+                std::remove_if(reader_params.return_columns.begin(), reader_params.return_columns.end(),
+                               [cur_tablet_schema](uint32_t cid) {
+                                   return cur_tablet_schema->column(cid).is_row_store_column();
+                               }),
+                reader_params.return_columns.end());
+    }
+    reader_params.origin_return_columns = &origin_return_columns;
     RETURN_IF_ERROR(reader.init(reader_params));
 
-    vectorized::Block block = cur_tablet_schema->create_block(reader_params.return_columns);
+    vectorized::Block block = cur_tablet_schema->create_block(origin_return_columns);
     size_t output_rows = 0;
     bool eof = false;
     while (!eof && !StorageEngine::instance()->stopped()) {

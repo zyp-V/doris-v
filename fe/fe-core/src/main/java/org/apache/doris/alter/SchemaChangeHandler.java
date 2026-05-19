@@ -2083,6 +2083,10 @@ public class SchemaChangeHandler extends AlterHandler {
                         lightIndexChange, buildIndexChange, indexSchemaMap);
             }
 
+            if (olapTable.rowStoreOnly() && !lightSchemaChange) {
+                throw new DdlException("row_store_only table only supports light schema change");
+            }
+
             if (lightSchemaChange) {
                 long jobId = Env.getCurrentEnv().getNextId();
                 //for schema change add/drop value column optimize, direct modify table meta.

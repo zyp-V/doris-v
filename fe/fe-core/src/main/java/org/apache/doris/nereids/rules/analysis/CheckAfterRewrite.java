@@ -18,7 +18,9 @@
 package org.apache.doris.nereids.rules.analysis;
 
 import org.apache.doris.catalog.Type;
+import org.apache.doris.common.util.RowStoreOnlyUtil;
 import org.apache.doris.nereids.exceptions.AnalysisException;
+import org.apache.doris.nereids.exceptions.DoNotFallbackException;
 import org.apache.doris.nereids.rules.Rule;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.trees.expressions.Alias;
@@ -66,8 +68,15 @@ public class CheckAfterRewrite extends OneAnalysisRuleFactory {
             checkUnexpectedExpression(plan);
             checkMetricTypeIsUsedCorrectly(plan);
             checkMatchIsUsedCorrectly(plan);
+            checkRowStoreOnlyComplexQuery(plan);
             return null;
         }).toRule(RuleType.CHECK_ANALYSIS);
+    }
+
+    private void checkRowStoreOnlyComplexQuery(Plan plan) {
+        if (RowStoreOnlyUtil.shouldBlockComplexQuery(plan)) {
+            throw new DoNotFallbackException(RowStoreOnlyUtil.ROW_STORE_ONLY_COMPLEX_QUERY_ERROR_MSG);
+        }
     }
 
     private void checkUnexpectedExpression(Plan plan) {

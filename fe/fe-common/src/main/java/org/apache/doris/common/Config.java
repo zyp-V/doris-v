@@ -551,6 +551,12 @@ public class Config extends ConfigBase {
             "The timeout of RPC for high concurrenty short circuit query"})
     public static int point_query_timeout_ms = 10000; // 10s
 
+    @ConfField(mutable = true, masterOnly = false, description = {
+            "是否在 FE 侧禁止 row_store_only 表执行复杂查询。开启后，涉及 row_store_only 表且包含聚合或 Join 的查询会被拒绝。",
+            "Whether to block complex queries on row_store_only tables in FE. If enabled, queries involving "
+                    + "row_store_only tables with aggregate or join will be rejected."})
+    public static boolean enable_row_store_only_complex_query_block = true;
+
     @ConfField(mutable = true, masterOnly = true, description = {"Insert load 的默认超时时间，单位是秒。",
             "Default timeout for insert load job, in seconds."})
     public static int insert_load_default_timeout_second = 14400; // 4 hour

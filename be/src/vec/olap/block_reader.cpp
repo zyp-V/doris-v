@@ -404,7 +404,19 @@ Status BlockReader::_unique_key_next_block(Block* block, bool* eof) {
                                                          "__DORIS_COMPACTION_FILTER__"};
         block->set_columns(std::move(target_columns));
         block->insert(column_with_type_and_name);
-        RETURN_IF_ERROR(Block::filter_block(block, target_columns_size, target_columns_size));
+
+        std::vector<uint32_t> columns_to_filter;
+        columns_to_filter.reserve(target_columns_size);
+        for (uint32_t i = 0; i < target_columns_size; ++i) {
+            if (_reader_context.tablet_schema != nullptr &&
+                _reader_context.tablet_schema->row_store_only() &&
+                block->get_by_position(i).name == BeConsts::ROW_STORE_COL) {
+                continue;
+            }
+            columns_to_filter.emplace_back(i);
+        }
+        RETURN_IF_ERROR(Block::filter_block(block, columns_to_filter, target_columns_size,
+                                            target_columns_size));
         _stats.rows_del_filtered += target_block_row - block->rows();
         DCHECK(block->try_get_by_name("__DORIS_COMPACTION_FILTER__") == nullptr);
         if (UNLIKELY(_reader_context.record_rowids)) {
