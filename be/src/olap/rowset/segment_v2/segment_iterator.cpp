@@ -417,11 +417,10 @@ Status SegmentIterator::_get_row_ranges_by_keys() {
     bool use_pk_index_for_row_store_only = false;
     if (_is_row_store_only_segment()) {
         auto tablet_schema = _segment->tablet_schema();
-        if (tablet_schema->keys_type() != UNIQUE_KEYS || _segment->get_primary_key_index() == nullptr ||
-            !tablet_schema->cluster_key_idxes().empty()) {
+        if (tablet_schema->keys_type() != UNIQUE_KEYS || _segment->get_primary_key_index() == nullptr) {
             return Status::NotSupported(
-                    "row_store_only key range pruning requires primary key index without cluster key, "
-                    "tablet_id={}, rowset_id={}, segment_id={}",
+                    "row_store_only key range pruning requires primary key index, tablet_id={}, "
+                    "rowset_id={}, segment_id={}",
                     _opts.tablet_id, _segment->rowset_id().to_string(), _segment->id());
         }
         use_pk_index_for_row_store_only = true;
@@ -467,13 +466,6 @@ Status SegmentIterator::_get_row_ranges_by_keys() {
 
 // Set up environment for the following seek.
 Status SegmentIterator::_prepare_seek(const StorageReadOptions::KeyRange& key_range) {
-    if (_is_row_store_only_segment()) {
-        return Status::NotSupported(
-                "row_store_only segment should use primary key index for key range pruning, "
-                "tablet_id={}, rowset_id={}, segment_id={}",
-                _opts.tablet_id, _segment->rowset_id().to_string(), _segment->id());
-    }
-
     std::vector<const Field*> key_fields;
     std::set<uint32_t> column_set;
     if (key_range.lower_key != nullptr) {
@@ -1671,14 +1663,86 @@ Status SegmentIterator::_read_columns(const std::vector<ColumnId>& column_ids,
     return Status::OK();
 }
 
+void SegmentIterator::RowStorePredicateColumnCache::_ensure_size(size_t column_count) {
+    if (_columns.size() < column_count) {
+        _columns.resize(column_count);
+        _char_padding_buffers.resize(column_count);
+    }
+}
+
+void SegmentIterator::RowStorePredicateColumnCache::reset(size_t column_count) {
+    _ensure_size(column_count);
+    for (auto& column : _columns) {
+        column.reset();
+    }
+    for (auto& buffer : _char_padding_buffers) {
+        buffer.clear();
+    }
+}
+
+Status SegmentIterator::RowStorePredicateColumnCache::materialize(ColumnId cid, const Field& field,
+                                                                  const vectorized::IColumn& source,
+                                                                  bool is_char_type,
+                                                                  const vectorized::IColumn**
+                                                                          predicate_column) {
+    _ensure_size(cid + 1);
+    if (_columns[cid] == nullptr) {
+        RETURN_IF_CATCH_EXCEPTION({
+            auto predicate_column_ptr = Schema::get_predicate_column_ptr(
+                    is_char_type ? FieldType::OLAP_FIELD_TYPE_CHAR : field.type(),
+                    field.is_nullable(), ReaderType::UNKNOWN);
+            predicate_column_ptr->reserve(source.size());
+            auto& char_buffer = _char_padding_buffers[cid];
+            if (is_char_type) {
+                char_buffer.reserve(source.size() * field.length());
+            }
+            for (size_t i = 0; i < source.size(); ++i) {
+                auto value = source.get_data_at(i);
+                if (is_char_type && value.data != nullptr) {
+                    const auto offset = char_buffer.size();
+                    char_buffer.resize(offset + field.length(), '\0');
+                    auto* padded_value = char_buffer.data() + offset;
+                    memcpy(padded_value, value.data, std::min<size_t>(value.size, field.length()));
+                    predicate_column_ptr->insert_data(padded_value, field.length());
+                } else {
+                    predicate_column_ptr->insert_data(value.data, value.size);
+                }
+            }
+            _columns[cid] = std::move(predicate_column_ptr);
+        });
+    }
+    if (predicate_column != nullptr) {
+        *predicate_column = _columns[cid].get();
+    }
+    return Status::OK();
+}
+
+uint16_t SegmentIterator::RowStorePredicateColumnCache::evaluate(
+        AndBlockColumnPredicate& predicates, uint16_t* sel, uint16_t selected_size) {
+    return predicates.evaluate(_columns, sel, selected_size);
+}
+
 Status SegmentIterator::_init_current_block(
         vectorized::Block* block, std::vector<vectorized::MutableColumnPtr>& current_columns,
         uint32_t nrows_read_limit) {
     block->clear_column_data(_schema->num_column_ids());
+    if (_is_row_store_only_segment()) {
+        _row_store_predicate_column_cache.reset(_schema->columns().size());
+    }
 
     for (size_t i = 0; i < _schema->num_column_ids(); i++) {
         auto cid = _schema->column_id(i);
         const auto* column_desc = _schema->column(cid);
+        if (_is_row_store_only_segment() && _is_pred_column[cid]) {
+            current_columns[cid] = Schema::get_data_type_ptr(*column_desc)->create_column();
+            if (column_desc->type() == FieldType::OLAP_FIELD_TYPE_DATE) {
+                current_columns[cid]->set_date_type();
+            } else if (column_desc->type() == FieldType::OLAP_FIELD_TYPE_DATETIME) {
+                current_columns[cid]->set_datetime_type();
+            }
+            current_columns[cid]->reserve(nrows_read_limit);
+            continue;
+        }
         if (!_is_pred_column[cid] &&
             !_segment->same_with_storage_type(
                     cid, *_schema, _opts.io_ctx.reader_type != ReaderType::READER_QUERY)) {
@@ -1761,8 +1825,6 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
     }
 
     nrows_read = _range_iter->read_batch_rowids(_block_rowids.data(), nrows_read_limit);
-    bool is_continuous = (nrows_read > 1) &&
-                         (_block_rowids[nrows_read - 1] - _block_rowids[0] == nrows_read - 1);
 
     for (auto cid : _first_read_column_ids) {
         auto& column = _current_return_columns[cid];
@@ -1787,55 +1849,62 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
             }
         })
 
-        if (is_continuous) {
-            size_t rows_read = nrows_read;
+        RETURN_IF_ERROR(_read_column_by_current_rowids(cid, nrows_read, column));
+    }
+
+    return Status::OK();
+}
+
+Status SegmentIterator::_read_column_by_current_rowids(ColumnId cid, uint32_t nrows_read,
+                                                       vectorized::MutableColumnPtr& column) {
+    bool is_continuous = (nrows_read > 1) &&
+                         (_block_rowids[nrows_read - 1] - _block_rowids[0] == nrows_read - 1);
+    if (is_continuous) {
+        size_t rows_read = nrows_read;
+        _opts.stats->block_first_read_seek_num += 1;
+        if (_opts.runtime_state && _opts.runtime_state->enable_profile()) {
+            SCOPED_RAW_TIMER(&_opts.stats->block_first_read_seek_ns);
+            RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(_block_rowids[0]));
+        } else {
+            RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(_block_rowids[0]));
+        }
+        RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&rows_read, column));
+        if (rows_read != nrows_read) {
+            return Status::Error<ErrorCode::INTERNAL_ERROR>("nrows({}) != rows_read({})",
+                                                            nrows_read, rows_read);
+        }
+        return Status::OK();
+    }
+
+    const uint32_t batch_size = _range_iter->get_batch_size();
+    uint32_t processed = 0;
+    while (processed < nrows_read) {
+        uint32_t current_batch_size = std::min(batch_size, nrows_read - processed);
+        bool batch_continuous = (current_batch_size > 1) &&
+                                (_block_rowids[processed + current_batch_size - 1] -
+                                         _block_rowids[processed] ==
+                                 current_batch_size - 1);
+
+        if (batch_continuous) {
+            size_t rows_read = current_batch_size;
             _opts.stats->block_first_read_seek_num += 1;
             if (_opts.runtime_state && _opts.runtime_state->enable_profile()) {
                 SCOPED_RAW_TIMER(&_opts.stats->block_first_read_seek_ns);
-                RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(_block_rowids[0]));
+                RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(_block_rowids[processed]));
             } else {
-                RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(_block_rowids[0]));
+                RETURN_IF_ERROR(_column_iterators[cid]->seek_to_ordinal(_block_rowids[processed]));
             }
             RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&rows_read, column));
-            if (rows_read != nrows_read) {
-                return Status::Error<ErrorCode::INTERNAL_ERROR>("nrows({}) != rows_read({})",
-                                                                nrows_read, rows_read);
+            if (rows_read != current_batch_size) {
+                return Status::Error<ErrorCode::INTERNAL_ERROR>(
+                        "batch nrows({}) != rows_read({})", current_batch_size, rows_read);
             }
         } else {
-            const uint32_t batch_size = _range_iter->get_batch_size();
-            uint32_t processed = 0;
-            while (processed < nrows_read) {
-                uint32_t current_batch_size = std::min(batch_size, nrows_read - processed);
-                bool batch_continuous = (current_batch_size > 1) &&
-                                        (_block_rowids[processed + current_batch_size - 1] -
-                                                 _block_rowids[processed] ==
-                                         current_batch_size - 1);
-
-                if (batch_continuous) {
-                    size_t rows_read = current_batch_size;
-                    _opts.stats->block_first_read_seek_num += 1;
-                    if (_opts.runtime_state && _opts.runtime_state->enable_profile()) {
-                        SCOPED_RAW_TIMER(&_opts.stats->block_first_read_seek_ns);
-                        RETURN_IF_ERROR(
-                                _column_iterators[cid]->seek_to_ordinal(_block_rowids[processed]));
-                    } else {
-                        RETURN_IF_ERROR(
-                                _column_iterators[cid]->seek_to_ordinal(_block_rowids[processed]));
-                    }
-                    RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&rows_read, column));
-                    if (rows_read != current_batch_size) {
-                        return Status::Error<ErrorCode::INTERNAL_ERROR>(
-                                "batch nrows({}) != rows_read({})", current_batch_size, rows_read);
-                    }
-                } else {
-                    RETURN_IF_ERROR(_column_iterators[cid]->read_by_rowids(
-                            &_block_rowids[processed], current_batch_size, column));
-                }
-                processed += current_batch_size;
-            }
+            RETURN_IF_ERROR(_column_iterators[cid]->read_by_rowids(
+                    &_block_rowids[processed], current_batch_size, column));
         }
+        processed += current_batch_size;
     }
-
     return Status::OK();
 }
 
@@ -1857,56 +1926,7 @@ Status SegmentIterator::_read_columns_from_row_store_by_index(uint32_t nrows_rea
     auto row_store_column = row_store_type->create_column();
     row_store_column->reserve(nrows_read);
 
-    bool is_continuous = (nrows_read > 1) &&
-                         (_block_rowids[nrows_read - 1] - _block_rowids[0] == nrows_read - 1);
-    if (is_continuous) {
-        size_t rows_read = nrows_read;
-        _opts.stats->block_first_read_seek_num += 1;
-        if (_opts.runtime_state && _opts.runtime_state->enable_profile()) {
-            SCOPED_RAW_TIMER(&_opts.stats->block_first_read_seek_ns);
-            RETURN_IF_ERROR(_column_iterators[row_store_cid]->seek_to_ordinal(_block_rowids[0]));
-        } else {
-            RETURN_IF_ERROR(_column_iterators[row_store_cid]->seek_to_ordinal(_block_rowids[0]));
-        }
-        RETURN_IF_ERROR(_column_iterators[row_store_cid]->next_batch(&rows_read, row_store_column));
-        if (rows_read != nrows_read) {
-            return Status::Error<ErrorCode::INTERNAL_ERROR>("nrows({}) != rows_read({})",
-                                                            nrows_read, rows_read);
-        }
-    } else {
-        const uint32_t batch_size = _range_iter->get_batch_size();
-        uint32_t processed = 0;
-        while (processed < nrows_read) {
-            uint32_t current_batch_size = std::min(batch_size, nrows_read - processed);
-            bool batch_continuous = (current_batch_size > 1) &&
-                                    (_block_rowids[processed + current_batch_size - 1] -
-                                             _block_rowids[processed] ==
-                                     current_batch_size - 1);
-
-            if (batch_continuous) {
-                size_t rows_read = current_batch_size;
-                _opts.stats->block_first_read_seek_num += 1;
-                if (_opts.runtime_state && _opts.runtime_state->enable_profile()) {
-                    SCOPED_RAW_TIMER(&_opts.stats->block_first_read_seek_ns);
-                    RETURN_IF_ERROR(
-                            _column_iterators[row_store_cid]->seek_to_ordinal(_block_rowids[processed]));
-                } else {
-                    RETURN_IF_ERROR(
-                            _column_iterators[row_store_cid]->seek_to_ordinal(_block_rowids[processed]));
-                }
-                RETURN_IF_ERROR(
-                        _column_iterators[row_store_cid]->next_batch(&rows_read, row_store_column));
-                if (rows_read != current_batch_size) {
-                    return Status::Error<ErrorCode::INTERNAL_ERROR>(
-                            "batch nrows({}) != rows_read({})", current_batch_size, rows_read);
-                }
-            } else {
-                RETURN_IF_ERROR(_column_iterators[row_store_cid]->read_by_rowids(
-                        &_block_rowids[processed], current_batch_size, row_store_column));
-            }
-            processed += current_batch_size;
-        }
-    }
+    RETURN_IF_ERROR(_read_column_by_current_rowids(row_store_cid, nrows_read, row_store_column));
 
     const auto* string_column = vectorized::check_and_get_column<vectorized::ColumnString>(
             row_store_column.get());
@@ -1997,8 +2017,25 @@ void SegmentIterator::_replace_version_col(size_t num_rows) {
     VLOG_DEBUG << "replaced version column in segment iterator, version_col_idx:" << version_idx;
 }
 
-uint16_t SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_idx,
-                                                            uint16_t selected_size) {
+Status SegmentIterator::_materialize_column_for_predicate_eval(
+        ColumnId cid, const vectorized::IColumn** predicate_column) {
+    if (_current_return_columns[cid] == nullptr) {
+        return Status::InternalError("missing column for predicate, id={}, name={}", cid,
+                                     _schema->column(cid)->name());
+    }
+
+    if (!_is_row_store_only_segment()) {
+        *predicate_column = _current_return_columns[cid].get();
+        return Status::OK();
+    }
+
+    const auto* field = _schema->column(cid);
+    return _row_store_predicate_column_cache.materialize(
+            cid, *field, *_current_return_columns[cid], _is_char_type[cid], predicate_column);
+}
+
+Status SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_idx,
+                                                          uint16_t* selected_size) {
     SCOPED_RAW_TIMER(&_opts.stats->vec_cond_ns);
     bool all_pred_always_true = true;
     for (const auto& pred : _pre_eval_block_predicate) {
@@ -2009,13 +2046,13 @@ uint16_t SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_
     }
     //If all predicates are always_true, then return directly.
     if (all_pred_always_true || !_is_need_vec_eval) {
-        for (uint16_t i = 0; i < selected_size; ++i) {
+        for (uint16_t i = 0; i < *selected_size; ++i) {
             sel_rowid_idx[i] = i;
         }
-        return selected_size;
+        return Status::OK();
     }
 
-    uint16_t original_size = selected_size;
+    uint16_t original_size = *selected_size;
     bool ret_flags[original_size];
     DCHECK(!_pre_eval_block_predicate.empty());
     bool is_first = true;
@@ -2024,7 +2061,8 @@ uint16_t SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_
             continue;
         }
         auto column_id = pred->column_id();
-        auto& column = _current_return_columns[column_id];
+        const vectorized::IColumn* column = nullptr;
+        RETURN_IF_ERROR(_materialize_column_for_predicate_eval(column_id, &column));
         if (is_first) {
             pred->evaluate_vec(*column, original_size, ret_flags);
             is_first = false;
@@ -2036,9 +2074,9 @@ uint16_t SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_
     uint16_t new_size = 0;
 
     uint32_t sel_pos = 0;
-    const uint32_t sel_end = sel_pos + selected_size;
+    const uint32_t sel_end = sel_pos + *selected_size;
     static constexpr size_t SIMD_BYTES = simd::bits_mask_length();
-    const uint32_t sel_end_simd = sel_pos + selected_size / SIMD_BYTES * SIMD_BYTES;
+    const uint32_t sel_end_simd = sel_pos + *selected_size / SIMD_BYTES * SIMD_BYTES;
 
     while (sel_pos < sel_end_simd) {
         auto mask = simd::bytes_mask_to_bits_mask((const uint8_t*)ret_flags + sel_pos);
@@ -2064,36 +2102,152 @@ uint16_t SegmentIterator::_evaluate_vectorization_predicate(uint16_t* sel_rowid_
 
     _opts.stats->vec_cond_input_rows += original_size;
     _opts.stats->rows_vec_cond_filtered += original_size - new_size;
-    return new_size;
+    *selected_size = new_size;
+    return Status::OK();
 }
 
-uint16_t SegmentIterator::_evaluate_short_circuit_predicate(uint16_t* vec_sel_rowid_idx,
-                                                            uint16_t selected_size) {
+Status SegmentIterator::_evaluate_short_circuit_predicate(uint16_t* vec_sel_rowid_idx,
+                                                          uint16_t* selected_size) {
     SCOPED_RAW_TIMER(&_opts.stats->short_cond_ns);
-    if (!_is_need_short_eval) {
-        return selected_size;
-    }
+    uint16_t original_size = *selected_size;
+    if (_is_need_short_eval) {
+        for (auto predicate : _short_cir_eval_predicate) {
+            auto column_id = predicate->column_id();
+            const vectorized::IColumn* short_cir_column = nullptr;
+            RETURN_IF_ERROR(_materialize_column_for_predicate_eval(column_id, &short_cir_column));
+            *selected_size =
+                    predicate->evaluate(*short_cir_column, vec_sel_rowid_idx, *selected_size);
+        }
 
-    uint16_t original_size = selected_size;
-    for (auto predicate : _short_cir_eval_predicate) {
-        auto column_id = predicate->column_id();
-        auto& short_cir_column = _current_return_columns[column_id];
-        selected_size = predicate->evaluate(*short_cir_column, vec_sel_rowid_idx, selected_size);
+        // collect profile
+        for (auto p : _filter_info_id) {
+            _opts.stats->filter_info[p->get_filter_id()] = p->get_filtered_info();
+        }
+        _opts.stats->short_circuit_cond_input_rows += original_size;
+        _opts.stats->rows_short_circuit_cond_filtered += original_size - *selected_size;
     }
-
-    // collect profile
-    for (auto p : _filter_info_id) {
-        _opts.stats->filter_info[p->get_filter_id()] = p->get_filtered_info();
-    }
-    _opts.stats->short_circuit_cond_input_rows += original_size;
-    _opts.stats->rows_short_circuit_cond_filtered += original_size - selected_size;
 
     // evaluate delete condition
-    original_size = selected_size;
-    selected_size = _opts.delete_condition_predicates->evaluate(_current_return_columns,
-                                                                vec_sel_rowid_idx, selected_size);
-    _opts.stats->rows_vec_del_cond_filtered += original_size - selected_size;
-    return selected_size;
+    original_size = *selected_size;
+    if (_is_row_store_only_segment()) {
+        std::set<ColumnId> delete_column_ids;
+        _opts.delete_condition_predicates->get_all_column_ids(delete_column_ids);
+        for (auto cid : delete_column_ids) {
+            RETURN_IF_ERROR(_materialize_column_for_predicate_eval(cid));
+        }
+        *selected_size = _row_store_predicate_column_cache.evaluate(
+                *_opts.delete_condition_predicates, vec_sel_rowid_idx, *selected_size);
+    } else {
+        *selected_size = _opts.delete_condition_predicates->evaluate(
+                _current_return_columns, vec_sel_rowid_idx, *selected_size);
+    }
+    _opts.stats->rows_vec_del_cond_filtered += original_size - *selected_size;
+    return Status::OK();
+}
+
+Status SegmentIterator::_output_row_store_columns_by_selector(vectorized::Block* block,
+                                                              const uint16_t* sel_rowid_idx,
+                                                              uint16_t select_size) {
+    SCOPED_RAW_TIMER(&_opts.stats->output_col_ns);
+    if (sel_rowid_idx == nullptr) {
+        for (size_t i = 0; i < _schema->num_column_ids(); ++i) {
+            auto cid = _schema->column_id(i);
+            auto loc = _schema_block_id_map[cid];
+            if (loc >= block->columns()) {
+                continue;
+            }
+            block->replace_by_position(loc, std::move(_current_return_columns[cid]));
+        }
+        return Status::OK();
+    }
+
+    vectorized::IColumn::Filter filter(_current_batch_rows_read, 0);
+    for (uint16_t i = 0; i < select_size; ++i) {
+        filter[sel_rowid_idx[i]] = 1;
+    }
+
+    for (size_t i = 0; i < _schema->num_column_ids(); ++i) {
+        auto cid = _schema->column_id(i);
+        auto loc = _schema_block_id_map[cid];
+        if (loc >= block->columns()) {
+            continue;
+        }
+        if (_current_return_columns[cid] == nullptr) {
+            return Status::InternalError("missing row store output column, id={}, name={}", cid,
+                                         _schema->column(cid)->name());
+        }
+        block->replace_by_position(loc, _current_return_columns[cid]->filter(filter, select_size));
+    }
+    return Status::OK();
+}
+
+Status SegmentIterator::_init_row_store_only_selection(RowStoreOnlyBatchSelection* selection) {
+    selection->selected_size = _current_batch_rows_read;
+    selection->has_selector =
+            _is_need_vec_eval || _is_need_short_eval || _is_need_expr_eval || _opts.record_rowids;
+    if (!selection->has_selector) {
+        return Status::OK();
+    }
+
+    selection->rowid_idx.resize(selection->selected_size);
+    for (uint16_t i = 0; i < selection->selected_size; ++i) {
+        selection->rowid_idx[i] = i;
+    }
+    return Status::OK();
+}
+
+Status SegmentIterator::_evaluate_row_store_only_predicates(RowStoreOnlyBatchSelection* selection) {
+    if (_is_need_vec_eval || _is_need_short_eval) {
+        RETURN_IF_ERROR(_evaluate_vectorization_predicate(selection->mutable_data(),
+                                                          &selection->selected_size));
+        RETURN_IF_ERROR(_evaluate_short_circuit_predicate(selection->mutable_data(),
+                                                          &selection->selected_size));
+    }
+    return Status::OK();
+}
+
+Status SegmentIterator::_evaluate_row_store_only_expr_filter(
+        const vectorized::Block& block_schema, RowStoreOnlyBatchSelection* selection) {
+    if (!_is_need_expr_eval || selection->selected_size == 0) {
+        return Status::OK();
+    }
+
+    // Evaluate expr predicates on a temporary block, then materialize the final output once.
+    auto expr_block = block_schema.clone_empty();
+    RETURN_IF_ERROR(_output_row_store_columns_by_selector(
+            &expr_block, selection->mutable_data(), selection->selected_size));
+    _output_index_result_column_for_expr(selection->mutable_data(), selection->selected_size,
+                                         &expr_block);
+    expr_block.shrink_char_type_column_suffix_zero(_char_type_idx);
+    return _execute_common_expr(selection->mutable_data(), selection->selected_size, &expr_block);
+}
+
+void SegmentIterator::_record_row_store_only_selected_rowids(
+        const RowStoreOnlyBatchSelection& selection) {
+    if (UNLIKELY(_opts.record_rowids)) {
+        _sel_rowid_idx.resize(selection.selected_size);
+        _selected_size = selection.selected_size;
+        for (auto i = 0; i < _selected_size; i++) {
+            _sel_rowid_idx[i] = selection.rowid_idx[i];
+        }
+    }
+}
+
+Status SegmentIterator::_materialize_row_store_only_output(
+        vectorized::Block* block, const RowStoreOnlyBatchSelection& selection) {
+    RETURN_IF_ERROR(_output_row_store_columns_by_selector(block, selection.data(),
+                                                          selection.selected_size));
+    block->shrink_char_type_column_suffix_zero(_char_type_idx);
+    return Status::OK();
+}
+
+Status SegmentIterator::_finish_row_store_only_batch(vectorized::Block* block) {
+    RowStoreOnlyBatchSelection selection;
+    RETURN_IF_ERROR(_init_row_store_only_selection(&selection));
+    RETURN_IF_ERROR(_evaluate_row_store_only_predicates(&selection));
+    RETURN_IF_ERROR(_evaluate_row_store_only_expr_filter(*block, &selection));
+    _record_row_store_only_selected_rowids(selection);
+    return _materialize_row_store_only_output(block, selection);
 }
 
 Status SegmentIterator::_read_columns_by_rowids(std::vector<ColumnId>& read_column_ids,
@@ -2334,16 +2488,11 @@ Status SegmentIterator::_next_batch_internal(vectorized::Block* block) {
         return Status::EndOfFile("no more data in segment");
     }
 
+    if (_is_row_store_only_segment()) {
+        return _finish_row_store_only_batch(block);
+    }
+
     if (!_is_need_vec_eval && !_is_need_short_eval && !_is_need_expr_eval) {
-        if (_is_row_store_only_segment()) {
-            RETURN_IF_ERROR(_convert_to_expected_type(_first_read_column_ids));
-            for (int i = 0; i < block->columns(); i++) {
-                auto cid = _schema->column_id(i);
-                block->replace_by_position(i, std::move(_current_return_columns[cid]));
-            }
-            block->shrink_char_type_column_suffix_zero(_char_type_idx);
-            return Status::OK();
-        }
         if (_non_predicate_columns.empty()) {
             return Status::InternalError("_non_predicate_columns is empty");
         }
@@ -2358,13 +2507,13 @@ Status SegmentIterator::_next_batch_internal(vectorized::Block* block) {
             _convert_dict_code_for_predicate_if_necessary();
 
             // step 1: evaluate vectorization predicate
-            selected_size = _evaluate_vectorization_predicate(sel_rowid_idx, selected_size);
+            RETURN_IF_ERROR(_evaluate_vectorization_predicate(sel_rowid_idx, &selected_size));
 
             // step 2: evaluate short circuit predicate
             // todo(wb) research whether need to read short predicate after vectorization evaluation
             //          to reduce cost of read short circuit columns.
             //          In SSB test, it make no difference; So need more scenarios to test
-            selected_size = _evaluate_short_circuit_predicate(sel_rowid_idx, selected_size);
+            RETURN_IF_ERROR(_evaluate_short_circuit_predicate(sel_rowid_idx, &selected_size));
 
             if (selected_size > 0) {
                 // step 3.1: output short circuit and predicate column

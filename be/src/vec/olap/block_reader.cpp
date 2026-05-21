@@ -200,6 +200,9 @@ Status BlockReader::_init_agg_state(const ReaderParams& read_params) {
 Status BlockReader::init(const ReaderParams& read_params) {
     RETURN_IF_ERROR(TabletReader::init(read_params));
 
+    _output_column_cids.assign(read_params.origin_return_columns->begin(),
+                               read_params.origin_return_columns->end());
+
     int32_t return_column_size = read_params.origin_return_columns->size();
     _return_columns_loc.resize(read_params.return_columns.size());
     for (int i = 0; i < return_column_size; ++i) {
@@ -255,6 +258,14 @@ Status BlockReader::init(const ReaderParams& read_params) {
     }
 
     return Status::OK();
+}
+
+bool BlockReader::_is_row_store_only_derived_output_column(uint32_t output_column_idx) const {
+    const auto& tablet_schema = _reader_context.tablet_schema;
+    if (tablet_schema == nullptr || output_column_idx >= _output_column_cids.size()) {
+        return false;
+    }
+    return tablet_schema->is_row_store_only_derived_column(_output_column_cids[output_column_idx]);
 }
 
 Status BlockReader::_direct_next_block(Block* block, bool* eof) {
@@ -408,9 +419,11 @@ Status BlockReader::_unique_key_next_block(Block* block, bool* eof) {
         std::vector<uint32_t> columns_to_filter;
         columns_to_filter.reserve(target_columns_size);
         for (uint32_t i = 0; i < target_columns_size; ++i) {
-            if (_reader_context.tablet_schema != nullptr &&
-                _reader_context.tablet_schema->row_store_only() &&
-                block->get_by_position(i).name == BeConsts::ROW_STORE_COL) {
+            // For row_store_only compaction, __DORIS_ROW_STORE_COL__ is present in
+            // the output block schema but is rebuilt by SegmentWriter after delete
+            // filtering. Filtering its empty placeholder column would corrupt block
+            // column sizes.
+            if (_is_row_store_only_derived_output_column(i)) {
                 continue;
             }
             columns_to_filter.emplace_back(i);

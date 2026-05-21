@@ -2709,6 +2709,10 @@ public class InternalCatalog implements CatalogIf<Database> {
                             + " property requires " + PropertyAnalyzer.PROPERTIES_STORE_ROW_COLUMN
                             + " property to be true");
                 }
+                if (!CollectionUtils.isEmpty(keysDesc.getClusterKeysColumnNames())) {
+                    throw new DdlException(PropertyAnalyzer.PROPERTIES_ROW_STORE_ONLY
+                            + " table does not support cluster key");
+                }
             }
             if (storeRowColumn && !enableLightSchemaChange) {
                 throw new DdlException(

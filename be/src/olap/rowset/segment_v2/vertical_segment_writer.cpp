@@ -144,7 +144,7 @@ void VerticalSegmentWriter::_init_column_meta(ColumnMetaPB* meta, uint32_t colum
 Status VerticalSegmentWriter::_create_column_writer(uint32_t cid, const TabletColumn& column,
                                                     const TabletSchemaSPtr& tablet_schema) {
     _olap_data_convertor->add_column_data_convertor(column);
-    if (_tablet_schema->row_store_only() && !column.is_row_store_column()) {
+    if (!_tablet_schema->should_persist_column(cid)) {
         return Status::OK();
     }
 
@@ -386,7 +386,7 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
             seq_column = column;
             have_input_seq_column = true;
         }
-        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+        if (_tablet_schema->should_persist_column(cid)) {
             RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
                                                          data.num_rows));
         }
@@ -543,9 +543,9 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
                                           has_default_or_nullable, segment_start_pos, data.block));
     full_block.set_columns(std::move(mutable_full_columns));
 
-    // row column should be filled here
+    // Row-store column is derived from the full logical row and must be rebuilt
+    // before appending missing columns in partial update.
     if (_tablet_schema->store_row_column()) {
-        // convert block to row store format
         _serialize_block_to_row_column(full_block);
     }
 
@@ -563,7 +563,7 @@ Status VerticalSegmentWriter::_append_block_with_partial_content(RowsInBlock& da
             DCHECK_EQ(seq_column, nullptr);
             seq_column = column;
         }
-        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+        if (_tablet_schema->should_persist_column(cid)) {
             RETURN_IF_ERROR(_column_writers[cid]->append(column->get_nullmap(), column->get_data(),
                                                          data.num_rows));
         }
@@ -919,14 +919,13 @@ Status VerticalSegmentWriter::write_batch() {
                        cid == _tablet_schema->sequence_col_idx()) {
                 seq_column = column;
             }
-            if (!_tablet_schema->row_store_only() ||
-                _tablet_schema->column(cid).is_row_store_column()) {
+            if (_tablet_schema->should_persist_column(cid)) {
                 RETURN_IF_ERROR(_column_writers[cid]->append(
                         column->get_nullmap(), column->get_data(), data.num_rows));
             }
             _olap_data_convertor->clear_source_content();
         }
-        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+        if (_tablet_schema->should_persist_column(cid)) {
             if (_data_dir != nullptr &&
                 _data_dir->reach_capacity_limit(_column_writers[cid]->estimate_buffer_size())) {
                 return Status::Error<DISK_REACH_CAPACITY_LIMIT>("disk {} exceed capacity limit.",

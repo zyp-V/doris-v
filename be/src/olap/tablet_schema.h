@@ -349,6 +349,25 @@ public:
     bool store_row_column() const { return _store_row_column; }
     void set_row_store_only(bool row_store_only) { _row_store_only = row_store_only; }
     bool row_store_only() const { return _row_store_only; }
+    // Used by writers and compaction output paths with the target tablet schema.
+    // It must not be used to infer the physical layout of an input segment/rowset;
+    // readers should use that segment's own tablet schema for layout checks.
+    //
+    // In row_store_only layout, ordinary logical columns are encoded into
+    // __DORIS_ROW_STORE_COL__ and are not persisted as independent column streams.
+    bool should_persist_column(size_t ordinal) const {
+        return !_row_store_only || is_row_store_only_derived_column(ordinal);
+    }
+    // Used with an output schema to identify the hidden column that will be
+    // rebuilt from logical columns. Input rowset readers should still discover
+    // row-store layout from the rowset/segment tablet schema.
+    //
+    // __DORIS_ROW_STORE_COL__ is derived from logical columns in row_store_only
+    // layout. Compaction readers should not read or filter stale physical values;
+    // SegmentWriter rebuilds it before writing the output rowset.
+    bool is_row_store_only_derived_column(size_t ordinal) const {
+        return _row_store_only && ordinal < _num_columns && _cols[ordinal]->is_row_store_column();
+    }
     void set_skip_write_index_on_load(bool skip) { _skip_write_index_on_load = skip; }
     bool skip_write_index_on_load() const { return _skip_write_index_on_load; }
     int32_t delete_sign_idx() const { return _delete_sign_idx; }

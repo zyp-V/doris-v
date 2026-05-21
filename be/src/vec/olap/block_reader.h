@@ -19,6 +19,7 @@
 
 #include <parallel_hashmap/phmap.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <utility>
 #include <vector>
@@ -89,6 +90,8 @@ private:
     // return true if keys of rowsets are mono ascending and disjoint
     bool _rowsets_mono_asc_disjoint(const ReaderParams& read_params);
 
+    bool _is_row_store_only_derived_output_column(uint32_t output_column_idx) const;
+
     VCollectIterator _vcollect_iter;
     IteratorRowRef _next_row {{}, -1, false};
 
@@ -98,6 +101,7 @@ private:
     std::vector<int> _normal_columns_idx; // key column on agg mode, all column on uniq mode
     std::vector<int> _agg_columns_idx;
     std::vector<int> _return_columns_loc;
+    std::vector<uint32_t> _output_column_cids;
 
     std::vector<int> _agg_data_counters;
     int _last_agg_data_counter = 0;

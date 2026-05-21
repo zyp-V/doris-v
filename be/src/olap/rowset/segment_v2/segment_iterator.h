@@ -226,6 +226,31 @@ private:
         return _segment->tablet_schema() != nullptr && _segment->tablet_schema()->row_store_only();
     }
 
+    struct RowStoreOnlyBatchSelection {
+        std::vector<uint16_t> rowid_idx;
+        uint16_t selected_size = 0;
+        bool has_selector = false;
+
+        uint16_t* mutable_data() { return has_selector ? rowid_idx.data() : nullptr; }
+        const uint16_t* data() const { return has_selector ? rowid_idx.data() : nullptr; }
+    };
+
+    class RowStorePredicateColumnCache {
+    public:
+        void reset(size_t column_count);
+        Status materialize(ColumnId cid, const Field& field, const vectorized::IColumn& source,
+                           bool is_char_type,
+                           const vectorized::IColumn** predicate_column = nullptr);
+        uint16_t evaluate(AndBlockColumnPredicate& predicates, uint16_t* sel,
+                          uint16_t selected_size);
+
+    private:
+        void _ensure_size(size_t column_count);
+
+        vectorized::MutableColumns _columns;
+        std::vector<std::vector<char>> _char_padding_buffers;
+    };
+
     [[nodiscard]] Status _seek_columns(const std::vector<ColumnId>& column_ids, rowid_t pos);
     // read `nrows` of columns specified by `column_ids` into `block` at `row_offset`.
     // for vectorization implementation
@@ -233,6 +258,8 @@ private:
                                        vectorized::MutableColumns& column_block, size_t nrows);
     [[nodiscard]] Status _read_columns_by_index(uint32_t nrows_read_limit, uint32_t& nrows_read,
                                                 bool set_block_rowid);
+    [[nodiscard]] Status _read_column_by_current_rowids(ColumnId cid, uint32_t nrows_read,
+                                                        vectorized::MutableColumnPtr& column);
     [[nodiscard]] Status _read_columns_from_row_store_by_index(uint32_t nrows_read_limit,
                                                                uint32_t& nrows_read);
     [[nodiscard]] Status _deserialize_row_store_column(
@@ -242,8 +269,21 @@ private:
     Status _init_current_block(vectorized::Block* block,
                                std::vector<vectorized::MutableColumnPtr>& non_pred_vector,
                                uint32_t nrows_read_limit);
-    uint16_t _evaluate_vectorization_predicate(uint16_t* sel_rowid_idx, uint16_t selected_size);
-    uint16_t _evaluate_short_circuit_predicate(uint16_t* sel_rowid_idx, uint16_t selected_size);
+    Status _evaluate_vectorization_predicate(uint16_t* sel_rowid_idx, uint16_t* selected_size);
+    Status _evaluate_short_circuit_predicate(uint16_t* sel_rowid_idx, uint16_t* selected_size);
+    Status _materialize_column_for_predicate_eval(
+            ColumnId cid, const vectorized::IColumn** predicate_column = nullptr);
+    Status _output_row_store_columns_by_selector(vectorized::Block* block,
+                                                 const uint16_t* sel_rowid_idx,
+                                                 uint16_t select_size);
+    Status _init_row_store_only_selection(RowStoreOnlyBatchSelection* selection);
+    Status _evaluate_row_store_only_predicates(RowStoreOnlyBatchSelection* selection);
+    Status _evaluate_row_store_only_expr_filter(const vectorized::Block& block_schema,
+                                                RowStoreOnlyBatchSelection* selection);
+    void _record_row_store_only_selected_rowids(const RowStoreOnlyBatchSelection& selection);
+    Status _materialize_row_store_only_output(vectorized::Block* block,
+                                              const RowStoreOnlyBatchSelection& selection);
+    Status _finish_row_store_only_batch(vectorized::Block* block);
     void _output_non_pred_columns(vectorized::Block* block);
     [[nodiscard]] Status _read_columns_by_rowids(std::vector<ColumnId>& read_column_ids,
                                                  std::vector<rowid_t>& rowid_vector,
@@ -437,6 +477,7 @@ private:
     std::map<uint32_t, bool> _need_read_data_indices;
     std::vector<bool> _is_common_expr_column;
     vectorized::MutableColumns _current_return_columns;
+    RowStorePredicateColumnCache _row_store_predicate_column_cache;
     std::vector<ColumnPredicate*> _pre_eval_block_predicate;
     std::vector<ColumnPredicate*> _short_cir_eval_predicate;
     std::vector<uint32_t> _delete_range_column_ids;

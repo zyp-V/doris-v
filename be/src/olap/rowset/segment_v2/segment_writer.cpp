@@ -189,7 +189,7 @@ Status SegmentWriter::init(const std::vector<uint32_t>& col_ids, bool has_key) {
     }
     auto create_column_writer = [&](uint32_t cid, const auto& column) -> auto {
         _olap_data_convertor->add_column_data_convertor(column);
-        if (_tablet_schema->row_store_only() && !column.is_row_store_column()) {
+        if (!_tablet_schema->should_persist_column(cid)) {
             _column_writers.push_back(nullptr);
             return Status::OK();
         }
@@ -445,7 +445,7 @@ Status SegmentWriter::append_block_with_partial_content(const vectorized::Block*
             seq_column = converted_result.second;
             have_input_seq_column = true;
         }
-        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+        if (_tablet_schema->should_persist_column(cid)) {
             RETURN_IF_ERROR(_column_writers[cid]->append(converted_result.second->get_nullmap(),
                                                          converted_result.second->get_data(),
                                                          num_rows));
@@ -602,9 +602,9 @@ Status SegmentWriter::append_block_with_partial_content(const vectorized::Block*
                                          has_default_or_nullable, segment_start_pos, block));
     full_block.set_columns(std::move(mutable_full_columns));
 
-    // row column should be filled here
+    // Row-store column is derived from the full logical row and must be rebuilt
+    // before appending missing columns in partial update.
     if (_tablet_schema->store_row_column()) {
-        // convert block to row store format
         _serialize_block_to_row_column(full_block);
     }
 
@@ -621,7 +621,7 @@ Status SegmentWriter::append_block_with_partial_content(const vectorized::Block*
             DCHECK_EQ(seq_column, nullptr);
             seq_column = converted_result.second;
         }
-        if (!_tablet_schema->row_store_only() || _tablet_schema->column(cid).is_row_store_column()) {
+        if (_tablet_schema->should_persist_column(cid)) {
             RETURN_IF_ERROR(_column_writers[cid]->append(converted_result.second->get_nullmap(),
                                                          converted_result.second->get_data(),
                                                          num_rows));

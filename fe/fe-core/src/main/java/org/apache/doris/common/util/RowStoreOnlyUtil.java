@@ -17,14 +17,19 @@
 
 package org.apache.doris.common.util;
 
+import org.apache.doris.analysis.FunctionCallExpr;
 import org.apache.doris.analysis.SelectStmt;
 import org.apache.doris.analysis.TableRef;
+import org.apache.doris.catalog.FunctionSet;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.common.Config;
+import org.apache.doris.nereids.trees.expressions.functions.agg.Count;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.algebra.OlapScan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
 import org.apache.doris.nereids.trees.plans.logical.LogicalJoin;
+import org.apache.doris.nereids.trees.plans.logical.LogicalSort;
+import org.apache.doris.nereids.trees.plans.logical.LogicalTopN;
 
 import com.google.common.collect.Lists;
 
@@ -38,11 +43,6 @@ public class RowStoreOnlyUtil {
         if (!Config.enable_row_store_only_complex_query_block) {
             return false;
         }
-        boolean hasAggregateOrJoin = selectStmt.getAggInfo() != null
-                || selectStmt.getTableRefs().size() > 1;
-        if (!hasAggregateOrJoin) {
-            return false;
-        }
 
         List<TableRef> tblRefs = Lists.newArrayList();
         selectStmt.collectTableRefs(tblRefs);
@@ -51,7 +51,14 @@ public class RowStoreOnlyUtil {
                 .filter(table -> table instanceof OlapTable)
                 .map(table -> (OlapTable) table)
                 .anyMatch(OlapTable::rowStoreOnly);
-        return hasRowStoreOnlyOlapTable;
+        if (!hasRowStoreOnlyOlapTable) {
+            return false;
+        }
+
+        if (selectStmt.getTableRefs().size() > 1) {
+            return true;
+        }
+        return selectStmt.getAggInfo() != null && !isCountStarOnly(selectStmt);
     }
 
     public static boolean shouldBlockComplexQuery(Plan plan) {
@@ -65,8 +72,42 @@ public class RowStoreOnlyUtil {
             return false;
         }
 
-        boolean hasAggregateOrJoin = plan.anyMatch(node -> node instanceof LogicalAggregate
-                || node instanceof LogicalJoin);
-        return hasAggregateOrJoin;
+        if (plan.anyMatch(node -> node instanceof LogicalJoin)) {
+            return true;
+        }
+        if (!plan.anyMatch(node -> node instanceof LogicalAggregate)) {
+            return false;
+        }
+        if (plan.anyMatch(node -> node instanceof LogicalSort || node instanceof LogicalTopN)) {
+            return true;
+        }
+
+        return plan.collect(node -> node instanceof LogicalAggregate).stream()
+                .map(node -> (LogicalAggregate<?>) node)
+                .anyMatch(aggregate -> !isCountStarOnly(aggregate));
+    }
+
+    private static boolean isCountStarOnly(SelectStmt selectStmt) {
+        if (selectStmt.getGroupByClause() != null || selectStmt.getHavingPred() != null
+                || selectStmt.getSortInfo() != null || selectStmt.getOrderByElements() != null) {
+            return false;
+        }
+        return selectStmt.getAggInfo().getGroupingExprs().isEmpty()
+                && selectStmt.getAggInfo().getAggregateExprs().size() == 1
+                && isCountStar(selectStmt.getAggInfo().getAggregateExprs().get(0));
+    }
+
+    private static boolean isCountStarOnly(LogicalAggregate<?> aggregate) {
+        if (!aggregate.getGroupByExpressions().isEmpty() || aggregate.getSourceRepeat().isPresent()) {
+            return false;
+        }
+        return aggregate.getOutputExpressions().size() == 1
+                && aggregate.getOutputExpressions().get(0)
+                        .anyMatch(expr -> expr instanceof Count && ((Count) expr).isStar());
+    }
+
+    private static boolean isCountStar(FunctionCallExpr expr) {
+        return expr.getFnName().getFunction().equalsIgnoreCase(FunctionSet.COUNT)
+                && expr.getFnParams().isStar();
     }
 }
