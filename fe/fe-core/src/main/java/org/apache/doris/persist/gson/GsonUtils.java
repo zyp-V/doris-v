@@ -52,6 +52,8 @@ import org.apache.doris.catalog.constraint.UniqueConstraint;
 import org.apache.doris.catalog.stream.AbstractTableStreamUpdate;
 import org.apache.doris.catalog.stream.OlapTableStream;
 import org.apache.doris.catalog.stream.OlapTableStreamUpdate;
+import org.apache.doris.catalog.stream.PaimonTableStream;
+import org.apache.doris.catalog.stream.PaimonTableStreamUpdate;
 import org.apache.doris.common.util.RangeUtils;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.datasource.ExternalDatabase;
@@ -286,6 +288,7 @@ public class GsonUtils {
             .registerSubtype(EsExternalTable.class, EsExternalTable.class.getSimpleName())
             .registerSubtype(OlapTable.class, OlapTable.class.getSimpleName())
             .registerSubtype(OlapTableStream.class, OlapTableStream.class.getSimpleName())
+            .registerSubtype(PaimonTableStream.class, PaimonTableStream.class.getSimpleName())
             .registerSubtype(HMSExternalTable.class, HMSExternalTable.class.getSimpleName())
             .registerSubtype(JdbcExternalTable.class, JdbcExternalTable.class.getSimpleName())
             .registerSubtype(IcebergExternalTable.class, IcebergExternalTable.class.getSimpleName())
@@ -312,7 +315,8 @@ public class GsonUtils {
     // runtime adapter for class "AbstractTableStreamUpdate"
     private static RuntimeTypeAdapterFactory<AbstractTableStreamUpdate> streamUpdateTypeAdapterFactory
             = RuntimeTypeAdapterFactory.of(AbstractTableStreamUpdate.class, "clazz")
-            .registerSubtype(OlapTableStreamUpdate.class, OlapTableStreamUpdate.class.getSimpleName());
+            .registerSubtype(OlapTableStreamUpdate.class, OlapTableStreamUpdate.class.getSimpleName())
+            .registerSubtype(PaimonTableStreamUpdate.class, PaimonTableStreamUpdate.class.getSimpleName());
 
     // the builder of GSON instance.
     // Add any other adapters if necessary.

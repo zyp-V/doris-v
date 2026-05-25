@@ -32,6 +32,8 @@ import org.apache.doris.nereids.trees.plans.DistributeType;
 import org.apache.doris.nereids.trees.plans.JoinType;
 import org.apache.doris.nereids.trees.plans.Plan;
 import org.apache.doris.nereids.trees.plans.PlanType;
+import org.apache.doris.nereids.trees.plans.commands.AlterStreamSetPropertiesCommand;
+import org.apache.doris.nereids.trees.plans.commands.CancelAlterStreamCommand;
 import org.apache.doris.nereids.trees.plans.commands.ExplainCommand;
 import org.apache.doris.nereids.trees.plans.commands.ExplainCommand.ExplainLevel;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
@@ -77,6 +79,32 @@ public class NereidsParserTest extends ParserTestBase {
         Assertions.assertNotNull(unboundRelation.getScanParams());
         Assertions.assertEquals("incr", unboundRelation.getScanParams().getParamType());
         Assertions.assertEquals("v", unboundRelation.getScanParams().getParams().get("k"));
+    }
+
+    @Test
+    public void testParseAlterStreamSetOffset() {
+        NereidsParser nereidsParser = new NereidsParser();
+        LogicalPlan logicalPlan = nereidsParser.parseSingle(
+                "ALTER STREAM IF EXISTS db1.s1 SET ('offset'='10', 'type'='snapshot_id')");
+
+        Assertions.assertTrue(logicalPlan instanceof AlterStreamSetPropertiesCommand);
+    }
+
+    @Test
+    public void testParseAlterStreamSetTimestampOffset() {
+        NereidsParser nereidsParser = new NereidsParser();
+        LogicalPlan logicalPlan = nereidsParser.parseSingle(
+                "ALTER STREAM db1.s1 SET ('stream.offset'='1000', 'type'='timestamp')");
+
+        Assertions.assertTrue(logicalPlan instanceof AlterStreamSetPropertiesCommand);
+    }
+
+    @Test
+    public void testParseCancelAlterStream() {
+        NereidsParser nereidsParser = new NereidsParser();
+        LogicalPlan logicalPlan = nereidsParser.parseSingle("CANCEL ALTER STREAM FROM db1.s1");
+
+        Assertions.assertTrue(logicalPlan instanceof CancelAlterStreamCommand);
     }
 
     @Test

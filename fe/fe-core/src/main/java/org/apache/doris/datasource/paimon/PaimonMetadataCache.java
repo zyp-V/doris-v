@@ -110,9 +110,10 @@ public class PaimonMetadataCache {
         Table table = ((PaimonExternalCatalog) key.getCatalog()).getPaimonTable(key.getDbName(), tableName);
         Snapshot latestSnapshot = table.latestSnapshot().orElse(null);
         if (latestSnapshot == null) {
-            return new PaimonSnapshot(0L, 0L);
+            return new PaimonSnapshot(0L, 0L, 0L);
         }
-        return new PaimonSnapshot(latestSnapshot.id(), latestSnapshot.schemaId());
+        return new PaimonSnapshot(latestSnapshot.id(), latestSnapshot.schemaId(),
+                latestSnapshot.timeMillis());
     }
 
     private String getBaseTableName(String tableName) {

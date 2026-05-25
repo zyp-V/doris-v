@@ -22,11 +22,16 @@ import org.apache.doris.alter.AlterJobV2.JobType;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MTMV;
+import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TabletInvertedIndex;
+import org.apache.doris.catalog.stream.PaimonTableStream;
+import org.apache.doris.catalog.stream.PaimonTableStreamWrapper;
+import org.apache.doris.catalog.stream.PaimonTableStreamWrapper.PaimonStreamMetricInfo;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.ThreadPoolManager;
 import org.apache.doris.common.util.NetUtils;
+import org.apache.doris.datasource.paimon.PaimonExternalTable;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.loadv2.JobState;
 import org.apache.doris.load.loadv2.LoadManager;
@@ -48,6 +53,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
@@ -166,6 +172,14 @@ public final class MetricRepo {
     private static final String MTMV_REFRESH_FAILED_TOTAL_NAME = "mtmv_refresh_failed_total";
     private static final String MTMV_REFRESH_TIMEOUT_TOTAL_NAME = "mtmv_refresh_timeout_total";
     private static final String MTMV_REFRESH_SUCCESS_TIME_NAME = "mtmv_refresh_success_time";
+    private static final String PAIMON_STREAM_COUNT_NAME = "paimon_stream_count";
+    private static final String PAIMON_STREAM_CONSUMED_SNAPSHOT_ID_NAME = "paimon_stream_consumed_snapshot_id";
+    private static final String PAIMON_STREAM_LATEST_SNAPSHOT_ID_NAME = "paimon_stream_latest_snapshot_id";
+    private static final String PAIMON_STREAM_CONSUMED_COMMIT_TIME_MS_NAME =
+            "paimon_stream_consumed_commit_time_ms";
+    private static final String PAIMON_STREAM_LATEST_COMMIT_TIME_MS_NAME = "paimon_stream_latest_commit_time_ms";
+    private static final String PAIMON_STREAM_SNAPSHOT_LAG_NAME = "paimon_stream_snapshot_lag";
+    private static final String PAIMON_STREAM_COMMIT_TIME_LAG_MS_NAME = "paimon_stream_commit_time_lag_ms";
 
     public static AutoMappedMetric<LongCounterMetric> MTMV_REFRESH_FAILED_TOTAL;
     public static AutoMappedMetric<LongCounterMetric> MTMV_REFRESH_TIMEOUT_TOTAL;
@@ -970,6 +984,97 @@ public final class MetricRepo {
     // update some metrics to make a ready to be visited
     private static void updateMetrics() {
         SYSTEM_METRICS.update();
+        updatePaimonStreamMetrics();
+    }
+
+    private static void updatePaimonStreamMetrics() {
+        removePaimonStreamMetrics();
+        if (!Env.getCurrentEnv().isMaster()) {
+            return;
+        }
+        List<PaimonStreamMetricInfo> metricInfos = collectPaimonStreamMetricInfos();
+        GaugeMetricImpl<Long> streamCount = new GaugeMetricImpl<>(PAIMON_STREAM_COUNT_NAME, MetricUnit.NOUNIT,
+                "Paimon stream count");
+        streamCount.setValue((long) metricInfos.size());
+        DORIS_METRIC_REGISTER.addMetrics(streamCount);
+        for (PaimonStreamMetricInfo metricInfo : metricInfos) {
+            addPaimonStreamGauge(PAIMON_STREAM_CONSUMED_SNAPSHOT_ID_NAME, MetricUnit.NOUNIT,
+                    "Paimon stream consumed snapshot id", metricInfo.getConsumedSnapshotId(), metricInfo);
+            addPaimonStreamGauge(PAIMON_STREAM_LATEST_SNAPSHOT_ID_NAME, MetricUnit.NOUNIT,
+                    "Paimon stream latest snapshot id", metricInfo.getLatestSnapshotId(), metricInfo);
+            addPaimonStreamGauge(PAIMON_STREAM_CONSUMED_COMMIT_TIME_MS_NAME, MetricUnit.MILLISECONDS,
+                    "Paimon stream consumed commit time in milliseconds",
+                    metricInfo.getConsumedCommitTimestampMs(), metricInfo);
+            addPaimonStreamGauge(PAIMON_STREAM_LATEST_COMMIT_TIME_MS_NAME, MetricUnit.MILLISECONDS,
+                    "Paimon stream latest commit time in milliseconds",
+                    metricInfo.getLatestCommitTimestampMs(), metricInfo);
+            addPaimonStreamGauge(PAIMON_STREAM_SNAPSHOT_LAG_NAME, MetricUnit.NOUNIT,
+                    "Paimon stream snapshot lag", metricInfo.getSnapshotLag(), metricInfo);
+            addPaimonStreamGauge(PAIMON_STREAM_COMMIT_TIME_LAG_MS_NAME, MetricUnit.MILLISECONDS,
+                    "Paimon stream commit time lag in milliseconds", metricInfo.getCommitTimeLagMs(), metricInfo);
+        }
+    }
+
+    private static void removePaimonStreamMetrics() {
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_COUNT_NAME);
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_CONSUMED_SNAPSHOT_ID_NAME);
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_LATEST_SNAPSHOT_ID_NAME);
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_CONSUMED_COMMIT_TIME_MS_NAME);
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_LATEST_COMMIT_TIME_MS_NAME);
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_SNAPSHOT_LAG_NAME);
+        DORIS_METRIC_REGISTER.removeMetrics(PAIMON_STREAM_COMMIT_TIME_LAG_MS_NAME);
+    }
+
+    private static List<PaimonStreamMetricInfo> collectPaimonStreamMetricInfos() {
+        List<PaimonStreamMetricInfo> metricInfos = Lists.newArrayList();
+        for (Object dbObj : Env.getCurrentEnv().getCatalogMgr().getInternalCatalog().getAllDbs()) {
+            Database db = (Database) dbObj;
+            for (Table table : db.getTables()) {
+                if (!(table instanceof PaimonTableStream)) {
+                    continue;
+                }
+                PaimonTableStream stream = (PaimonTableStream) table;
+                if (!stream.readLockIfExist()) {
+                    continue;
+                }
+                try {
+                    PaimonExternalTable baseTable = stream.getBaseTableNullable();
+                    if (baseTable != null) {
+                        metricInfos.add(new PaimonTableStreamWrapper(stream, baseTable).getMetricInfo());
+                    }
+                } catch (RuntimeException e) {
+                    LOG.debug("Failed to collect Paimon stream metric for {}", stream.getName(), e);
+                } finally {
+                    stream.readUnlock();
+                }
+            }
+        }
+        return metricInfos;
+    }
+
+    private static void addPaimonStreamGauge(String name, MetricUnit unit, String description, long value,
+            PaimonStreamMetricInfo metricInfo) {
+        GaugeMetricImpl<Long> gauge = new GaugeMetricImpl<>(name, unit, description);
+        gauge.setValue(value);
+        for (MetricLabel label : buildPaimonStreamLabels(metricInfo)) {
+            gauge.addLabel(label);
+        }
+        DORIS_METRIC_REGISTER.addMetrics(gauge);
+    }
+
+    private static List<MetricLabel> buildPaimonStreamLabels(PaimonStreamMetricInfo metricInfo) {
+        return Arrays.asList(
+                new MetricLabel("stream_id", String.valueOf(metricInfo.getStreamId())),
+                new MetricLabel("db", normalizeMetricLabelValue(metricInfo.getDbName())),
+                new MetricLabel("stream", normalizeMetricLabelValue(metricInfo.getStreamName())),
+                new MetricLabel("consume_type", normalizeMetricLabelValue(metricInfo.getStreamType())),
+                new MetricLabel("base_catalog", normalizeMetricLabelValue(metricInfo.getBaseCatalogName())),
+                new MetricLabel("base_db", normalizeMetricLabelValue(metricInfo.getBaseDbName())),
+                new MetricLabel("base_table", normalizeMetricLabelValue(metricInfo.getBaseTableName())));
+    }
+
+    private static String normalizeMetricLabelValue(String value) {
+        return value == null || value.isEmpty() ? "unknown" : value;
     }
 
     public static synchronized List<Metric> getMetricsByName(String name) {

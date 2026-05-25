@@ -24,6 +24,7 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.stream.AbstractTableStreamUpdate;
 import org.apache.doris.catalog.stream.OlapTableStreamUpdate;
 import org.apache.doris.catalog.stream.OlapTableStreamWrapper;
+import org.apache.doris.catalog.stream.PaimonTableStreamWrapper;
 import org.apache.doris.catalog.stream.TableStreamUpdateInfo;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
@@ -192,7 +193,8 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
 
             List<ScanNode> tableStreamScanNodes =
                     buildResult.planner.getScanNodes().stream()
-                            .filter(s -> s.getTupleDesc().getTable() instanceof OlapTableStreamWrapper)
+                            .filter(s -> s.getTupleDesc().getTable() instanceof OlapTableStreamWrapper
+                                    || s.getTupleDesc().getTable() instanceof PaimonTableStreamWrapper)
                             .collect(Collectors.toList());
 
             if (!tableStreamScanNodes.isEmpty()) {
@@ -200,18 +202,25 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                 Map<Pair<Long, Long>, AbstractTableStreamUpdate> distinctUpdate =
                         new HashMap<>(tableStreamScanNodes.size());
                 for (ScanNode scanNode : tableStreamScanNodes) {
-                    // only support OlapScanNode currently
-                    Preconditions.checkArgument(scanNode instanceof OlapScanNode);
-                    OlapScanNode olapScanNode = (OlapScanNode) scanNode;
-                    OlapTableStreamWrapper wrapper =
-                            (OlapTableStreamWrapper) scanNode.getTupleDesc().getTable();
-                    if (!distinctUpdate.containsKey(
-                            Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId()))) {
-                        distinctUpdate.put(Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId()),
-                                new OlapTableStreamUpdate());
+                    if (scanNode.getTupleDesc().getTable() instanceof OlapTableStreamWrapper) {
+                        Preconditions.checkArgument(scanNode instanceof OlapScanNode);
+                        OlapScanNode olapScanNode = (OlapScanNode) scanNode;
+                        OlapTableStreamWrapper wrapper =
+                                (OlapTableStreamWrapper) scanNode.getTupleDesc().getTable();
+                        Pair<Long, Long> streamKey = Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId());
+                        if (!distinctUpdate.containsKey(streamKey)) {
+                            distinctUpdate.put(streamKey, new OlapTableStreamUpdate());
+                        }
+                        distinctUpdate.get(streamKey).merge(olapScanNode.getStreamUpdate());
+                    } else if (scanNode.getTupleDesc().getTable() instanceof PaimonTableStreamWrapper) {
+                        PaimonTableStreamWrapper wrapper =
+                                (PaimonTableStreamWrapper) scanNode.getTupleDesc().getTable();
+                        Pair<Long, Long> streamKey = Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId());
+                        distinctUpdate.putIfAbsent(streamKey, wrapper.getStreamUpdate());
+                        if (distinctUpdate.get(streamKey) != wrapper.getStreamUpdate()) {
+                            distinctUpdate.get(streamKey).merge(wrapper.getStreamUpdate());
+                        }
                     }
-                    distinctUpdate.get(Pair.of(wrapper.getStreamDbId(), wrapper.getStreamId()))
-                                    .merge(olapScanNode.getStreamUpdate());
                 }
                 List<TableStreamUpdateInfo> infos = new ArrayList<>(distinctUpdate.size());
                 distinctUpdate.forEach((key, value) -> infos.add(new TableStreamUpdateInfo(key.first,
@@ -254,6 +263,16 @@ public class InsertIntoTableCommand extends Command implements ForwardWithSync, 
                 }
                 if (!insertExecutor.isEmptyInsert()) {
                     insertExecutor.beginTransaction();
+                    if (insertExecutor.getStreamUpdateInfos() != null
+                            && !insertExecutor.getStreamUpdateInfos().isEmpty()) {
+                        TransactionState transactionState = Env.getCurrentGlobalTransactionMgr()
+                                .getTransactionState(insertExecutor.getDatabase().getId(),
+                                        insertExecutor.getTxnId());
+                        transactionState.setStreamUpdateInfos(insertExecutor.getStreamUpdateInfos());
+                        Env.getCurrentGlobalTransactionMgr().registerTableStreamTxn(
+                                insertExecutor.getDatabase().getId(), insertExecutor.getTxnId(),
+                                insertExecutor.getStreamUpdateInfos());
+                    }
                     insertExecutor.finalizeSink(
                             buildResult.planner.getFragments().get(0), buildResult.dataSink,
                             buildResult.physicalSink

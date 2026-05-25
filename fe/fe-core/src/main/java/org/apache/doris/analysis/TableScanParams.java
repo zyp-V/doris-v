@@ -22,7 +22,8 @@ import com.google.common.collect.ImmutableMap;
 import java.util.Map;
 
 public class TableScanParams {
-    public static String INCREMENTAL_READ = "incr";
+    public static final String INCREMENTAL_READ = "incr";
+    public static final String FULL_READ = "full";
 
     private final String paramType;
     private final Map<String, String> params;
@@ -42,5 +43,9 @@ public class TableScanParams {
 
     public boolean incrementalRead() {
         return INCREMENTAL_READ.equals(paramType);
+    }
+
+    public boolean fullRead() {
+        return FULL_READ.equals(paramType);
     }
 }

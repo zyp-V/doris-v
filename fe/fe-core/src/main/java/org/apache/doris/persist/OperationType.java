@@ -384,6 +384,8 @@ public class OperationType {
 
     public static final short OP_ALTER_ROLE = 475;
 
+    public static final short OP_ALTER_STREAM_OFFSET = 476;
+
     /**
      * Get opcode name by op code.
      **/

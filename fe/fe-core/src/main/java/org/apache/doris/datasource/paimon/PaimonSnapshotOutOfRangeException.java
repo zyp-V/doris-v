@@ -15,11 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
-package org.apache.doris.catalog.stream;
+package org.apache.doris.datasource.paimon;
 
 import org.apache.doris.common.UserException;
 
-public abstract class AbstractTableStreamUpdate {
-    public abstract void merge(AbstractTableStreamUpdate other) throws UserException;
+public class PaimonSnapshotOutOfRangeException extends UserException {
+    public PaimonSnapshotOutOfRangeException(String msg) {
+        super(msg);
+    }
+
+    public PaimonSnapshotOutOfRangeException(String msg, Throwable cause) {
+        super(msg, cause);
+    }
 }

@@ -45,6 +45,20 @@ import java.util.stream.Collectors;
 public class PaimonJniScanner extends JniScanner {
     private static final Logger LOG = LoggerFactory.getLogger(PaimonJniScanner.class);
     private static final String PAIMON_ROW_KIND_COLUMN = "__paimon_row_kind";
+    private static final String STREAM_CHANGE_TYPE_COL = "__DORIS_STREAM_CHANGE_TYPE_COL__";
+    private static final String STREAM_SEQ_COL = "__DORIS_STREAM_SEQUENCE_COL__";
+    private static final String APPEND = "APPEND";
+    private static final String DELETE = "DELETE";
+    private static final String UPDATE_BEFORE = "UPDATE_BEFORE";
+    private static final String UPDATE_AFTER = "UPDATE_AFTER";
+    private static final String INCREMENTAL_BETWEEN_SCAN_MODE = "incrementalBetweenScanMode";
+    private static final String PAIMON_INCREMENTAL_BETWEEN_SCAN_MODE = "incremental-between-scan-mode";
+    private static final String DORIS_PAIMON_STREAM_READ = "doris.paimon.stream.read";
+    private static final String DORIS_PAIMON_STREAM_CONSUME_TYPE = "doris.paimon.stream.consume.type";
+    private static final String APPEND_ONLY = "APPEND_ONLY";
+    private static final String MIN_DELTA = "MIN_DELTA";
+    private static final String INSERT_ROW_KIND = "+I";
+    private static final String DIFF = "diff";
     @Deprecated
     private static final String PAIMON_OPTION_PREFIX = "paimon.";
     @Deprecated
@@ -154,7 +168,9 @@ public class PaimonJniScanner extends JniScanner {
         List<Integer> projected = new java.util.ArrayList<>();
         int dataTypeIndex = 0;
         for (int i = 0; i < fields.length; i++) {
-            if (PAIMON_ROW_KIND_COLUMN.equalsIgnoreCase(fields[i])) {
+            if (PAIMON_ROW_KIND_COLUMN.equalsIgnoreCase(fields[i])
+                    || STREAM_CHANGE_TYPE_COL.equalsIgnoreCase(fields[i])
+                    || STREAM_SEQ_COL.equalsIgnoreCase(fields[i])) {
                 continue;
             }
             int paimonIndex = paimonAllFieldNames.indexOf(fields[i].toLowerCase());
@@ -216,11 +232,25 @@ public class PaimonJniScanner extends JniScanner {
             while (recordIterator != null) {
                 InternalRow record;
                 while ((record = recordIterator.next()) != null) {
+                    String rowKind = record.getRowKind().shortString();
+                    // APPEND_ONLY uses Paimon changelog mode but exposes only inserted rows to Doris stream users.
+                    if (shouldSkipRecord(rowKind)) {
+                        continue;
+                    }
                     columnValue.setOffsetRow(record);
                     for (int i = 0; i < fields.length; i++) {
                         if (PAIMON_ROW_KIND_COLUMN.equalsIgnoreCase(fields[i])) {
-                            columnValue.setString(record.getRowKind().shortString());
+                            columnValue.setString(getPaimonRowKindValue(rowKind));
                             appendData(i, columnValue);
+                            continue;
+                        }
+                        if (STREAM_CHANGE_TYPE_COL.equalsIgnoreCase(fields[i])) {
+                            columnValue.setString(getChangeType(rowKind));
+                            appendData(i, columnValue);
+                            continue;
+                        }
+                        if (STREAM_SEQ_COL.equalsIgnoreCase(fields[i])) {
+                            vectorTable.getColumn(i).appendLong(-1L);
                             continue;
                         }
                         int paimonIndex = fieldToPaimonIndex[i];
@@ -284,6 +314,51 @@ public class PaimonJniScanner extends JniScanner {
         if (LOG.isDebugEnabled()) {
             LOG.debug("paimonAllFieldNames:{}", paimonAllFieldNames);
         }
+    }
+
+    private String getChangeType(String rowKind) {
+        if (!MIN_DELTA.equalsIgnoreCase(getStreamConsumeType())
+                && !DIFF.equalsIgnoreCase(getIncrementalBetweenScanMode())) {
+            return APPEND;
+        }
+        switch (rowKind) {
+            case "+I":
+                return APPEND;
+            case "-D":
+                return DELETE;
+            case "-U":
+                return UPDATE_BEFORE;
+            case "+U":
+                return UPDATE_AFTER;
+            default:
+                return APPEND;
+        }
+    }
+
+    private String getPaimonRowKindValue(String rowKind) {
+        return isPaimonStreamScan() ? getChangeType(rowKind) : rowKind;
+    }
+
+    private boolean shouldSkipRecord(String rowKind) {
+        return isPaimonStreamScan()
+                && APPEND_ONLY.equalsIgnoreCase(getStreamConsumeType())
+                && !INSERT_ROW_KIND.equals(rowKind);
+    }
+
+    private boolean isPaimonStreamScan() {
+        return Boolean.parseBoolean(params.get(DORIS_PAIMON_STREAM_READ));
+    }
+
+    private String getStreamConsumeType() {
+        return params.getOrDefault(DORIS_PAIMON_STREAM_CONSUME_TYPE, "");
+    }
+
+    private String getIncrementalBetweenScanMode() {
+        String mode = params.get(INCREMENTAL_BETWEEN_SCAN_MODE);
+        if (mode == null) {
+            mode = params.get(PAIMON_INCREMENTAL_BETWEEN_SCAN_MODE);
+        }
+        return mode == null ? "" : mode;
     }
 
 }

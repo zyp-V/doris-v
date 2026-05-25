@@ -478,6 +478,12 @@ public class MTMVPartitionUtil {
             return false;
         }
 
+        if (table.getType() == TableIf.TableType.STREAM) {
+            // TABLE_STREAM does not participate in MTMV snapshot comparison yet.
+            // For auto refresh tasks, treat stream sources as out-of-sync so the refresh can proceed.
+            return false;
+        }
+
         if (!(table instanceof MTMVRelatedTableIf)) {
             // if not MTMVRelatedTableIf, we can not get snapshot from it,
             // Currently, it is believed to be synchronous

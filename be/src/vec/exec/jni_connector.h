@@ -296,15 +296,15 @@ private:
 
     bool _closed = false;
     bool _scanner_opened = false;
-    jclass _jni_scanner_cls;
-    jobject _jni_scanner_obj;
-    jmethodID _jni_scanner_open;
-    jmethodID _jni_scanner_get_next_batch;
-    jmethodID _jni_scanner_get_table_schema;
-    jmethodID _jni_scanner_close;
-    jmethodID _jni_scanner_release_column;
-    jmethodID _jni_scanner_release_table;
-    jmethodID _jni_scanner_get_statistics;
+    jclass _jni_scanner_cls = nullptr;
+    jobject _jni_scanner_obj = nullptr;
+    jmethodID _jni_scanner_open = nullptr;
+    jmethodID _jni_scanner_get_next_batch = nullptr;
+    jmethodID _jni_scanner_get_table_schema = nullptr;
+    jmethodID _jni_scanner_close = nullptr;
+    jmethodID _jni_scanner_release_column = nullptr;
+    jmethodID _jni_scanner_release_table = nullptr;
+    jmethodID _jni_scanner_get_statistics = nullptr;
 
     TableMetaAddress _table_meta;
 
@@ -317,6 +317,8 @@ private:
     void _set_meta(long meta_addr) { _table_meta.set_meta(meta_addr); }
 
     Status _init_jni_scanner(JNIEnv* env, int batch_size);
+
+    void _release_scanner_params();
 
     Status _fill_block(Block* block, size_t num_rows);
 

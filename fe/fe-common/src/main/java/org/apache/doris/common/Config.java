@@ -738,6 +738,12 @@ public class Config extends ConfigBase {
     public static int alter_table_timeout_second = 86400 * 30; // 1month
 
     @ConfField(mutable = true, masterOnly = true, description = {
+            "ALTER STREAM SET offset 等待正在消费 Stream 的事务结束并获取 Stream 写锁的最大总时间，单位为毫秒。",
+            "The total timeout in milliseconds for ALTER STREAM SET offset to wait for running stream-consuming "
+                    + "transactions to finish and acquire the stream write lock."})
+    public static long alter_stream_offset_timeout_ms = 300 * 1000L; // 300 sec
+
+    @ConfField(mutable = true, masterOnly = true, description = {
             "是否禁用存储介质检查。如果禁用，ReportHandler 将不会检查 tablet 的存储介质，"
                     + "并且禁用存储介质冷却功能。默认值为 false。",
             "When disable_storage_medium_check is true, ReportHandler would not check tablet's storage medium "

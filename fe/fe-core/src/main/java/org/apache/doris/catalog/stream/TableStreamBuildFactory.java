@@ -22,6 +22,7 @@ import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.DdlException;
+import org.apache.doris.datasource.paimon.PaimonExternalTable;
 
 import com.google.common.base.Preconditions;
 
@@ -56,7 +57,11 @@ public class TableStreamBuildFactory {
         Preconditions.checkNotNull(params.baseTable, "Stream base table isn't initialized.");
         List<Column> schema = new java.util.ArrayList<>(params.baseTable.getBaseSchema());
         // filter irrelevant invisible columns
-        schema = schema.stream().filter(Column::isVisible).collect(Collectors.toList());
+        schema = schema.stream()
+                .filter(Column::isVisible)
+                .filter(c -> !(params.baseTable instanceof PaimonExternalTable
+                        && PaimonExternalTable.PAIMON_ROW_KIND_COLUMN.equalsIgnoreCase(c.getName())))
+                .collect(Collectors.toList());
         // extra columns
         Column sequenceColumn = new Column(Column.STREAM_SEQ_COL, Type.BIGINT);
         sequenceColumn.setIsVisible(false);
@@ -67,6 +72,8 @@ public class TableStreamBuildFactory {
         switch (params.baseTable.getType()) {
             case OLAP:
                 return new OlapTableStream(params.tableStreamName, schema, params.baseTable);
+            case PAIMON_EXTERNAL_TABLE:
+                return new PaimonTableStream(params.tableStreamName, schema, params.baseTable);
             default:
                 throw new DdlException("unsupported stream base table type: " + params.baseTable.getType());
         }

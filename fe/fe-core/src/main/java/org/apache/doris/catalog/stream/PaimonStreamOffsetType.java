@@ -15,11 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 package org.apache.doris.catalog.stream;
 
-import org.apache.doris.common.UserException;
+import org.apache.doris.common.AnalysisException;
 
-public abstract class AbstractTableStreamUpdate {
-    public abstract void merge(AbstractTableStreamUpdate other) throws UserException;
+import com.google.common.base.Strings;
+
+public enum PaimonStreamOffsetType {
+    SNAPSHOT_ID,
+    TIMESTAMP;
+
+    public static PaimonStreamOffsetType fromString(String type) throws AnalysisException {
+        if (Strings.isNullOrEmpty(type) || "snapshot_id".equalsIgnoreCase(type)) {
+            return SNAPSHOT_ID;
+        }
+        if ("timestamp".equalsIgnoreCase(type)) {
+            return TIMESTAMP;
+        }
+        throw new AnalysisException("Unsupported ALTER STREAM offset type: " + type);
+    }
 }

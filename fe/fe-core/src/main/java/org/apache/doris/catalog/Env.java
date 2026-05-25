@@ -90,6 +90,7 @@ import org.apache.doris.catalog.OlapTable.OlapTableState;
 import org.apache.doris.catalog.Replica.ReplicaStatus;
 import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.catalog.stream.BaseTableStream;
+import org.apache.doris.catalog.stream.PaimonStreamOffsetType;
 import org.apache.doris.catalog.stream.TableStreamManager;
 import org.apache.doris.clone.ColocateTableCheckerAndBalancer;
 import org.apache.doris.clone.DynamicPartitionScheduler;
@@ -4599,6 +4600,11 @@ public class Env {
         this.alter.processAlterView(stmt, ConnectContext.get());
     }
 
+    public void alterTableStream(TableNameInfo streamName, boolean ifExists, String offsetValue,
+            PaimonStreamOffsetType offsetType) throws UserException {
+        this.alter.processAlterStream(streamName, ifExists, offsetValue, offsetType);
+    }
+
     public void createMaterializedView(CreateMaterializedViewStmt stmt)
             throws AnalysisException, DdlException, MetaNotFoundException {
         this.alter.processCreateMaterializedView(stmt);
@@ -4621,6 +4627,10 @@ public class Env {
         } else {
             throw new DdlException("Cancel " + stmt.getAlterType() + " does not implement yet");
         }
+    }
+
+    public void cancelAlterStream(TableNameInfo streamName) throws DdlException {
+        this.alter.cancelAlterStream(streamName);
     }
 
     /*
@@ -6627,4 +6637,3 @@ public class Env {
         return geminiService;
     }
 }
-

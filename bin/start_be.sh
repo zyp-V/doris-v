@@ -318,6 +318,24 @@ setup_java_env() {
 # prepare jvm if needed
 setup_java_env || true
 
+# ===============================
+# 自动设置 BYTED_HOST_IP / IPV6
+# ===============================
+# 优先获取 IPv4
+HOST_IPV4=$(ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n1)
+# 获取 IPv6（排除 link-local fe80）
+HOST_IPV6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | cut -d/ -f1 | grep -v '^fe80' | head -n1)
+echo "Detected IPv4: ${HOST_IPV4}"
+echo "Detected IPv6: ${HOST_IPV6}"
+if [[ -n "${HOST_IPV6}" ]]; then
+    export BYTED_HOST_IPV6=${HOST_IPV6}
+    echo "Export BYTED_HOST_IPV6=${BYTED_HOST_IPV6}"
+fi
+if [[ -n "${HOST_IPV4}" ]]; then
+    export BYTED_HOST_IP=${HOST_IPV4}
+    echo "Export BYTED_HOST_IP=${BYTED_HOST_IP}"
+fi
+
 for var in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY; do
     if [[ -n ${!var} ]]; then
         echo "env '${var}' = '${!var}', need unset it using 'unset ${var}'"

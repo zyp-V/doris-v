@@ -37,6 +37,7 @@ std::vector<SchemaScanner::ColumnDesc>
                 {"STREAM_NAME", TYPE_VARCHAR, sizeof(StringRef), true},
                 {"STREAM_ID", TYPE_BIGINT, sizeof(int64_t), true},
                 {"UNIT", TYPE_VARCHAR, sizeof(StringRef), true},
+                {"OFFSET_TYPE", TYPE_VARCHAR, sizeof(StringRef), true},
                 {"CONSUMPTION_STATUS", TYPE_VARCHAR, sizeof(StringRef), true},
                 {"LAG", TYPE_VARCHAR, sizeof(StringRef), true},
                 {"LAST_CONSUMPTION_TIME", TYPE_BIGINT, sizeof(int64_t), true},

@@ -17,6 +17,8 @@
 
 package org.apache.doris.nereids.rules.analysis;
 
+import org.apache.doris.analysis.TableScanParams;
+import org.apache.doris.analysis.TableSnapshot;
 import org.apache.doris.catalog.AggStateType;
 import org.apache.doris.catalog.AggregateType;
 import org.apache.doris.catalog.Column;
@@ -31,6 +33,8 @@ import org.apache.doris.catalog.Type;
 import org.apache.doris.catalog.View;
 import org.apache.doris.catalog.stream.OlapTableStream;
 import org.apache.doris.catalog.stream.OlapTableStreamWrapper;
+import org.apache.doris.catalog.stream.PaimonTableStream;
+import org.apache.doris.catalog.stream.PaimonTableStreamWrapper;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.UserException;
@@ -40,6 +44,7 @@ import org.apache.doris.datasource.ExternalView;
 import org.apache.doris.datasource.doris.RemoteDorisExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalTable;
 import org.apache.doris.datasource.hive.HMSExternalTable.DLAType;
+import org.apache.doris.datasource.paimon.PaimonExternalTable;
 import org.apache.doris.datasource.paimon.source.PaimonScanNode;
 import org.apache.doris.nereids.CTEContext;
 import org.apache.doris.nereids.CascadesContext;
@@ -100,6 +105,7 @@ import org.apache.doris.qe.ConnectContext;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.apache.commons.collections.CollectionUtils;
@@ -584,6 +590,39 @@ public class BindRelation extends OneAnalysisRuleFactory {
             OlapTableStreamWrapper olapTableStreamWrapper = new OlapTableStreamWrapper(olapTableStream,
                     (OlapTable) olapTableStream.getBaseTableOrNereidsAnalysisException());
             return makeOlapTableStreamScan(olapTableStreamWrapper, unboundRelation, qualifier, cascadesContext);
+        }
+        if (table instanceof PaimonTableStream) {
+            PaimonTableStream paimonTableStream = (PaimonTableStream) table;
+            PaimonTableStreamWrapper wrapper = new PaimonTableStreamWrapper(paimonTableStream,
+                    (PaimonExternalTable) paimonTableStream.getBaseTableOrNereidsAnalysisException());
+            TableScanParams userScanParams = unboundRelation.getScanParams();
+            Optional<TableSnapshot> tableSnapshot = unboundRelation.getTableSnapshot();
+            if (userScanParams != null && tableSnapshot.isPresent()) {
+                throw new AnalysisException("Can not specify scan params and table snapshot at same time.");
+            }
+            if (userScanParams == null && tableSnapshot.isPresent()) {
+                TableSnapshot snapshot = tableSnapshot.get();
+                if (snapshot.getType() != TableSnapshot.VersionType.VERSION) {
+                    throw new AnalysisException("Paimon Stream full read only supports version id.");
+                }
+                userScanParams = new TableScanParams(TableScanParams.FULL_READ,
+                        ImmutableMap.of(PaimonTableStreamWrapper.FULL_SNAPSHOT_ID_PARAM,
+                                String.valueOf(snapshot.getVersion())));
+                tableSnapshot = Optional.empty();
+            }
+            if (userScanParams == null && ConnectContext.get() != null
+                    && TableScanParams.FULL_READ.equalsIgnoreCase(
+                    ConnectContext.get().getSessionVariable().paimonStreamReadMode)) {
+                userScanParams = new TableScanParams(TableScanParams.FULL_READ, ImmutableMap.of());
+            }
+            try {
+                TableScanParams scanParams = wrapper.synthesizeScanParams(userScanParams);
+                return new LogicalFileScan(unboundRelation.getRelationId(), wrapper, qualifier,
+                        unboundRelation.getTableSample(), tableSnapshot,
+                        Optional.of(scanParams));
+            } catch (UserException e) {
+                throw new AnalysisException(e.getMessage(), e);
+            }
         }
         throw new AnalysisException("Unsupported stream Type: " + table.getClass().getName());
     }

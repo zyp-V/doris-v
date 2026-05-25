@@ -52,6 +52,7 @@ statementBase
     | supportedJobStatement             #supportedJobStatementAlias
     | constraintStatement               #constraintStatementAlias
     | supportedShowStatement            #supportedShowStatementAlias
+    | supportedCancelStatement          #supportedCancelStatementAlias
     | unsupportedStatement              #unsupported
     ;
 
@@ -184,6 +185,8 @@ supportedCreateStatement
 supportedAlterStatement
     : ALTER VIEW name=multipartIdentifier (LEFT_PAREN cols=simpleColumnDefs RIGHT_PAREN)?
         AS query                                                          #alterView
+    | ALTER STREAM (IF EXISTS)? name=multipartIdentifier
+        SET LEFT_PAREN properties=propertyItemList RIGHT_PAREN            #alterStreamSetProperties
     ;
 
 supportedShowStatement
@@ -842,6 +845,10 @@ unsupportedDmlStatement
 unsupportedKillStatement
     : KILL (CONNECTION)? INTEGER_VALUE              #killConnection
     | KILL QUERY (INTEGER_VALUE | STRING_LITERAL)   #killQuery
+    ;
+
+supportedCancelStatement
+    : CANCEL ALTER STREAM FROM tableName=multipartIdentifier   #cancelAlterStream
     ;
 
 unsupportedDescribeStatement

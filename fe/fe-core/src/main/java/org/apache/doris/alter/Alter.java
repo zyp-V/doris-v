@@ -56,18 +56,27 @@ import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf;
 import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.catalog.View;
+import org.apache.doris.catalog.stream.PaimonStreamOffsetType;
+import org.apache.doris.catalog.stream.PaimonTableStream;
+import org.apache.doris.catalog.stream.PaimonTableStreamWrapper;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
+import org.apache.doris.common.ErrorCode;
+import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DynamicPartitionUtil;
 import org.apache.doris.common.util.MetaLockUtils;
 import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.datasource.ExternalTable;
+import org.apache.doris.datasource.InternalCatalog;
+import org.apache.doris.datasource.paimon.PaimonSnapshot;
 import org.apache.doris.mtmv.BaseTableInfo;
+import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.nereids.trees.plans.commands.info.TableNameInfo;
 import org.apache.doris.persist.AlterMTMV;
+import org.apache.doris.persist.AlterStreamOffsetOperationLog;
 import org.apache.doris.persist.AlterViewInfo;
 import org.apache.doris.persist.BatchModifyPartitionsInfo;
 import org.apache.doris.persist.ModifyCommentOperationLog;
@@ -79,6 +88,7 @@ import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.thrift.TOdbcTableType;
 import org.apache.doris.thrift.TSortType;
 import org.apache.doris.thrift.TTabletType;
+import org.apache.doris.transaction.GlobalTransactionMgr;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
@@ -94,9 +104,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 public class Alter {
     private static final Logger LOG = LogManager.getLogger(Alter.class);
+    private static final long ALTER_STREAM_OFFSET_LOCK_RETRY_MS = 500L;
 
     private AlterHandler schemaChangeHandler;
     private AlterHandler materializedViewHandler;
@@ -1026,6 +1038,172 @@ public class Alter {
         } catch (UserException e) {
             // if MTMV has been dropped, ignore this exception
             LOG.warn(e);
+        }
+    }
+
+    public void processAlterStream(TableNameInfo streamName, boolean ifExists, String offsetValue,
+            PaimonStreamOffsetType offsetType) throws UserException {
+        Env env = Env.getCurrentEnv();
+        if (!InternalCatalog.INTERNAL_CATALOG_NAME.equals(streamName.getCtl())) {
+            throw new DdlException("ALTER STREAM only supports internal catalog.");
+        }
+        Optional<Database> dbOpt = env.getInternalCatalog().getDb(streamName.getDb());
+        if (!dbOpt.isPresent()) {
+            if (ifExists) {
+                return;
+            }
+            throw new DdlException(String.format("database: %s does not exist.", streamName.getDb()));
+        }
+        Database db = dbOpt.get();
+        Optional<Table> tableOpt = db.getTable(streamName.getTbl());
+        if (!tableOpt.isPresent()) {
+            if (ifExists) {
+                return;
+            }
+            throw new DdlException(String.format("stream: %s does not exist.", streamName.getTbl()));
+        }
+        Table table = tableOpt.get();
+        if (table.getType() != TableType.STREAM) {
+            throw new DdlException("Not a stream table: " + streamName.getTbl());
+        }
+        if (!env.getAccessManager().checkTblPriv(ConnectContext.get(),
+                streamName.getCtl(), streamName.getDb(), streamName.getTbl(), PrivPredicate.ALTER)) {
+            ErrorReport.reportDdlException(ErrorCode.ERR_TABLEACCESS_DENIED_ERROR, "ALTER STREAM",
+                    ConnectContext.get().getQualifiedUser(), ConnectContext.get().getRemoteIP(),
+                    streamName.getDb() + ": " + streamName.getTbl());
+        }
+        processAlterPaimonStreamOffset(env, db, table, offsetValue, offsetType);
+    }
+
+    private void processAlterPaimonStreamOffset(Env env, Database db, Table table, String offsetValue,
+            PaimonStreamOffsetType offsetType) throws UserException {
+        if (!(table instanceof PaimonTableStream)) {
+            throw new DdlException("ALTER STREAM SET offset only supports Paimon Stream.");
+        }
+        PaimonTableStream paimonStream = (PaimonTableStream) table;
+        checkPaimonStreamAlterable(paimonStream);
+        GlobalTransactionMgr.AlterStreamOffsetContext alterContext =
+                env.getGlobalTransactionMgr().beginAlterStreamOffset(db.getId(), paimonStream.getId());
+        boolean streamLocked = false;
+        try {
+            if (paimonStream.getBaseTableNullable() == null) {
+                throw new DdlException("Unknown Paimon base table for stream: " + paimonStream.getName());
+            }
+            PaimonTableStreamWrapper streamWrapper = new PaimonTableStreamWrapper(paimonStream,
+                    paimonStream.getBaseTableNullable());
+            PaimonSnapshot targetSnapshot = streamWrapper.resolveAlterOffset(
+                    offsetValue, offsetType);
+            long deadlineMs = getAlterStreamOffsetDeadlineMs();
+            while (true) {
+                env.getGlobalTransactionMgr().waitAlterStreamOffsetReady(alterContext, deadlineMs);
+                while (!paimonStream.tryWriteLockOrException(
+                        Math.min(ALTER_STREAM_OFFSET_LOCK_RETRY_MS,
+                                getAlterStreamOffsetRemainingMs(deadlineMs, paimonStream.getName(),
+                                        "waiting for stream write lock")),
+                        TimeUnit.MILLISECONDS, new DdlException("unknown table, tableName=" + paimonStream.getName(),
+                                ErrorCode.ERR_BAD_TABLE_ERROR))) {
+                    env.getGlobalTransactionMgr().checkAlterStreamOffsetNotCancelled(alterContext);
+                }
+                streamLocked = true;
+                env.getGlobalTransactionMgr().checkAlterStreamOffsetNotCancelled(alterContext);
+                if (env.getGlobalTransactionMgr().isAlterStreamOffsetReady(alterContext)) {
+                    break;
+                }
+                paimonStream.writeUnlock();
+                streamLocked = false;
+            }
+            checkPaimonStreamAlterable(paimonStream);
+            if (paimonStream.getBaseTableNullable() == null) {
+                throw new DdlException("Unknown Paimon base table for stream: " + paimonStream.getName());
+            }
+            AlterStreamOffsetOperationLog operationLog = new AlterStreamOffsetOperationLog(
+                    db.getId(), paimonStream.getId(), paimonStream.getName(), targetSnapshot.getSnapshotId(),
+                    targetSnapshot.getCommitTimestampMs(), PaimonTableStream.INVALID_HISTORICAL_SNAPSHOT_ID);
+            env.getEditLog().logAlterStreamOffset(operationLog);
+            paimonStream.setCommittedSnapshotOffset(targetSnapshot.getSnapshotId(),
+                    targetSnapshot.getCommitTimestampMs());
+        } finally {
+            if (streamLocked) {
+                paimonStream.writeUnlock();
+            }
+            env.getGlobalTransactionMgr().endAlterStreamOffset(alterContext);
+        }
+    }
+
+    private static void checkPaimonStreamAlterable(PaimonTableStream paimonStream) throws DdlException {
+        if (paimonStream.isDisabled()) {
+            throw new DdlException("Cannot alter offset for disabled Paimon Stream: " + paimonStream.getName());
+        }
+        if (paimonStream.isStale()) {
+            throw new DdlException(String.format(
+                    "Cannot alter offset for stale Paimon Stream: %s, reason: %s",
+                    paimonStream.getName(), paimonStream.getStaleReason()));
+        }
+    }
+
+    private static long getAlterStreamOffsetDeadlineMs() {
+        long timeoutMs = Math.max(1L, Config.alter_stream_offset_timeout_ms);
+        long nowMs = System.currentTimeMillis();
+        return Long.MAX_VALUE - nowMs < timeoutMs ? Long.MAX_VALUE : nowMs + timeoutMs;
+    }
+
+    private static long getAlterStreamOffsetRemainingMs(long deadlineMs, String streamName, String action)
+            throws DdlException {
+        long remainingMs = deadlineMs - System.currentTimeMillis();
+        if (remainingMs <= 0) {
+            throw new DdlException(String.format(
+                    "ALTER STREAM SET offset for stream %s timed out after %d ms while %s.",
+                    streamName, Config.alter_stream_offset_timeout_ms, action));
+        }
+        return remainingMs;
+    }
+
+    public void cancelAlterStream(TableNameInfo streamName) throws DdlException {
+        Env env = Env.getCurrentEnv();
+        if (!InternalCatalog.INTERNAL_CATALOG_NAME.equals(streamName.getCtl())) {
+            throw new DdlException("CANCEL ALTER STREAM only supports internal catalog.");
+        }
+        Database db = env.getInternalCatalog().getDbOrDdlException(streamName.getDb());
+        Optional<Table> tableOpt = db.getTable(streamName.getTbl());
+        if (!tableOpt.isPresent()) {
+            throw new DdlException(String.format("stream: %s does not exist.", streamName.getTbl()));
+        }
+        Table table = tableOpt.get();
+        if (table.getType() != TableType.STREAM) {
+            throw new DdlException("Not a stream table: " + streamName.getTbl());
+        }
+        if (!env.getAccessManager().checkTblPriv(ConnectContext.get(),
+                InternalCatalog.INTERNAL_CATALOG_NAME, streamName.getDb(), streamName.getTbl(), PrivPredicate.ALTER)) {
+            ErrorReport.reportDdlException(ErrorCode.ERR_TABLEACCESS_DENIED_ERROR, "CANCEL ALTER STREAM",
+                    ConnectContext.get().getQualifiedUser(), ConnectContext.get().getRemoteIP(),
+                    streamName.getDb() + ": " + streamName.getTbl());
+        }
+        try {
+            env.getGlobalTransactionMgr().cancelAlterStreamOffset(db.getId(), table.getId());
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage(), e);
+        }
+    }
+
+    public void replayAlterStreamOffset(AlterStreamOffsetOperationLog operation) throws MetaNotFoundException {
+        Database db = Env.getCurrentInternalCatalog().getDbOrMetaException(operation.getDbId());
+        Table table = db.getTableOrMetaException(operation.getStreamId());
+        table.writeLock();
+        try {
+            if (!(table instanceof PaimonTableStream)) {
+                String message = String.format(
+                        "Failed to replay ALTER STREAM SET offset. Expected PaimonTableStream, "
+                                + "dbId=%d, streamId=%d, streamName=%s, currentTableName=%s, "
+                                + "currentTableType=%s, currentClass=%s",
+                        operation.getDbId(), operation.getStreamId(), operation.getStreamName(),
+                        table.getName(), table.getType(), table.getClass().getName());
+                LOG.warn(message);
+                throw new MetaNotFoundException(message);
+            }
+            ((PaimonTableStream) table).setSnapshotOffset(operation.getSnapshotId(),
+                    operation.getCommitTimestampMs(), operation.getHistoricalSnapshotId());
+        } finally {
+            table.writeUnlock();
         }
     }
 }

@@ -20,10 +20,16 @@ package org.apache.doris.datasource.paimon;
 public class PaimonSnapshot {
     private final long snapshotId;
     private final long schemaId;
+    private final long commitTimestampMs;
 
     public PaimonSnapshot(long snapshotId, long schemaId) {
+        this(snapshotId, schemaId, 0L);
+    }
+
+    public PaimonSnapshot(long snapshotId, long schemaId, long commitTimestampMs) {
         this.snapshotId = snapshotId;
         this.schemaId = schemaId;
+        this.commitTimestampMs = commitTimestampMs;
     }
 
     public long getSnapshotId() {
@@ -32,5 +38,9 @@ public class PaimonSnapshot {
 
     public long getSchemaId() {
         return schemaId;
+    }
+
+    public long getCommitTimestampMs() {
+        return commitTimestampMs;
     }
 }

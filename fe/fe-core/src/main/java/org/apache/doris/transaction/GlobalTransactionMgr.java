@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Table;
+import org.apache.doris.catalog.stream.TableStreamUpdateInfo;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DuplicatedRequestException;
@@ -76,13 +77,41 @@ import java.util.function.Function;
  */
 public class GlobalTransactionMgr implements Writable {
     private static final Logger LOG = LogManager.getLogger(GlobalTransactionMgr.class);
+    private static final long ALTER_STREAM_OFFSET_WAIT_RETRY_MS = 100L;
 
     private Map<Long, DatabaseTransactionMgr> dbIdToDatabaseTransactionMgrs = Maps.newConcurrentMap();
 
     private TransactionIdGenerator idGenerator = new TransactionIdGenerator();
     private TxnStateCallbackFactory callbackFactory = new TxnStateCallbackFactory();
+    private final Object alterStreamOffsetLock = new Object();
+    private final Map<Pair<Long, Long>, AlterStreamOffsetContext> streamKeyToAlterOffsetContext = Maps.newHashMap();
 
     private Env env;
+
+    public static class AlterStreamOffsetContext {
+        private final long dbId;
+        private final long streamId;
+        private final long watermarkTxnId;
+        private volatile boolean cancelled;
+
+        private AlterStreamOffsetContext(long dbId, long streamId, long watermarkTxnId) {
+            this.dbId = dbId;
+            this.streamId = streamId;
+            this.watermarkTxnId = watermarkTxnId;
+        }
+
+        public long getDbId() {
+            return dbId;
+        }
+
+        public long getStreamId() {
+            return streamId;
+        }
+
+        public long getWatermarkTxnId() {
+            return watermarkTxnId;
+        }
+    }
 
     public GlobalTransactionMgr(Env env) {
         this.env = env;
@@ -260,14 +289,16 @@ public class GlobalTransactionMgr implements Writable {
     public void commitTransaction(DatabaseIf db, List<Table> tableList, long transactionId,
             List<TabletCommitInfo> tabletCommitInfos, long timeoutMillis, TxnCommitAttachment txnCommitAttachment)
             throws UserException {
-        if (!MetaLockUtils.tryWriteLockTablesOrMetaException(tableList, timeoutMillis, TimeUnit.MILLISECONDS)) {
+        DatabaseTransactionMgr dbTransactionMgr = getDatabaseTransactionMgr(db.getId());
+        List<Table> lockTableList = buildLockTableList(tableList, dbTransactionMgr.getTransactionState(transactionId));
+        if (!MetaLockUtils.tryWriteLockTablesOrMetaException(lockTableList, timeoutMillis, TimeUnit.MILLISECONDS)) {
             throw new UserException("get tableList write lock timeout, tableList=("
-                    + StringUtils.join(tableList, ",") + ")");
+                    + StringUtils.join(lockTableList, ",") + ")");
         }
         try {
             commitTransactionWithoutLock(db.getId(), tableList, transactionId, tabletCommitInfos, txnCommitAttachment);
         } finally {
-            MetaLockUtils.writeUnlockTables(tableList);
+            MetaLockUtils.writeUnlockTables(lockTableList);
         }
     }
 
@@ -317,16 +348,18 @@ public class GlobalTransactionMgr implements Writable {
 
     public void commitTransaction2PC(Database db, List<Table> tableList, long transactionId, long timeoutMillis)
             throws UserException {
+        DatabaseTransactionMgr dbTransactionMgr = getDatabaseTransactionMgr(db.getId());
         StopWatch stopWatch = new StopWatch();
         stopWatch.start();
-        if (!MetaLockUtils.tryWriteLockTablesOrMetaException(tableList, timeoutMillis, TimeUnit.MILLISECONDS)) {
+        List<Table> lockTableList = buildLockTableList(tableList, dbTransactionMgr.getTransactionState(transactionId));
+        if (!MetaLockUtils.tryWriteLockTablesOrMetaException(lockTableList, timeoutMillis, TimeUnit.MILLISECONDS)) {
             throw new UserException("get tableList write lock timeout, tableList=("
-                    + StringUtils.join(tableList, ",") + ")");
+                    + StringUtils.join(lockTableList, ",") + ")");
         }
         try {
             commitTransaction2PC(db.getId(), transactionId);
         } finally {
-            MetaLockUtils.writeUnlockTables(tableList);
+            MetaLockUtils.writeUnlockTables(lockTableList);
         }
         stopWatch.stop();
         LOG.info("stream load tasks are committed successfully. txns: {}. time cost: {} ms."
@@ -823,6 +856,112 @@ public class GlobalTransactionMgr implements Writable {
     public void updateMultiTableRunningTransactionTableIds(Long dbId, Long transactionId, List<Long> tableIds)
             throws AnalysisException {
         getDatabaseTransactionMgr(dbId).updateMultiTableRunningTransactionTableIds(transactionId, tableIds);
+    }
+
+    public void registerTableStreamTxn(long dbId, long transactionId, List<TableStreamUpdateInfo> streamUpdateInfos)
+            throws UserException, AnalysisException {
+        getDatabaseTransactionMgr(dbId).registerTableStreamTxn(transactionId, streamUpdateInfos);
+    }
+
+    public void checkAlterStreamOffsetPending(long transactionId, List<TableStreamUpdateInfo> streamUpdateInfos)
+            throws UserException {
+        if (CollectionUtils.isEmpty(streamUpdateInfos)) {
+            return;
+        }
+        synchronized (alterStreamOffsetLock) {
+            for (TableStreamUpdateInfo info : streamUpdateInfos) {
+                AlterStreamOffsetContext alterContext = streamKeyToAlterOffsetContext.get(
+                        Pair.of(info.getDbId(), info.getStreamId()));
+                if (alterContext != null && !alterContext.cancelled
+                        && transactionId > alterContext.getWatermarkTxnId()) {
+                    throw new UserException("ALTER STREAM SET offset is pending for stream id "
+                            + info.getStreamId()
+                            + ", transaction " + transactionId + " can not consume it now.");
+                }
+            }
+        }
+    }
+
+    public AlterStreamOffsetContext beginAlterStreamOffset(long dbId, long streamId) throws UserException {
+        getDatabaseTransactionMgr(dbId);
+        Pair<Long, Long> streamKey = Pair.of(dbId, streamId);
+        synchronized (alterStreamOffsetLock) {
+            AlterStreamOffsetContext existing = streamKeyToAlterOffsetContext.get(streamKey);
+            if (existing != null) {
+                throw new UserException("ALTER STREAM SET offset is already pending for stream id "
+                        + streamId + ", current ALTER STREAM SET offset is cancelled.");
+            }
+            AlterStreamOffsetContext context = new AlterStreamOffsetContext(
+                    dbId, streamId, idGenerator.getNextTransactionId());
+            streamKeyToAlterOffsetContext.put(streamKey, context);
+            return context;
+        }
+    }
+
+    public void waitAlterStreamOffsetReady(AlterStreamOffsetContext context) throws UserException {
+        long timeoutMs = Math.max(1L, Config.alter_stream_offset_timeout_ms);
+        long nowMs = System.currentTimeMillis();
+        waitAlterStreamOffsetReady(context, Long.MAX_VALUE - nowMs < timeoutMs ? Long.MAX_VALUE : nowMs + timeoutMs);
+    }
+
+    public void waitAlterStreamOffsetReady(AlterStreamOffsetContext context, long deadlineMs) throws UserException {
+        while (!isAlterStreamOffsetReady(context)) {
+            try {
+                Thread.sleep(Math.min(ALTER_STREAM_OFFSET_WAIT_RETRY_MS,
+                        getAlterStreamOffsetRemainingMs(context, deadlineMs,
+                                "waiting stream-consuming transactions to finish")));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new UserException("Interrupted while waiting stream-consuming transactions to finish", e);
+            }
+        }
+    }
+
+    public void checkAlterStreamOffsetNotCancelled(AlterStreamOffsetContext context) throws UserException {
+        if (context.cancelled) {
+            throw new UserException("ALTER STREAM SET offset for stream id " + context.streamId + " is cancelled.");
+        }
+    }
+
+    public boolean isAlterStreamOffsetReady(AlterStreamOffsetContext context) throws UserException {
+        checkAlterStreamOffsetNotCancelled(context);
+        for (DatabaseTransactionMgr databaseTransactionMgr : dbIdToDatabaseTransactionMgrs.values()) {
+            if (databaseTransactionMgr.hasRunningStreamTxnBeforeWatermark(context)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public void cancelAlterStreamOffset(long dbId, long streamId) throws AnalysisException {
+        getDatabaseTransactionMgr(dbId);
+        synchronized (alterStreamOffsetLock) {
+            AlterStreamOffsetContext context = streamKeyToAlterOffsetContext.get(Pair.of(dbId, streamId));
+            if (context != null) {
+                context.cancelled = true;
+            }
+        }
+    }
+
+    public void endAlterStreamOffset(AlterStreamOffsetContext context) {
+        Pair<Long, Long> streamKey = Pair.of(context.getDbId(), context.getStreamId());
+        synchronized (alterStreamOffsetLock) {
+            AlterStreamOffsetContext current = streamKeyToAlterOffsetContext.get(streamKey);
+            if (current == context) {
+                streamKeyToAlterOffsetContext.remove(streamKey);
+            }
+        }
+    }
+
+    private long getAlterStreamOffsetRemainingMs(AlterStreamOffsetContext context, long deadlineMs, String action)
+            throws UserException {
+        long remainingMs = deadlineMs - System.currentTimeMillis();
+        if (remainingMs <= 0) {
+            throw new UserException(String.format(
+                    "ALTER STREAM SET offset for stream id %d timed out after %d ms while %s.",
+                    context.streamId, Config.alter_stream_offset_timeout_ms, action));
+        }
+        return remainingMs;
     }
 
     private List<Table> buildLockTableList(List<Table> tableList, TransactionState transactionState)

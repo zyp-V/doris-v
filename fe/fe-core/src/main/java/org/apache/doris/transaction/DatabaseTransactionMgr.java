@@ -1978,7 +1978,8 @@ public class DatabaseTransactionMgr {
         }
     }
 
-    private void updateCatalogAfterCommitted(TransactionState transactionState, Database db, boolean isReplay) {
+    private void updateCatalogAfterCommitted(TransactionState transactionState, Database db, boolean isReplay)
+            throws UserException {
         Set<Long> errorReplicaIds = transactionState.getErrorReplicas();
         List<Replica> tabletSuccReplicas = Lists.newArrayList();
         List<Replica> tabletFailedReplicas = Lists.newArrayList();
@@ -2264,10 +2265,14 @@ public class DatabaseTransactionMgr {
         try {
             // set transaction status will call txn state change listener
             transactionState.replaySetTransactionStatus();
-            if (transactionState.getTransactionStatus() == TransactionStatus.COMMITTED) {
-                updateCatalogAfterCommitted(transactionState, db, true);
-            } else if (transactionState.getTransactionStatus() == TransactionStatus.VISIBLE) {
-                updateCatalogAfterVisible(transactionState, db, Maps.newHashMap(), Maps.newHashMap());
+            try {
+                if (transactionState.getTransactionStatus() == TransactionStatus.COMMITTED) {
+                    updateCatalogAfterCommitted(transactionState, db, true);
+                } else if (transactionState.getTransactionStatus() == TransactionStatus.VISIBLE) {
+                    updateCatalogAfterVisible(transactionState, db, Maps.newHashMap(), Maps.newHashMap());
+                }
+            } catch (UserException e) {
+                throw new MetaNotFoundException(e);
             }
             unprotectUpsertTransactionState(transactionState, true);
         } finally {
@@ -2420,6 +2425,109 @@ public class DatabaseTransactionMgr {
         idToRunningTransactionState.get(transactionId).setTableIdList(tableIds);
     }
 
+    public void registerTableStreamTxn(long transactionId, List<TableStreamUpdateInfo> streamUpdateInfos)
+            throws UserException {
+        if (CollectionUtils.isEmpty(streamUpdateInfos)) {
+            return;
+        }
+        readLock();
+        try {
+            TransactionState transactionState = idToRunningTransactionState.get(transactionId);
+            if (transactionState == null) {
+                throw new TransactionNotFoundException("transaction [" + transactionId + "] not found.");
+            }
+        } finally {
+            readUnlock();
+        }
+        List<BaseTableStream> lockedStreams = lockAndCheckStreamOffsetBeforeRegister(transactionId, streamUpdateInfos);
+        try {
+            writeLock();
+            try {
+                TransactionState transactionState = idToRunningTransactionState.get(transactionId);
+                if (transactionState == null) {
+                    throw new TransactionNotFoundException("transaction [" + transactionId + "] not found.");
+                }
+                env.getGlobalTransactionMgr().checkAlterStreamOffsetPending(transactionId, streamUpdateInfos);
+            } finally {
+                writeUnlock();
+            }
+        } finally {
+            unlockStreamReadLocks(lockedStreams);
+        }
+    }
+
+    private List<BaseTableStream> lockAndCheckStreamOffsetBeforeRegister(long transactionId,
+            List<TableStreamUpdateInfo> streamUpdateInfos) throws UserException {
+        // Keep stream read locks until registration finishes so ALTER STREAM can not move the offset
+        // between this early validation and the pending alter watermark check.
+        List<TableStreamUpdateInfo> sortedInfos = Lists.newArrayList(streamUpdateInfos);
+        sortedInfos.sort(Comparator.comparingLong(TableStreamUpdateInfo::getDbId)
+                .thenComparingLong(TableStreamUpdateInfo::getStreamId));
+        List<BaseTableStream> lockedStreams = Lists.newArrayListWithCapacity(sortedInfos.size());
+        boolean success = false;
+        try {
+            for (TableStreamUpdateInfo info : sortedInfos) {
+                BaseTableStream stream = lockStreamForRegister(transactionId, info);
+                lockedStreams.add(stream);
+                stream.unprotectedCheckStreamUpdate(info.getUpdate());
+            }
+            success = true;
+            return lockedStreams;
+        } finally {
+            if (!success) {
+                unlockStreamReadLocks(lockedStreams);
+            }
+        }
+    }
+
+    private BaseTableStream lockStreamForRegister(long transactionId, TableStreamUpdateInfo info)
+            throws UserException {
+        Database db = env.getInternalCatalog().getDbOrMetaException(info.getDbId());
+        TableIf tableIf = db.getTableOrMetaException(info.getStreamId());
+        if (!(tableIf instanceof BaseTableStream)) {
+            throw new TransactionCommitFailedException(String.format(
+                    "transaction [%d] register stream offset failed, table %d is not a table stream",
+                    transactionId, info.getStreamId()));
+        }
+        BaseTableStream stream = (BaseTableStream) tableIf;
+        if (!stream.readLockIfExist()) {
+            throw new TransactionCommitFailedException(String.format(
+                    "transaction [%d] register stream offset failed, stream %s(%d) does not exist",
+                    transactionId, stream.getName(), info.getStreamId()));
+        }
+        return stream;
+    }
+
+    private void unlockStreamReadLocks(List<BaseTableStream> lockedStreams) {
+        for (int i = lockedStreams.size() - 1; i >= 0; i--) {
+            lockedStreams.get(i).readUnlock();
+        }
+    }
+
+    boolean hasRunningStreamTxnBeforeWatermark(GlobalTransactionMgr.AlterStreamOffsetContext context) {
+        readLock();
+        try {
+            for (Map.Entry<Long, TransactionState> entry : idToRunningTransactionState.entrySet()) {
+                if (entry.getKey() > context.getWatermarkTxnId()) {
+                    continue;
+                }
+                TransactionState transactionState = entry.getValue();
+                if (transactionState.getTransactionStatus().isFinalStatus()
+                        || CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
+                    continue;
+                }
+                for (TableStreamUpdateInfo info : transactionState.getStreamUpdateInfos()) {
+                    if (info.getDbId() == context.getDbId() && info.getStreamId() == context.getStreamId()) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } finally {
+            readUnlock();
+        }
+    }
+
     private List<? extends TableIf> buildLockTableListNoException(List<? extends TableIf> tableList,
             TransactionState transactionState) {
         if (transactionState == null || CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
@@ -2448,6 +2556,7 @@ public class DatabaseTransactionMgr {
         if (CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
             return;
         }
+        assertStreamWriteLocksHeld(transactionState, "check");
         for (TableStreamUpdateInfo info : transactionState.getStreamUpdateInfos()) {
             Database db = env.getInternalCatalog().getDbOrMetaException(info.getDbId());
             TableIf tableIf = db.getTableOrMetaException(info.getStreamId());
@@ -2455,7 +2564,8 @@ public class DatabaseTransactionMgr {
         }
     }
 
-    private void updateStreamOffset(TransactionState transactionState, Long ts) {
+    private void updateStreamOffset(TransactionState transactionState, Long ts) throws UserException {
+        assertStreamWriteLocksHeld(transactionState, "update");
         for (TableStreamUpdateInfo info : transactionState.getStreamUpdateInfos()) {
             Database db = env.getInternalCatalog().getDbNullable(info.getDbId());
             if (db == null) {
@@ -2466,6 +2576,26 @@ public class DatabaseTransactionMgr {
                 continue;
             }
             ((BaseTableStream) tableIf).unprotectedUpdateStreamUpdate(info.getUpdate(), ts);
+        }
+    }
+
+    private void assertStreamWriteLocksHeld(TransactionState transactionState, String phase) throws UserException {
+        if (CollectionUtils.isEmpty(transactionState.getStreamUpdateInfos())) {
+            return;
+        }
+        for (TableStreamUpdateInfo info : transactionState.getStreamUpdateInfos()) {
+            Database db = env.getInternalCatalog().getDbOrMetaException(info.getDbId());
+            TableIf tableIf = db.getTableOrMetaException(info.getStreamId());
+            if (!(tableIf instanceof BaseTableStream)) {
+                throw new TransactionCommitFailedException(String.format(
+                        "transaction [%d] %s stream offset failed, table %d is not a table stream",
+                        transactionState.getTransactionId(), phase, info.getStreamId()));
+            }
+            if (!tableIf.isWriteLockHeldByCurrentThread()) {
+                throw new TransactionCommitFailedException(String.format(
+                        "transaction [%d] %s stream offset failed, stream %s(%d) write lock is not held",
+                        transactionState.getTransactionId(), phase, tableIf.getName(), info.getStreamId()));
+            }
         }
     }
 }

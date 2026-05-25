@@ -127,6 +127,8 @@ public class OlapTableStream extends BaseTableStream {
                     trow.addToColumnValue(new TCell().setLongVal(id));
                     // UNIT
                     trow.addToColumnValue(new TCell().setStringVal(entry.getValue().getName()));
+                    // OFFSET_TYPE
+                    trow.addToColumnValue(new TCell().setStringVal(""));
                     if (partitionOffset.containsKey(entry.getKey())) {
                         // CONSUMPTION_STATUS
                         trow.addToColumnValue(new TCell()

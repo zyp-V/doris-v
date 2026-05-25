@@ -106,6 +106,9 @@ public class PaimonPredicateConverter {
         }
         String colName = slotRef.getColumnName();
         int idx = fieldNames.indexOf(colName);
+        if (idx < 0) {
+            return null;
+        }
         DataType dataType = paimonFieldTypes.get(idx);
         List<Object> valueList = new ArrayList<>();
         for (int i = 1; i < predicate.getChildren().size(); i++) {
@@ -139,6 +142,9 @@ public class PaimonPredicateConverter {
         }
         String colName = slotRef.getColumnName();
         int idx = fieldNames.indexOf(colName);
+        if (idx < 0) {
+            return null;
+        }
         DataType dataType = paimonFieldTypes.get(idx);
         Object value = dataType.accept(new PaimonValueConverter(literalExpr));
         if (value == null) {

@@ -885,6 +885,11 @@ public class EditLog {
                     env.getBinlogManager().addModifyComment(operation, logId);
                     break;
                 }
+                case OperationType.OP_ALTER_STREAM_OFFSET: {
+                    AlterStreamOffsetOperationLog operation = (AlterStreamOffsetOperationLog) journal.getData();
+                    env.getAlterInstance().replayAlterStreamOffset(operation);
+                    break;
+                }
                 case OperationType.OP_SET_PARTITION_VERSION: {
                     SetPartitionVersionOperationLog log = (SetPartitionVersionOperationLog) journal.getData();
                     env.replaySetPartitionVersion(log);
@@ -1946,6 +1951,10 @@ public class EditLog {
         long logId = logEdit(OperationType.OP_MODIFY_COMMENT, op);
         LOG.info("log modify comment, logId : {}, infos: {}", logId, op);
         Env.getCurrentEnv().getBinlogManager().addModifyComment(op, logId);
+    }
+
+    public void logAlterStreamOffset(AlterStreamOffsetOperationLog op) {
+        logEdit(OperationType.OP_ALTER_STREAM_OFFSET, op);
     }
 
     public void logCreateSqlBlockRule(SqlBlockRule rule) {

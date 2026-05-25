@@ -429,7 +429,7 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
                 Env.getCurrentEnv().getMtmvService().registerMTMV((MTMV) olapTable, id);
             }
             if (olapTable.getType() == TableType.STREAM) {
-                Env.getCurrentEnv().getTableStreamManager().addTableStream((BaseTableStream) olapTable);
+                Env.getCurrentEnv().getTableStreamManager().addTableStream(id, (BaseTableStream) olapTable);
             }
         }
         olapTable.unmarkDropped();
@@ -446,7 +446,7 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
                 Env.getCurrentEnv().getMtmvService().unregisterMTMV((MTMV) table);
             }
             if (table.getType() == TableType.STREAM) {
-                Env.getCurrentEnv().getTableStreamManager().removeTableStream((BaseTableStream) table);
+                Env.getCurrentEnv().getTableStreamManager().removeTableStream(id, (BaseTableStream) table);
             }
             this.nameToTable.remove(tableName);
             this.idToTable.remove(table.getId());

@@ -19,7 +19,9 @@ package org.apache.doris.datasource.paimon.source;
 
 import org.apache.doris.analysis.TableScanParams;
 import org.apache.doris.analysis.TupleDescriptor;
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.TableIf;
+import org.apache.doris.catalog.stream.PaimonTableStreamWrapper;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.UserException;
@@ -29,6 +31,7 @@ import org.apache.doris.datasource.FileQueryScanNode;
 import org.apache.doris.datasource.FileSplitter;
 import org.apache.doris.datasource.paimon.PaimonExternalCatalog;
 import org.apache.doris.datasource.paimon.PaimonExternalTable;
+import org.apache.doris.datasource.paimon.PaimonSnapshotOutOfRangeException;
 import org.apache.doris.planner.PlanNodeId;
 import org.apache.doris.qe.SessionVariable;
 import org.apache.doris.spi.Split;
@@ -46,6 +49,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.table.Table;
@@ -108,6 +112,7 @@ public class PaimonScanNode extends FileQueryScanNode {
     private int paimonSplitNum = 0;
     private List<SplitStat> splitStats = new ArrayList<>();
     private String serializedTable;
+    private Table processedPaimonTable;
 
     private boolean pushDownCount = false;
     private static final long COUNT_WITH_PARALLEL_SPLITS = 10000;
@@ -121,6 +126,9 @@ public class PaimonScanNode extends FileQueryScanNode {
     private static final String DORIS_START_TIMESTAMP = "startTimestamp";
     private static final String DORIS_END_TIMESTAMP = "endTimestamp";
     private static final String DORIS_INCREMENTAL_BETWEEN_SCAN_MODE = "incrementalBetweenScanMode";
+    private static final String DORIS_PAIMON_SCAN_TYPE = "doris.paimon.scan.type";
+    private static final String DORIS_PAIMON_STREAM_READ = "doris.paimon.stream.read";
+    private static final String DORIS_PAIMON_STREAM_CONSUME_TYPE = "doris.paimon.stream.consume.type";
     private static final String PAIMON_ROW_KIND_COLUMN = PaimonExternalTable.PAIMON_ROW_KIND_COLUMN;
 
     public PaimonScanNode(PlanNodeId id,
@@ -134,8 +142,10 @@ public class PaimonScanNode extends FileQueryScanNode {
     protected void doInitialize() throws UserException {
         super.doInitialize();
         source = new PaimonSource(desc);
-        serializedTable = encodeObjectToString(source.getPaimonTable());
         Preconditions.checkNotNull(source);
+        // Keep split planning and JNI deserialization on the same table copy, including stream scan options.
+        processedPaimonTable = getProcessedTable();
+        serializedTable = encodeObjectToString(processedPaimonTable);
     }
 
     @VisibleForTesting
@@ -201,6 +211,10 @@ public class PaimonScanNode extends FileQueryScanNode {
                 .collect(Collectors.joining(",")));
         fileDesc.setDbName(((PaimonExternalTable) source.getTargetTable()).getDbName());
         fileDesc.setPaimonOptions(((PaimonExternalCatalog) source.getCatalog()).getPaimonOptionsMap());
+        Map<String, String> paimonJniParams = buildPaimonJniParams();
+        if (!paimonJniParams.isEmpty()) {
+            fileDesc.setPaimonJniParams(paimonJniParams);
+        }
         fileDesc.setTableName(source.getTargetTable().getName());
         fileDesc.setCtlId(source.getCatalog().getId());
         fileDesc.setDbId(((PaimonExternalTable) source.getTargetTable()).getDbId());
@@ -227,9 +241,14 @@ public class PaimonScanNode extends FileQueryScanNode {
 
     @Override
     public List<Split> getSplits(int numBackends) throws UserException {
-        boolean forceJniScanner = sessionVariable.isForceJniScanner() || hasRowKindColumnSelected();
+        boolean forceJniScanner = sessionVariable.isForceJniScanner()
+                || isPaimonStreamScan()
+                || hasChangeMetaColumnSelected();
         SessionVariable.IgnoreSplitType ignoreSplitType = SessionVariable.IgnoreSplitType
                 .valueOf(sessionVariable.getIgnoreSplitType());
+        if (isPaimonStreamScan() && ignoreSplitType == SessionVariable.IgnoreSplitType.IGNORE_JNI) {
+            throw new UserException("Paimon stream scan requires JNI reader.");
+        }
         List<Split> splits = new ArrayList<>();
 
         List<org.apache.paimon.table.source.Split> paimonSplits = getPaimonSplitFromAPI();
@@ -314,6 +333,9 @@ public class PaimonScanNode extends FileQueryScanNode {
 
     @VisibleForTesting
     public List<org.apache.paimon.table.source.Split> getPaimonSplitFromAPI() throws UserException {
+        if (PaimonTableStreamWrapper.isEmptyReadScan(getScanParams())) {
+            return Collections.emptyList();
+        }
         PaimonExternalTable targetTable = (PaimonExternalTable) source.getTargetTable();
         try {
             if (targetTable.getLatestSnapshotIdFromCache() <= 0) {
@@ -331,6 +353,8 @@ public class PaimonScanNode extends FileQueryScanNode {
             int[] projected = desc.getSlots().stream()
                     .map(slot -> slot.getColumn().getName().toLowerCase())
                     .filter(columnName -> !columnName.equals(PAIMON_ROW_KIND_COLUMN))
+                    .filter(columnName -> !columnName.equals(Column.STREAM_CHANGE_TYPE_COL.toLowerCase()))
+                    .filter(columnName -> !columnName.equals(Column.STREAM_SEQ_COL.toLowerCase()))
                     .mapToInt(rowFieldNames::indexOf)
                     .filter(index -> index >= 0)
                     .toArray();
@@ -342,8 +366,8 @@ public class PaimonScanNode extends FileQueryScanNode {
             return readBuilder.newScan().plan().splits();
         } catch (Throwable throwable) {
             if (isPaimonSnapshotOutOfRangeException(throwable)) {
-                throw new UserException("PaimonSnapshotOutOfRangeException: " + getRootCauseMessage(throwable),
-                        throwable);
+                throw new PaimonSnapshotOutOfRangeException(
+                        "PaimonSnapshotOutOfRangeException: " + getRootCauseMessage(throwable), throwable);
             }
             if (throwable instanceof UserException) {
                 throw (UserException) throwable;
@@ -577,24 +601,82 @@ public class PaimonScanNode extends FileQueryScanNode {
         Map<String, String> paimonScanParams = new HashMap<>();
         TableScanParams theScanParams = getScanParams();
         if (theScanParams != null && theScanParams.incrementalRead()) {
+            if (PaimonTableStreamWrapper.isEmptyReadScan(theScanParams)) {
+                return Collections.emptyMap();
+            }
             // Validate parameter combinations and get the result map
             paimonScanParams = validateIncrementalReadParams(theScanParams.getParams());
         }
         return paimonScanParams;
     }
 
+    @VisibleForTesting
+    public Map<String, String> getFullReadParams() throws UserException {
+        TableScanParams theScanParams = getScanParams();
+        if (theScanParams == null || !theScanParams.fullRead()) {
+            return Collections.emptyMap();
+        }
+        if (PaimonTableStreamWrapper.isEmptyReadScan(theScanParams)) {
+            return Collections.emptyMap();
+        }
+        String snapshotId = theScanParams.getParams().get(PaimonTableStreamWrapper.FULL_SNAPSHOT_ID_PARAM);
+        if (snapshotId == null) {
+            throw new UserException("snapshotId is required when using Paimon full read");
+        }
+        try {
+            long id = Long.parseLong(snapshotId);
+            if (id < 0) {
+                throw new UserException("snapshotId must be greater than or equal to 0");
+            }
+        } catch (NumberFormatException e) {
+            throw new UserException("Invalid snapshotId format: " + e.getMessage(), e);
+        }
+        Map<String, String> paimonScanParams = new HashMap<>();
+        paimonScanParams.put(CoreOptions.SCAN_VERSION.key(), snapshotId);
+        return paimonScanParams;
+    }
+
     private Table getProcessedTable() throws UserException {
+        if (processedPaimonTable != null) {
+            return processedPaimonTable;
+        }
         Table baseTable = source.getPaimonTable();
         TableScanParams theScanParams = getScanParams();
         if (theScanParams != null && getQueryTableSnapshot() != null) {
             throw new UserException("Can not specify scan params and table snapshot at same time.");
         }
+        if (PaimonTableStreamWrapper.isEmptyReadScan(theScanParams)) {
+            processedPaimonTable = baseTable;
+            return processedPaimonTable;
+        }
 
         if (theScanParams != null && theScanParams.incrementalRead()) {
             Table rawTable = ((PaimonExternalTable) source.getTargetTable()).getPaimonRawTable();
-            return rawTable.copy(getIncrReadParams());
+            processedPaimonTable = rawTable.copy(getIncrReadParams());
+            return processedPaimonTable;
         }
-        return baseTable;
+        if (theScanParams != null && theScanParams.fullRead()) {
+            Table rawTable = ((PaimonExternalTable) source.getTargetTable()).getPaimonRawTable();
+            processedPaimonTable = rawTable.copy(getFullReadParams());
+            return processedPaimonTable;
+        }
+        processedPaimonTable = baseTable;
+        return processedPaimonTable;
+    }
+
+    private Map<String, String> buildPaimonJniParams() {
+        Map<String, String> params = new HashMap<>();
+        TableScanParams theScanParams = getScanParams();
+        if (theScanParams != null) {
+            params.put(DORIS_PAIMON_SCAN_TYPE, theScanParams.getParamType());
+            params.putAll(theScanParams.getParams());
+        }
+        if (source.getTargetTable() instanceof PaimonTableStreamWrapper) {
+            PaimonTableStreamWrapper wrapper = (PaimonTableStreamWrapper) source.getTargetTable();
+            params.put(DORIS_PAIMON_STREAM_READ, "true");
+            params.put(DORIS_PAIMON_STREAM_CONSUME_TYPE, wrapper.getStream().getStreamConsumeType().name());
+        }
+        return params;
     }
 
     private void createRawFileSplits(List<RawFile> rawFiles, List<Split> splits, long blockSize) throws UserException {
@@ -623,9 +705,15 @@ public class PaimonScanNode extends FileQueryScanNode {
         return FileFormatUtils.getFileFormatBySuffix(path).orElse(source.getFileFormatFromTableProperties());
     }
 
-    private boolean hasRowKindColumnSelected() {
+    private boolean hasChangeMetaColumnSelected() {
         return desc.getSlots().stream().anyMatch(
-                slot -> slot.getColumn().getName().equalsIgnoreCase(PAIMON_ROW_KIND_COLUMN));
+                slot -> slot.getColumn().getName().equalsIgnoreCase(PAIMON_ROW_KIND_COLUMN)
+                        || slot.getColumn().getName().equalsIgnoreCase(Column.STREAM_CHANGE_TYPE_COL)
+                        || slot.getColumn().getName().equalsIgnoreCase(Column.STREAM_SEQ_COL));
+    }
+
+    private boolean isPaimonStreamScan() {
+        return source.getTargetTable() instanceof PaimonTableStreamWrapper;
     }
 
     @VisibleForTesting

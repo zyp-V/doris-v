@@ -620,6 +620,7 @@ public class SchemaTable extends Table {
                                     .column("STREAM_NAME", ScalarType.createVarchar(NAME_CHAR_LEN))
                                     .column("STREAM_ID", ScalarType.createType(PrimitiveType.BIGINT))
                                     .column("UNIT", ScalarType.createVarchar(NAME_CHAR_LEN))
+                                    .column("OFFSET_TYPE", ScalarType.createVarchar(NAME_CHAR_LEN))
                                     .column("CONSUMPTION_STATUS", ScalarType.createVarchar(NAME_CHAR_LEN))
                                     .column("LAG", ScalarType.createVarchar(NAME_CHAR_LEN))
                                     .column("LAST_CONSUMPTION_TIME", ScalarType.createType(PrimitiveType.BIGINT))

@@ -56,19 +56,20 @@ public class TableStreamManager implements Writable, GsonPostProcessable {
         this.dbStreamMap = new HashMap<>();
     }
 
-    public void addTableStream(BaseTableStream stream) {
+    // The caller provides dbId because image replay registers tables before the DB is visible in InternalCatalog.
+    public void addTableStream(long dbId, BaseTableStream stream) {
         rwLock.writeLock().lock();
         try {
-            dbStreamMap.computeIfAbsent(stream.getDatabase().getId(), k -> new HashSet<>()).add(stream.getId());
+            dbStreamMap.computeIfAbsent(dbId, k -> new HashSet<>()).add(stream.getId());
         } finally {
             rwLock.writeLock().unlock();
         }
     }
 
-    public void removeTableStream(BaseTableStream stream) {
+    public void removeTableStream(long dbId, BaseTableStream stream) {
         rwLock.writeLock().lock();
         try {
-            Optional.ofNullable(dbStreamMap.get(stream.getDatabase().getId()))
+            Optional.ofNullable(dbStreamMap.get(dbId))
                     .ifPresent(set -> set.remove(stream.getId()));
         } finally {
             rwLock.writeLock().unlock();
@@ -213,5 +214,8 @@ public class TableStreamManager implements Writable, GsonPostProcessable {
     @Override
     public void gsonPostProcess() throws IOException {
         this.rwLock = new MonitoredReentrantReadWriteLock(true);
+        if (dbStreamMap == null) {
+            dbStreamMap = new HashMap<>();
+        }
     }
 }

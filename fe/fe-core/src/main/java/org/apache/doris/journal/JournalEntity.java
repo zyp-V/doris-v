@@ -63,6 +63,7 @@ import org.apache.doris.persist.AlterDatabasePropertyInfo;
 import org.apache.doris.persist.AlterLightSchemaChangeInfo;
 import org.apache.doris.persist.AlterMTMV;
 import org.apache.doris.persist.AlterRoutineLoadJobOperationLog;
+import org.apache.doris.persist.AlterStreamOffsetOperationLog;
 import org.apache.doris.persist.AlterUserOperationLog;
 import org.apache.doris.persist.AlterViewInfo;
 import org.apache.doris.persist.AnalyzeDeletionLog;
@@ -681,6 +682,11 @@ public class JournalEntity implements Writable {
             }
             case OperationType.OP_MODIFY_COMMENT: {
                 data = ModifyCommentOperationLog.read(in);
+                isRead = true;
+                break;
+            }
+            case OperationType.OP_ALTER_STREAM_OFFSET: {
+                data = AlterStreamOffsetOperationLog.read(in);
                 isRead = true;
                 break;
             }

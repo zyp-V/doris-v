@@ -159,20 +159,29 @@ std::map<std::string, std::string> JniConnector::get_statistics(JNIEnv* env) {
 
 Status JniConnector::close() {
     if (!_closed) {
+        _release_scanner_params();
         JNIEnv* env = nullptr;
         RETURN_IF_ERROR(JniUtil::GetJNIEnv(&env));
-        if (_scanner_opened) {
+        if (_scanner_opened && _jni_scanner_obj != nullptr) {
             // _fill_block may be failed and returned, we should release table in close.
             // org.apache.doris.common.jni.JniScanner#releaseTable is idempotent
-            env->CallVoidMethod(_jni_scanner_obj, _jni_scanner_release_table);
-            env->CallVoidMethod(_jni_scanner_obj, _jni_scanner_close);
+            if (_jni_scanner_release_table != nullptr) {
+                env->CallVoidMethod(_jni_scanner_obj, _jni_scanner_release_table);
+            }
+            if (_jni_scanner_close != nullptr) {
+                env->CallVoidMethod(_jni_scanner_obj, _jni_scanner_close);
+            }
+        }
+        if (_jni_scanner_obj != nullptr) {
             env->DeleteGlobalRef(_jni_scanner_obj);
-            env->DeleteGlobalRef(_jni_scanner_cls);
+            _jni_scanner_obj = nullptr;
         }
         if (_jni_scanner_cls != nullptr) {
             // _jni_scanner_cls may be null if init connector failed
             env->DeleteGlobalRef(_jni_scanner_cls);
+            _jni_scanner_cls = nullptr;
         }
+        _scanner_opened = false;
         _closed = true;
         jthrowable exc = (env)->ExceptionOccurred();
         if (exc != nullptr) {
@@ -182,6 +191,10 @@ Status JniConnector::close() {
         }
     }
     return Status::OK();
+}
+
+void JniConnector::_release_scanner_params() {
+    std::map<std::string, std::string>().swap(_scanner_params);
 }
 
 Status JniConnector::_init_jni_scanner(JNIEnv* env, int batch_size) {
@@ -203,6 +216,7 @@ Status JniConnector::_init_jni_scanner(JNIEnv* env, int batch_size) {
     jobject jni_scanner_obj =
             env->NewObject(_jni_scanner_cls, scanner_constructor, batch_size, hashmap_object);
     env->DeleteLocalRef(hashmap_object);
+    _release_scanner_params();
     RETURN_ERROR_IF_EXC(env);
 
     _jni_scanner_open = env->GetMethodID(_jni_scanner_cls, "open", "()V");

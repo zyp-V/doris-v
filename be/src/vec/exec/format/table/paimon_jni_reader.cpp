@@ -19,6 +19,7 @@
 
 #include <map>
 #include <ostream>
+#include <utility>
 
 #include "runtime/descriptors.h"
 #include "runtime/types.h"
@@ -45,6 +46,8 @@ PaimonJniReader::PaimonJniReader(const std::vector<SlotDescriptor*>& file_slot_d
         : JniReader(file_slot_descs, state, profile) {
     std::vector<std::string> column_names;
     std::vector<std::string> column_types;
+    column_names.reserve(_file_slot_descs.size());
+    column_types.reserve(_file_slot_descs.size());
     for (auto& desc : _file_slot_descs) {
         column_names.emplace_back(desc->col_name());
         column_types.emplace_back(JniConnector::get_jni_type(desc->type()));
@@ -75,8 +78,13 @@ PaimonJniReader::PaimonJniReader(const std::vector<SlotDescriptor*>& file_slot_d
             params[HADOOP_OPTION_PREFIX + kv.first] = kv.second;
         }
     }
+    if (range.table_format_params.paimon_params.__isset.paimon_jni_params) {
+        for (auto& kv : range.table_format_params.paimon_params.paimon_jni_params) {
+            params[kv.first] = kv.second;
+        }
+    }
     _jni_connector = std::make_unique<JniConnector>("org/apache/doris/paimon/PaimonJniScanner",
-                                                    params, column_names);
+                                                    std::move(params), std::move(column_names));
 }
 
 Status PaimonJniReader::get_next_block(Block* block, size_t* read_rows, bool* eof) {

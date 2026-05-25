@@ -58,7 +58,9 @@ public abstract class BaseTableStream extends Table {
         }
     }
 
-    private static ImmutableList<TableType> supportedTableTypeList = ImmutableList.of(TableType.OLAP);
+    private static ImmutableList<TableType> supportedTableTypeList = ImmutableList.of(
+            TableType.OLAP,
+            TableType.PAIMON_EXTERNAL_TABLE);
 
     @SerializedName("sct")
     protected StreamConsumeType streamConsumeType = StreamConsumeType.DEFAULT;
@@ -79,6 +81,9 @@ public abstract class BaseTableStream extends Table {
     private String staleReason = "N/A";
 
     protected volatile TableIf baseTable;
+
+    public static final long UNKNOWN_STREAM_CONSUMPTION_VALUE = -1L;
+
 
     // for persist
     public BaseTableStream() {
@@ -119,6 +124,10 @@ public abstract class BaseTableStream extends Table {
         return streamConsumeType.name();
     }
 
+    public StreamConsumeType getStreamConsumeType() {
+        return streamConsumeType;
+    }
+
     public boolean isDisabled() {
         return disabled;
     }
@@ -156,13 +165,16 @@ public abstract class BaseTableStream extends Table {
 
     // fill table_stream_consumption info
     // @param dataBatch the data batch to fill
-    // DB_NAME, STREAM_NAME, STREAM_ID, UNIT, CONSUMPTION_STATUS, LAG, LAST_CONSUMPTION_TIME
+    // DB_NAME, STREAM_NAME, STREAM_ID, UNIT, OFFSET_TYPE, CONSUMPTION_STATUS, LAG, LAST_CONSUMPTION_TIME
     abstract void fillTableStreamConsumptionInfo(List<TRow> dataBatch);
 
     public static BaseTableStream read(DataInput in) throws IOException {
         String streamClassName = Text.readString(in);
         if (streamClassName.equals((OlapTableStream.class.getName()))) {
             return OlapTableStream.read(in);
+        }
+        if (streamClassName.equals((PaimonTableStream.class.getName()))) {
+            return PaimonTableStream.read(in);
         }
         throw new IOException("Unknown stream class: " + streamClassName);
     }
