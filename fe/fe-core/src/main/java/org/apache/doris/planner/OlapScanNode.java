@@ -42,6 +42,7 @@ import org.apache.doris.catalog.ColocateTableIndex;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.DiskInfo;
 import org.apache.doris.catalog.DistributionInfo;
+import org.apache.doris.catalog.DistributionInfo.DistributionInfoType;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.HashDistributionInfo;
 import org.apache.doris.catalog.Index;
@@ -195,6 +196,7 @@ public class OlapScanNode extends ScanNode {
     private ArrayList<Long> scanReplicaIds = Lists.newArrayList();
 
     private Set<Long> sampleTabletIds = Sets.newHashSet();
+    private final Set<Integer> buckets =  Sets.newHashSet();
     private TableSample tableSample;
 
     private HashSet<Long> scanBackendIds = new HashSet<>();
@@ -268,6 +270,12 @@ public class OlapScanNode extends ScanNode {
     public void setSampleTabletIds(List<Long> sampleTablets) {
         if (sampleTablets != null) {
             this.sampleTabletIds.addAll(sampleTablets);
+        }
+    }
+
+    public void setBuckets(Collection<Integer> buckets) {
+        if (buckets != null) {
+            this.buckets.addAll(buckets);
         }
     }
 
@@ -726,23 +734,17 @@ public class OlapScanNode extends ScanNode {
             MaterializedIndex table,
             DistributionInfo distributionInfo) throws AnalysisException {
         DistributionPruner distributionPruner = null;
-        switch (distributionInfo.getType()) {
-            case HASH: {
-                HashDistributionInfo info = (HashDistributionInfo) distributionInfo;
-                distributionPruner = new HashDistributionPruner(table.getTabletIdsInOrder(),
-                        info.getDistributionColumns(),
-                        columnFilters,
-                        info.getBucketNum(),
-                        getSelectedIndexId() == olapTable.getBaseIndexId());
-                return distributionPruner.prune();
-            }
-            case RANDOM: {
-                return null;
-            }
-            default: {
-                return null;
-            }
+        if (distributionInfo.getType() == DistributionInfoType.HASH) {
+            HashDistributionInfo info = (HashDistributionInfo) distributionInfo;
+            distributionPruner = new HashDistributionPruner(table.getTabletIdsInOrder(),
+                    buckets,
+                    info.getDistributionColumns(),
+                    columnFilters,
+                    info.getBucketNum(),
+                    getSelectedIndexId() == olapTable.getBaseIndexId());
+            return distributionPruner.prune();
         }
+        return table.getTabletIdsInOrder(buckets);
     }
 
     private void addScanRangeLocations(Partition partition,
@@ -1111,7 +1113,7 @@ public class OlapScanNode extends ScanNode {
             int seekPid = (int) ((i + partitionSeek) % selectedPartitionList.size());
             final Partition partition = olapTable.getPartition(selectedPartitionList.get(seekPid));
             final MaterializedIndex selectedTable = partition.getIndex(selectedIndexId);
-            List<Tablet> tablets = selectedTable.getTablets();
+            List<Tablet> tablets = selectedTable.getTablets(buckets);
             if (tablets.isEmpty()) {
                 continue;
             }
@@ -1218,33 +1220,24 @@ public class OlapScanNode extends ScanNode {
                 LOG.debug("distribution prune tablets: {}", tabletIds);
             }
             if (sampleTabletIds.size() != 0) {
-                if (tabletIds != null) {
-                    tabletIds.retainAll(sampleTabletIds);
-                } else {
-                    tabletIds = sampleTabletIds;
-                }
+                tabletIds.retainAll(sampleTabletIds);
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("after sample tablets: {}", tabletIds);
                 }
             }
 
-            List<Long> allTabletIds = selectedTable.getTabletIdsInOrder();
-            if (tabletIds != null) {
-                for (Long id : tabletIds) {
-                    if (selectedTable.getTablet(id) != null) {
-                        tablets.add(selectedTable.getTablet(id));
-                        scanTabletIds.add(id);
-                    } else {
-                        // The tabletID specified in query does not exist in this partition, skip scan partition.
-                        Preconditions.checkState(sampleTabletIds.size() != 0);
-                    }
+            for (Long id : tabletIds) {
+                if (selectedTable.getTablet(id) != null) {
+                    tablets.add(selectedTable.getTablet(id));
+                    scanTabletIds.add(id);
+                } else {
+                    // The tabletID specified in query does not exist in this partition, skip scan partition.
+                    Preconditions.checkState(!sampleTabletIds.isEmpty());
                 }
-            } else {
-                tablets.addAll(selectedTable.getTablets());
-                scanTabletIds.addAll(allTabletIds);
             }
 
             if (!isPointQuery()) {
+                List<Long> allTabletIds = selectedTable.getTabletIdsInOrder();
                 for (int i = 0; i < allTabletIds.size(); i++) {
                     tabletId2BucketSeq.put(allTabletIds.get(i), i);
                 }

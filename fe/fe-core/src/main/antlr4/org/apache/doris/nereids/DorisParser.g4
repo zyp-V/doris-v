@@ -1252,7 +1252,7 @@ optScanParams
 
 relationPrimary
     : multipartIdentifier optScanParams? materializedViewName? tableSnapshot? specifiedPartition?
-       tabletList? tableAlias sample? relationHint? lateralView*                           #tableName
+       bucketList? tabletList? tableAlias sample? relationHint? lateralView*               #tableName
     | LEFT_PAREN query RIGHT_PAREN tableAlias lateralView*                                 #aliasedQuery
     | tvfName=identifier LEFT_PAREN
       (properties=propertyItemList)?
@@ -1370,6 +1370,9 @@ tabletList
     : TABLET LEFT_PAREN tabletIdList+=INTEGER_VALUE (COMMA tabletIdList+=INTEGER_VALUE)*  RIGHT_PAREN
     ;
 
+bucketList
+    : BUCKET LEFT_PAREN buckets+=INTEGER_VALUE (COMMA buckets+=INTEGER_VALUE)*  RIGHT_PAREN
+    ;
 
 inlineTable
     : VALUES rowConstructor (COMMA rowConstructor)*
@@ -1766,6 +1769,7 @@ nonReserved
     | BOOLEAN
     | BRIEF
     | BROKER
+    | BUCKET
     | BUCKETS
     | BUILD
     | BUILTIN

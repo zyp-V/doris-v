@@ -484,6 +484,7 @@ import org.apache.doris.policy.PolicyTypeEnum;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.SqlModeHelper;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
@@ -501,10 +502,12 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -1532,6 +1535,15 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
             });
         }
 
+        Set<Integer> buckets = new HashSet<>();
+        if (ctx.bucketList() != null) {
+            for (Token token : ctx.bucketList().buckets) {
+                int bucket = Integer.parseInt(token.getText());
+                Preconditions.checkState(bucket >= 0, "tablet order is negative");
+                buckets.add(bucket);
+            }
+        }
+
         final List<String> relationHints;
         if (ctx.relationHint() != null) {
             relationHints = typedVisit(ctx.relationHint());
@@ -1556,7 +1568,7 @@ public class LogicalPlanBuilder extends DorisParserBaseVisitor<Object> {
 
         TableSample tableSample = ctx.sample() == null ? null : (TableSample) visit(ctx.sample());
         UnboundRelation relation = new UnboundRelation(StatementScopeIdGenerator.newRelationId(),
-                nameParts, partitionNames, isTempPart, tabletIdLists, relationHints,
+                nameParts, partitionNames, isTempPart, tabletIdLists, buckets, relationHints,
                 Optional.ofNullable(tableSample), indexName, scanParams, Optional.ofNullable(tableSnapshot));
 
         LogicalPlan checkedRelation = LogicalPlanBuilderAssistant.withCheckPolicy(relation);

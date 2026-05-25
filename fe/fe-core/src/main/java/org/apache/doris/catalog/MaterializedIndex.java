@@ -21,6 +21,7 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.persist.gson.GsonPostProcessable;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.gson.annotations.SerializedName;
 
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The OlapTraditional table is a materialized table which stored as rowcolumnar file or columnar file
@@ -102,10 +104,34 @@ public class MaterializedIndex extends MetaObject implements Writable, GsonPostP
         return tablets;
     }
 
+    public List<Tablet> getTablets(Set<Integer> buckets) {
+        if (buckets.isEmpty()) {
+            return getTablets();
+        }
+        List<Tablet> result = new ArrayList<>(buckets.size());
+        for (Integer bucket : buckets) {
+            Preconditions.checkState(bucket < tablets.size(), "tablet order out of range");
+            result.add(tablets.get(bucket));
+        }
+        return result;
+    }
+
     public List<Long> getTabletIdsInOrder() {
         List<Long> tabletIds = Lists.newArrayList();
         for (Tablet tablet : tablets) {
             tabletIds.add(tablet.getId());
+        }
+        return tabletIds;
+    }
+
+    public List<Long> getTabletIdsInOrder(Set<Integer> buckets) {
+        if (buckets.isEmpty()) {
+            return getTabletIdsInOrder();
+        }
+        List<Long> tabletIds = new ArrayList<>(buckets.size());
+        for (Integer bucket : buckets) {
+            Preconditions.checkState(bucket < tablets.size(), "tablet order out of range");
+            tabletIds.add(tablets.get(bucket).getId());
         }
         return tabletIds;
     }

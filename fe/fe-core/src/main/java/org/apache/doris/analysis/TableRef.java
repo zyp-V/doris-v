@@ -93,6 +93,7 @@ public class TableRef implements ParseNode, Writable {
     // uniquely identifies this table ref regardless of whether it has an explicit alias.
     protected String[] aliases;
     protected List<Long> sampleTabletIds;
+    protected List<Integer> buckets;
     // Indicates whether this table ref is given an explicit alias,
     protected boolean hasExplicitAlias;
     protected JoinOperator joinOp;
@@ -175,8 +176,16 @@ public class TableRef implements ParseNode, Writable {
     }
 
     public TableRef(TableName name, String alias, PartitionNames partitionNames,
-                    ArrayList<Long> sampleTabletIds, TableSample tableSample, ArrayList<String> commonHints,
-                    TableSnapshot tableSnapshot, TableScanParams scanParams) {
+            ArrayList<Long> sampleTabletIds, TableSample tableSample, ArrayList<String> commonHints,
+            TableSnapshot tableSnapshot, TableScanParams scanParams) {
+        this(name, alias, partitionNames, sampleTabletIds, new ArrayList<>(), tableSample, commonHints, tableSnapshot,
+                scanParams);
+    }
+
+    public TableRef(TableName name, String alias, PartitionNames partitionNames,
+            ArrayList<Long> sampleTabletIds, ArrayList<Long> buckets, TableSample tableSample,
+            ArrayList<String> commonHints,
+            TableSnapshot tableSnapshot, TableScanParams scanParams) {
         this.name = name;
         if (alias != null) {
             if (Env.isStoredTableNamesLowerCase()) {
@@ -189,6 +198,12 @@ public class TableRef implements ParseNode, Writable {
         }
         this.partitionNames = partitionNames;
         this.sampleTabletIds = sampleTabletIds;
+        this.buckets = new ArrayList<>();
+        if (buckets != null) {
+            for (Long bucket : buckets) {
+                this.buckets.add(bucket.intValue());
+            }
+        }
         this.tableSample = tableSample;
         this.commonHints = commonHints;
         this.tableSnapshot = tableSnapshot;
@@ -235,6 +250,7 @@ public class TableRef implements ParseNode, Writable {
             }
         }
         this.sampleTabletIds = other.sampleTabletIds;
+        this.buckets = other.buckets;
     }
 
     public PartitionNames getPartitionNames() {
@@ -325,6 +341,10 @@ public class TableRef implements ParseNode, Writable {
 
     public List<Long> getSampleTabletIds() {
         return sampleTabletIds;
+    }
+
+    public List<Integer> getBuckets() {
+        return buckets;
     }
 
     public ArrayList<String> getCommonHints() {
@@ -488,11 +508,18 @@ public class TableRef implements ParseNode, Writable {
     }
 
     protected void analyzeSample() throws AnalysisException {
-        if ((sampleTabletIds != null || tableSample != null)
+        if ((sampleTabletIds != null || (buckets != null && !buckets.isEmpty()) || tableSample != null)
                 && desc.getTable().getType() != TableIf.TableType.OLAP
                 && desc.getTable().getType() != TableIf.TableType.HMS_EXTERNAL_TABLE) {
             throw new AnalysisException("Sample table " + desc.getTable().getName()
                 + " type " + desc.getTable().getType() + " is not supported");
+        }
+        if (buckets != null) {
+            for (Integer bucket : buckets) {
+                if (bucket < 0) {
+                    throw new AnalysisException("tablet order is negative");
+                }
+            }
         }
     }
 
@@ -803,7 +830,10 @@ public class TableRef implements ParseNode, Writable {
             for (String partName : partitionNames.getPartitionNames()) {
                 sj.add(partName);
             }
-            return tblName + " PARTITION(" + sj.toString() + ")";
+            tblName += " PARTITION(" + sj.toString() + ")";
+        }
+        if (buckets != null && !buckets.isEmpty()) {
+            tblName += " BUCKET(" + Joiner.on(", ").join(buckets) + ")";
         }
         return tblName;
     }

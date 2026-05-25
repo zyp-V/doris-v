@@ -129,6 +129,7 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("boolean", new Integer(SqlParserSymbols.KW_BOOLEAN));
         keywordMap.put("brief", new Integer(SqlParserSymbols.KW_BRIEF));
         keywordMap.put("broker", new Integer(SqlParserSymbols.KW_BROKER));
+        keywordMap.put("bucket", new Integer(SqlParserSymbols.KW_BUCKET));
         keywordMap.put("buckets", new Integer(SqlParserSymbols.KW_BUCKETS));
         keywordMap.put("build", new Integer(SqlParserSymbols.KW_BUILD));
         keywordMap.put("builtin", new Integer(SqlParserSymbols.KW_BUILTIN));

@@ -58,7 +58,7 @@ public class PruneOlapScanTablet extends OneRewriteRuleFactory {
                     Partition partition = table.getPartition(id);
                     MaterializedIndex index = partition.getIndex(olapScan.getSelectedIndexId());
                     selectedTabletIdsBuilder
-                            .addAll(getSelectedTabletIds(filter.getConjuncts(), index,
+                            .addAll(getSelectedTabletIds(filter.getConjuncts(), index, olapScan.getBuckets(),
                                     olapScan.getSelectedIndexId() == olapScan.getTable()
                                             .getBaseIndexId(),
                                     partition.getDistributionInfo()));
@@ -75,7 +75,7 @@ public class PruneOlapScanTablet extends OneRewriteRuleFactory {
     }
 
     private Collection<Long> getSelectedTabletIds(Set<Expression> expressions,
-            MaterializedIndex index, boolean isBaseIndexSelected, DistributionInfo info) {
+            MaterializedIndex index, Set<Integer> buckets, boolean isBaseIndexSelected, DistributionInfo info) {
         if (info.getType() != DistributionInfoType.HASH) {
             return index.getTabletIdsInOrder();
         }
@@ -84,6 +84,7 @@ public class PruneOlapScanTablet extends OneRewriteRuleFactory {
         expressions.stream().map(ExpressionUtils::checkAndMaybeCommute).filter(Optional::isPresent)
                 .forEach(expr -> new ExpressionColumnFilterConverter(filterMap).convert(expr.get()));
         return new HashDistributionPruner(index.getTabletIdsInOrder(),
+                buckets,
                 hashInfo.getDistributionColumns(),
                 filterMap,
                 hashInfo.getBucketNum(),

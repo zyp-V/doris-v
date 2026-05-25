@@ -34,11 +34,13 @@ import org.apache.doris.nereids.util.Utils;
 import org.apache.doris.statistics.Statistics;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import org.json.JSONObject;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Physical olap scan plan.
@@ -48,6 +50,7 @@ public class PhysicalOlapScan extends PhysicalCatalogRelation implements OlapSca
     private final DistributionSpec distributionSpec;
     private final long selectedIndexId;
     private final ImmutableList<Long> selectedTabletIds;
+    private final ImmutableSet<Integer> buckets;
     private final ImmutableList<Long> selectedPartitionIds;
     private final PreAggStatus preAggStatus;
     private final List<Slot> baseOutputs;
@@ -66,18 +69,39 @@ public class PhysicalOlapScan extends PhysicalCatalogRelation implements OlapSca
                 tableSample);
     }
 
+    public PhysicalOlapScan(RelationId id, OlapTable olapTable, List<String> qualifier, long selectedIndexId,
+            List<Long> selectedTabletIds, Set<Integer> buckets, List<Long> selectedPartitionIds,
+            DistributionSpec distributionSpec, PreAggStatus preAggStatus, List<Slot> baseOutputs,
+            Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
+            Optional<TableSample> tableSample) {
+        this(id, olapTable, qualifier, selectedIndexId, selectedTabletIds, buckets, selectedPartitionIds,
+                distributionSpec, preAggStatus, baseOutputs, groupExpression, logicalProperties, null, null,
+                tableSample);
+    }
+
+    public PhysicalOlapScan(RelationId id, OlapTable olapTable, List<String> qualifier, long selectedIndexId,
+            List<Long> selectedTabletIds, List<Long> selectedPartitionIds,
+            DistributionSpec distributionSpec, PreAggStatus preAggStatus, List<Slot> baseOutputs,
+            Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
+            PhysicalProperties physicalProperties, Statistics statistics, Optional<TableSample> tableSample) {
+        this(id, olapTable, qualifier, selectedIndexId, selectedTabletIds, ImmutableSet.of(), selectedPartitionIds,
+                distributionSpec, preAggStatus, baseOutputs, groupExpression, logicalProperties, physicalProperties,
+                statistics, tableSample);
+    }
+
     /**
      * Constructor for PhysicalOlapScan.
      */
     public PhysicalOlapScan(RelationId id, OlapTable olapTable, List<String> qualifier, long selectedIndexId,
-            List<Long> selectedTabletIds, List<Long> selectedPartitionIds, DistributionSpec distributionSpec,
-            PreAggStatus preAggStatus, List<Slot> baseOutputs,
+            List<Long> selectedTabletIds, Set<Integer> buckets, List<Long> selectedPartitionIds,
+            DistributionSpec distributionSpec, PreAggStatus preAggStatus, List<Slot> baseOutputs,
             Optional<GroupExpression> groupExpression, LogicalProperties logicalProperties,
             PhysicalProperties physicalProperties, Statistics statistics, Optional<TableSample> tableSample) {
         super(id, PlanType.PHYSICAL_OLAP_SCAN, olapTable, qualifier,
                 groupExpression, logicalProperties, physicalProperties, statistics);
         this.selectedIndexId = selectedIndexId;
         this.selectedTabletIds = ImmutableList.copyOf(selectedTabletIds);
+        this.buckets = ImmutableSet.copyOf(buckets);
         this.selectedPartitionIds = ImmutableList.copyOf(selectedPartitionIds);
         this.distributionSpec = distributionSpec;
         this.preAggStatus = preAggStatus;
@@ -93,6 +117,10 @@ public class PhysicalOlapScan extends PhysicalCatalogRelation implements OlapSca
     @Override
     public List<Long> getSelectedTabletIds() {
         return selectedTabletIds;
+    }
+
+    public Set<Integer> getBuckets() {
+        return buckets;
     }
 
     public List<Long> getSelectedPartitionIds() {
@@ -161,15 +189,16 @@ public class PhysicalOlapScan extends PhysicalCatalogRelation implements OlapSca
     @Override
     public PhysicalOlapScan withGroupExpression(Optional<GroupExpression> groupExpression) {
         return new PhysicalOlapScan(relationId, getTable(), qualifier, selectedIndexId, selectedTabletIds,
-                selectedPartitionIds, distributionSpec, preAggStatus, baseOutputs,
+                buckets, selectedPartitionIds, distributionSpec, preAggStatus, baseOutputs,
                 groupExpression, getLogicalProperties(), tableSample);
     }
 
     @Override
     public Plan withGroupExprLogicalPropChildren(Optional<GroupExpression> groupExpression,
+
             Optional<LogicalProperties> logicalProperties, List<Plan> children) {
         return new PhysicalOlapScan(relationId, getTable(), qualifier, selectedIndexId, selectedTabletIds,
-                selectedPartitionIds, distributionSpec, preAggStatus, baseOutputs, groupExpression,
+                buckets, selectedPartitionIds, distributionSpec, preAggStatus, baseOutputs, groupExpression,
                 logicalProperties.get(), tableSample);
     }
 
@@ -177,7 +206,7 @@ public class PhysicalOlapScan extends PhysicalCatalogRelation implements OlapSca
     public PhysicalOlapScan withPhysicalPropertiesAndStats(
             PhysicalProperties physicalProperties, Statistics statistics) {
         return new PhysicalOlapScan(relationId, getTable(), qualifier, selectedIndexId, selectedTabletIds,
-                selectedPartitionIds, distributionSpec, preAggStatus, baseOutputs, groupExpression,
+                buckets, selectedPartitionIds, distributionSpec, preAggStatus, baseOutputs, groupExpression,
                 getLogicalProperties(), physicalProperties, statistics, tableSample);
     }
 
@@ -189,6 +218,7 @@ public class PhysicalOlapScan extends PhysicalCatalogRelation implements OlapSca
         properties.put("DistributionSpec", distributionSpec.toString());
         properties.put("SelectedIndexId", Long.toString(selectedIndexId));
         properties.put("SelectedTabletIds", selectedTabletIds.toString());
+        properties.put("Buckets", buckets.toString());
         properties.put("SelectedPartitionIds", selectedPartitionIds.toString());
         properties.put("PreAggStatus", preAggStatus.toString());
         olapScan.put("Properties", properties);

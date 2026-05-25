@@ -32,6 +32,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -91,7 +92,7 @@ public class HashDistributionPrunerTest {
         filters.put("CHANNEL", channelFilter);
         filters.put("SHOP_TYPE", shopTypeFilter);
 
-        HashDistributionPruner pruner = new HashDistributionPruner(tabletIds, columns, filters, tabletIds.size(), true);
+        HashDistributionPruner pruner = new HashDistributionPruner(tabletIds, new HashSet<>(), columns, filters, tabletIds.size(), true);
 
         Collection<Long> results = pruner.prune();
         // 20 = 1 * 5 * 2 * 2 * 1 (element num of each filter)

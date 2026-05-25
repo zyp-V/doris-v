@@ -109,6 +109,7 @@ import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Rule to bind relations in query plan.
@@ -195,10 +196,11 @@ public class BindRelation extends OneAnalysisRuleFactory {
         LogicalOlapScan scan;
         List<Long> partIds = getPartitionIds(table, unboundRelation, qualifier);
         List<Long> tabletIds = unboundRelation.getTabletIds();
+        Set<Integer> buckets = unboundRelation.getBuckets();
         if (!CollectionUtils.isEmpty(partIds) && !unboundRelation.getIndexName().isPresent()) {
             scan = new LogicalOlapScan(unboundRelation.getRelationId(),
                     (OlapTable) table, qualifier, partIds,
-                    tabletIds, unboundRelation.getHints(), unboundRelation.getTableSample());
+                    tabletIds, buckets, unboundRelation.getHints(), unboundRelation.getTableSample());
         } else {
             Optional<String> indexName = unboundRelation.getIndexName();
             // For direct mv scan.
@@ -213,13 +215,13 @@ public class BindRelation extends OneAnalysisRuleFactory {
                         : PreAggStatus.off("For direct index scan on mor/agg.");
 
                 scan = new LogicalOlapScan(unboundRelation.getRelationId(),
-                    (OlapTable) table, qualifier, tabletIds,
+                    (OlapTable) table, qualifier, tabletIds, buckets,
                     CollectionUtils.isEmpty(partIds) ? ((OlapTable) table).getPartitionIds() : partIds, indexId,
                     preAggStatus, CollectionUtils.isEmpty(partIds) ? ImmutableList.of() : partIds,
                     unboundRelation.getHints(), unboundRelation.getTableSample());
             } else {
                 scan = new LogicalOlapScan(unboundRelation.getRelationId(),
-                    (OlapTable) table, qualifier, tabletIds, unboundRelation.getHints(),
+                    (OlapTable) table, qualifier, tabletIds, buckets, unboundRelation.getHints(),
                     unboundRelation.getTableSample());
             }
         }

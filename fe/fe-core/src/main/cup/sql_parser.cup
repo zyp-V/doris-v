@@ -284,6 +284,7 @@ terminal String
     KW_BOOLEAN,
     KW_BRIEF,
     KW_BROKER,
+    KW_BUCKET,
     KW_BUCKETS,
     KW_BUILD,
     KW_BUILTIN,
@@ -773,6 +774,7 @@ nonterminal String select_alias, opt_table_alias, lock_alias, opt_alias;
 nonterminal ArrayList<String> ident_list, opt_ident_list;
 nonterminal PartitionNames opt_partition_names, partition_names;
 nonterminal ArrayList<Long> opt_tablet_list, tablet_list;
+nonterminal ArrayList<Long> opt_bucket_list, bucket_list;
 nonterminal TableSample opt_table_sample, table_sample;
 nonterminal TableSnapshot opt_table_snapshot, table_snapshot;
 nonterminal TableName table_name, opt_table_name;
@@ -1021,6 +1023,7 @@ precedence left KW_OVER;
 precedence left KW_COLLATE;
 precedence left KW_PARTITION;
 precedence left KW_PARTITIONS;
+precedence right KW_BUCKET;
 precedence right KW_TEMPORARY;
 precedence right LBRACKET;
 precedence right LBRACE;
@@ -6016,9 +6019,9 @@ base_table_ref_list ::=
   ;
 
 base_table_ref ::=
-    table_name:name  opt_scan_params_ref:scanParams opt_table_snapshot:tableSnapshot opt_partition_names:partitionNames opt_tablet_list:tabletIds opt_table_alias:alias opt_table_sample:tableSample opt_common_hints:commonHints
+    table_name:name  opt_scan_params_ref:scanParams opt_table_snapshot:tableSnapshot opt_partition_names:partitionNames opt_bucket_list:buckets opt_tablet_list:tabletIds opt_table_alias:alias opt_table_sample:tableSample opt_common_hints:commonHints
     {:
-        RESULT = new TableRef(name, alias, partitionNames, tabletIds, tableSample, commonHints, tableSnapshot, scanParams);
+        RESULT = new TableRef(name, alias, partitionNames, tabletIds, buckets, tableSample, commonHints, tableSnapshot, scanParams);
     :}
     ;
 
@@ -6115,6 +6118,24 @@ tablet_list ::=
     KW_TABLET LPAREN integer_list:tabletIds RPAREN
     {:
         RESULT = Lists.newArrayList(tabletIds);
+    :}
+    ;
+
+opt_bucket_list ::=
+    /* empty */
+    {:
+        RESULT = null;
+    :}
+    | bucket_list:list
+    {:
+        RESULT = list;
+    :}
+    ;
+
+bucket_list ::=
+    KW_BUCKET LPAREN integer_list:list RPAREN
+    {:
+        RESULT = Lists.newArrayList(list);
     :}
     ;
 
@@ -7868,6 +7889,8 @@ keyword ::=
     | KW_DISTINCTPCSA:id
     {: RESULT = id; :}
     | KW_DO:id
+    {: RESULT = id; :}
+    | KW_BUCKET:id
     {: RESULT = id; :}
     | KW_BUCKETS:id
     {: RESULT = id; :}

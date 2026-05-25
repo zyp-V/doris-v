@@ -30,7 +30,9 @@ import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +55,7 @@ public class HashDistributionPruner implements DistributionPruner {
 
     // partition list, sort by the hash code
     private List<Long> bucketsList;
+    private final Set<Integer> tabletOrderList;
     // partition columns
     private List<Column>                       distributionColumns;
     // partition column filters
@@ -61,9 +64,10 @@ public class HashDistributionPruner implements DistributionPruner {
 
     private boolean isBaseIndexSelected;
 
-    public HashDistributionPruner(List<Long> bucketsList, List<Column> columns,
+    public HashDistributionPruner(List<Long> bucketsList, Set<Integer> tabletOrderList, List<Column> columns,
                            Map<String, PartitionColumnFilter> filters, int hashMod, boolean isBaseIndexSelected) {
         this.bucketsList = bucketsList;
+        this.tabletOrderList = tabletOrderList;
         this.distributionColumns = columns;
         this.distributionColumnFilters = filters;
         this.hashMod = hashMod;
@@ -76,7 +80,11 @@ public class HashDistributionPruner implements DistributionPruner {
         if (columnId == distributionColumns.size()) {
             // compute Hash Key
             long hashValue = hashKey.getHashValue();
-            return Lists.newArrayList(bucketsList.get((int) ((hashValue & 0xffffffff) % hashMod)));
+            int bucket = (int) ((hashValue & 0xffffffff) % hashMod);
+            if (!tabletOrderList.isEmpty() && !tabletOrderList.contains(bucket)) {
+                return Collections.emptyList();
+            }
+            return Lists.newArrayList(bucketsList.get(bucket));
         }
         Column keyColumn = distributionColumns.get(columnId);
         String columnName = isBaseIndexSelected ? keyColumn.getName()
@@ -87,7 +95,7 @@ public class HashDistributionPruner implements DistributionPruner {
         if (null == filter) {
             // no filter in this column, no partition Key
             // return all subPartition
-            return Lists.newArrayList(bucketsList);
+            return pruneByTabletOrder(bucketsList);
         }
         InPredicate inPredicate = filter.getInPredicate();
         if (null == inPredicate
@@ -102,12 +110,12 @@ public class HashDistributionPruner implements DistributionPruner {
                 return result;
             }
             // return all SubPartition
-            return Lists.newArrayList(bucketsList);
+            return pruneByTabletOrder(bucketsList);
         }
 
         if (!(inPredicate.getChild(0) instanceof SlotRef)) {
             // return all SubPartition
-            return Lists.newArrayList(bucketsList);
+            return pruneByTabletOrder(bucketsList);
         }
         Set<Long> resultSet = Sets.newHashSet();
         int inElementNum = inPredicate.getInElementNum();
@@ -124,6 +132,17 @@ public class HashDistributionPruner implements DistributionPruner {
             }
         }
         return resultSet;
+    }
+
+    private List<Long> pruneByTabletOrder(List<Long> bucketsList) {
+        if (tabletOrderList.isEmpty()) {
+            return new ArrayList<>(bucketsList);
+        }
+        List<Long> result = new ArrayList<>(tabletOrderList.size());
+        for (Integer bucket : tabletOrderList) {
+            result.add(bucketsList.get(bucket));
+        }
+        return result;
     }
 
     public Collection<Long> prune() {

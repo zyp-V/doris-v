@@ -37,6 +37,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -68,6 +69,7 @@ public class OlapScanNodeTest {
 
         DistributionPruner partitionPruner  = new HashDistributionPruner(
                 partitions,
+                new HashSet<>(),
                 columns,
                 filterMap,
                 3,
@@ -112,6 +114,7 @@ public class OlapScanNodeTest {
 
         DistributionPruner partitionPruner  = new HashDistributionPruner(
                 partitions,
+                new HashSet<>(),
                 columns,
                 filterMap,
                 3,

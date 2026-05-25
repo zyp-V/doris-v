@@ -1929,6 +1929,7 @@ public class SingleNodePlanner {
                         "OlapScanNode");
                 olapNode.setForceOpenPreAgg(tblRef.isForcePreAggOpened());
                 olapNode.setSampleTabletIds(tblRef.getSampleTabletIds());
+                olapNode.setBuckets(tblRef.getBuckets());
                 olapNode.setTableSample(tblRef.getTableSample());
                 scanNode = olapNode;
                 break;
