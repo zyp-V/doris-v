@@ -1419,6 +1419,8 @@ DEFINE_String(test_s3_prefix, "prefix");
 
 DEFINE_Bool(enable_root_path_of_hdfs_resource, "false");
 
+DEFINE_mBool(graceful_exit_wait_for_frontend_heartbeat, "true");
+
 std::map<std::string, Register::Field>* Register::_s_field_map = nullptr;
 std::map<std::string, std::function<bool()>>* RegisterConfValidator::_s_field_validator = nullptr;
 std::map<std::string, std::string>* full_conf_map = nullptr;

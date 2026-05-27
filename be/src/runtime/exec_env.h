@@ -116,6 +116,11 @@ class DeleteBitmapAggCache;
 
 inline bool k_doris_exit = false;
 
+// NOTE: when backend is going to shutdown, if FE's heartbeat request received, the status code
+// in the response will be set to SHUTDOWN, then FE leader will know the node is in shutdown immediately.
+// This flag records whether there is a such response with status SHUTDOWN sent back to FE.
+inline std::atomic<bool> k_doris_fe_heartbeat_aware_shutdown(false);
+
 // Execution environment for queries/plan fragments.
 // Contains all required global structures, and handles to
 // singleton services. Clients must call StartServices exactly

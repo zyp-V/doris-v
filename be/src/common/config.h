@@ -1472,6 +1472,11 @@ DECLARE_mString(datamind_tcc_api_key);
 // ignore complex type check in broker load 
 DECLARE_mBool(ignore_load_complex_type_check);
 
+// Determines whether to await at least one frontend heartbeat response indicating SHUTDOWN status before completing graceful exit.
+// When enabled, the graceful shutdown process remains active until a SHUTDOWN confirmation is responded via heartbeat RPC,
+// ensuring the frontend has sufficient time to detect the termination state between two regular heartbeat intervals.
+DECLARE_mBool(graceful_exit_wait_for_frontend_heartbeat);
+
 #ifdef BE_TEST
 // test s3
 DECLARE_String(test_s3_resource);

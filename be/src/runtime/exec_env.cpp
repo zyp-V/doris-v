@@ -156,6 +156,23 @@ void ExecEnv::wait_for_all_tasks_done() {
     // For graceful shutdown, need to wait for all running queries to stop
     int32_t wait_seconds_passed = 0;
     while (true) {
+        if (!doris::config::graceful_exit_wait_for_frontend_heartbeat) {
+            break;
+        }
+        do {
+            LOG(INFO) << "FE haven't received shutdown heartbeat, waiting... time left="
+                      << (doris::config::grace_shutdown_wait_seconds - wait_seconds_passed) << "s";
+            sleep(5);
+            wait_seconds_passed += 5;
+            if (wait_seconds_passed > doris::config::grace_shutdown_wait_seconds) {
+                LOG(INFO) << "The FE still haven't received shutdown heartbeat, but "
+                          << wait_seconds_passed << " seconds passed, has to exist now";
+                break;
+            }
+        } while (!doris::k_doris_fe_heartbeat_aware_shutdown.load(std::memory_order_relaxed));
+        LOG(INFO) << "FE has received shutdown heartbeat, start waiting for query fragment stop,"
+                 " time left="
+              << (doris::config::grace_shutdown_wait_seconds - wait_seconds_passed) << "s";
         int num_queries = _fragment_mgr->running_query_num();
         if (num_queries < 1) {
             break;

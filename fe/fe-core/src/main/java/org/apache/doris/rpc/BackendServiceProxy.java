@@ -82,6 +82,10 @@ public class BackendServiceProxy {
         static BackendServiceProxy get() {
             return proxies[Math.abs(count.addAndGet(1) % PROXY_NUM)];
         }
+
+        static BackendServiceProxy[] getAll() {
+            return proxies;
+        }
     }
 
     public static BackendServiceProxy getInstance() {
@@ -111,6 +115,12 @@ public class BackendServiceProxy {
 
         if (serviceClientExtIp != null) {
             serviceClientExtIp.client.shutdown();
+        }
+    }
+
+    public static void removeProxyAll(TNetworkAddress address) {
+        for (BackendServiceProxy proxy : Holder.getAll()) {
+            proxy.removeProxy(address);
         }
     }
 

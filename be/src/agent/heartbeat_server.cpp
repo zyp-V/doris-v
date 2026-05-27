@@ -82,6 +82,9 @@ void HeartbeatServer::heartbeat(THeartbeatResult& heartbeat_result,
         heartbeat_result.backend_info.__set_be_node_role(config::be_node_role);
         // If be is gracefully stop, then k_doris_exist is set to true
         heartbeat_result.backend_info.__set_is_shutdown(doris::k_doris_exit);
+        if (_master_info->__isset.is_shutdown && _master_info->is_shutdown && doris::k_doris_exit) {
+            doris::k_doris_fe_heartbeat_aware_shutdown.store(true);
+        }
     }
     watch.stop();
     if (watch.elapsed_time() > 1000L * 1000L * 1000L) {

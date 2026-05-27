@@ -39,6 +39,7 @@ struct TMasterInfo {
     7: optional i64 heartbeat_flags
     8: optional i64 backend_id
     9: optional list<TFrontendInfo> frontend_infos
+    101: optional bool is_shutdown
 }
 
 struct TBackendInfo {

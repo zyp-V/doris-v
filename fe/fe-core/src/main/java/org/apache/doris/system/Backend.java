@@ -440,7 +440,7 @@ public class Backend implements Writable {
     }
 
     public boolean isLoadAvailable() {
-        return isAlive() && !isLoadDisabled();
+        return isAlive() && !isLoadDisabled() && !isShutDown.get();
     }
 
     public void setDisks(ImmutableMap<String, DiskInfo> disks) {
@@ -958,6 +958,10 @@ public class Backend implements Writable {
         // set is virtual to true
         result.isVirtual = true;
         return result;
+    }
+
+    public boolean getIsShutdown() {
+        return isShutDown.get();
     }
 
 }

@@ -246,6 +246,7 @@ public class HeartbeatMgr extends MasterDaemon {
                 copiedMasterInfo.setHeartbeatFlags(flags);
                 copiedMasterInfo.setBackendId(backendId);
                 copiedMasterInfo.setFrontendInfos(feInfos);
+                copiedMasterInfo.setIsShutdown(backend.getIsShutdown());
                 THeartbeatResult result;
                 if (!FeConstants.runningUnitTest) {
                     client = ClientPool.backendHeartbeatPool.borrowObject(beAddr);
