@@ -392,8 +392,7 @@ public class AuditLogHelper {
         MetricRepo.COUNTER_QUERY_ALL.increase(1L);
         MetricRepo.USER_COUNTER_QUERY_ALL.getOrAdd(ctx.getQualifiedUser()).increase(1L);
 
-        if (ctx.getState().getStateType() == MysqlStateType.ERR
-                && ctx.getState().getErrType() != QueryState.ErrType.ANALYSIS_ERR) {
+        if (ctx.getState().getStateType() == MysqlStateType.ERR) {
             // err query
             MetricRepo.COUNTER_QUERY_ERR.increase(1L);
             MetricRepo.USER_COUNTER_QUERY_ERR.getOrAdd(ctx.getQualifiedUser()).increase(1L);
